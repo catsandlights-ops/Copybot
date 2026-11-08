@@ -22,7 +22,11 @@ import { earlyBuyers, rankCandidates } from './discover';
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
 const UI_FILE = process.env.COPYBOT_UI || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
-const FONTS = new Set(['press-start-2p.woff2', 'vt323.woff2']); // the only files served besides the page
+// The only files served besides the page: [path relative to ui/, content type].
+const STATIC: Record<string, [string, string]> = {
+  '/fonts/press-start-2p.woff2': ['fonts/press-start-2p.woff2', 'font/woff2'],
+  '/guides.js': ['guides.js', 'text/javascript; charset=utf-8'],
+};
 
 // ---------- display preferences (light/dark). Kept apart from config.json so changing them never restarts the bot ----------
 const MODES = ['system', 'light', 'dark'] as const;
@@ -41,7 +45,7 @@ export const TOKEN = crypto.randomBytes(32).toString('base64url');
 
 const SECURITY_HEADERS = {
   'content-security-policy':
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'referrer-policy': 'no-referrer',
@@ -232,10 +236,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(UI_FILE));
   }
-  const font = /^\/fonts\/([a-z0-9-]+\.woff2)$/.exec(url.pathname)?.[1];
-  if (req.method === 'GET' && font && FONTS.has(font)) {
-    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'font/woff2', 'cache-control': 'public, max-age=86400' });
-    return res.end(fs.readFileSync(path.join(path.dirname(UI_FILE), 'fonts', font)));
+  const asset = req.method === 'GET' ? STATIC[url.pathname] : undefined;
+  if (asset) {
+    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': asset[1], 'cache-control': 'no-cache' });
+    return res.end(fs.readFileSync(path.join(path.dirname(UI_FILE), asset[0])));
   }
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
