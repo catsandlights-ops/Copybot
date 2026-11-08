@@ -48,13 +48,38 @@ function signatureUrl(info) {
 /** Throws BadSignature if the file isn't signed by us, or Error if it couldn't be checked. */
 async function verifyDownload(file, info) {
   const sig = await fetchSignature(signatureUrl(info));
-  if (!signatureValid(file, sig)) throw new BadSignature('signature does not match');
+  const data = await readDownload(file);
+  if (!signatureMatches(data, sig)) {
+    // Include enough detail to tell a tampered file from any other problem.
+    const sha = crypto.createHash('sha512').update(data).digest('base64');
+    const expected = info.files?.[0]?.sha512 || info.sha512;
+    throw new BadSignature(`signature does not match (file ${data.length} bytes, checksum ${sha === expected ? 'matches' : 'does NOT match'} the release)`);
+  }
   return sig;
 }
 
-function signatureValid(file, sigB64) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Read the downloaded installer. Right after a download, antivirus software (e.g. Windows
+ * Defender) scans new .exe files and can lock them for several seconds, so retry while the
+ * file is busy instead of treating that as a bad signature.
+ */
+async function readDownload(file) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return fs.readFileSync(file);
+    } catch (e) {
+      const busy = ['EBUSY', 'EPERM', 'EACCES'].includes(e.code);
+      if (!busy || attempt >= 24) throw new Error(`could not read the downloaded update (${e.code || e.message})`);
+      await sleep(2500); // up to ~1 minute in total
+    }
+  }
+}
+
+function signatureMatches(data, sigB64) {
   try {
-    return crypto.verify(null, fs.readFileSync(file), PUBLIC_KEY, Buffer.from(sigB64.trim(), 'base64'));
+    return crypto.verify(null, data, PUBLIC_KEY, Buffer.from(sigB64.trim(), 'base64'));
   } catch {
     return false;
   }
@@ -102,7 +127,8 @@ function init({ onStateChange, log }) {
         setState({ state: 'rejected', version: info.version, message: `Update ${info.version} was rejected because its security signature is invalid. It was not installed.` });
       } else {
         // Couldn't check (offline, GitHub hiccup…). Fail safe: don't install, try again later.
-        setState({ state: 'error', version: info.version, message: `Update ${info.version} couldn't be verified right now, so it wasn't installed. Copybot will try again later.`, detail: String(e.message).slice(0, 200) });
+        setState({ state: 'error', version: info.version, message: `Update ${info.version} couldn't be verified right now, so it wasn't installed. Copybot will try again in 10 minutes.`, detail: String(e.message).slice(0, 200) });
+        setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10 * 60 * 1000);
       }
     }
   });
@@ -122,7 +148,7 @@ function checkNow() {
 async function install(beforeQuit) {
   if (!verifiedFile) throw new Error('No verified update is ready.');
   // Re-check right before installing, in case the file changed on disk.
-  if (!signatureValid(verifiedFile.path, verifiedFile.sig)) {
+  if (!signatureMatches(await readDownload(verifiedFile.path), verifiedFile.sig)) {
     verifiedFile = null;
     setState({ state: 'rejected', message: 'The downloaded update changed on disk and was not installed.' });
     throw new Error('Update file failed verification');
@@ -132,4 +158,4 @@ async function install(beforeQuit) {
   autoUpdater.quitAndInstall(true, true); // silent install, reopen Copybot afterwards
 }
 
-module.exports = { init, checkNow, install, getState: () => state, _test: { signatureUrl, verifyDownload, BadSignature } };
+module.exports = { init, checkNow, install, getState: () => state, _test: { signatureUrl, verifyDownload, readDownload, BadSignature } };
