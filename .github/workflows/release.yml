@@ -1,41 +1,75 @@
 name: Release update
 
-# Push a version tag (e.g. `npm version patch && git push --follow-tags`) and this builds the
-# Windows installer, signs it with the Copybot update key and publishes it as a GitHub release.
-# Installed copies of Copybot pick it up automatically within a few hours.
+# Publishes a signed Windows installer as a GitHub release whenever the version in
+# package.json changes on main (e.g. after `npm version patch`), or when run by hand
+# from the Actions tab. Installed copies of Copybot pick it up automatically.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   windows:
     runs-on: windows-latest
     env:
-      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: npm ci
-      - run: npm run bundle
-      # 1. Build and upload as a DRAFT release (installed apps ignore drafts).
-      - run: npx electron-builder --win --publish always
-      # 2. Sign the installer. The private key is the UPDATE_SIGNING_KEY repository secret.
-      - name: Sign update
+
+      - name: Skip if this version is already released
+        id: check
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft' 2>/dev/null | grep -q false; then
+            echo "v$VERSION is already published, nothing to do."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check the signing key is configured
+        if: steps.check.outputs.skip != 'true'
         shell: bash
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          node scripts/sign-update.mjs "release/Copybot-Setup-$VERSION.exe"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-      # 3. Attach the signature, then publish the release so apps can see it.
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "::error::Add the UPDATE_SIGNING_KEY repository secret (contents of update-signing-key.pem) first."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.skip != 'true'
+        with: { node-version: 22 }
+      - if: steps.check.outputs.skip != 'true'
+        run: npm ci
+      - if: steps.check.outputs.skip != 'true'
+        run: npm run bundle
+
+      # 1. Build and upload as a DRAFT release (installed apps ignore drafts).
+      - if: steps.check.outputs.skip != 'true'
+        run: npx electron-builder --win --publish always
+
+      # 2. Sign the installer with the Copybot update key.
+      - name: Sign update
+        if: steps.check.outputs.skip != 'true'
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update.mjs "release/Copybot-Setup-$VERSION.exe"
+
+      # 3. Attach the signature, then publish so installed apps can see it.
       - name: Publish release
+        if: steps.check.outputs.skip != 'true'
         shell: bash
         run: |
-          REPO=$(node -p "const p=require('./package.json').build.publish; p.owner+'/'+p.repo")
-          gh release upload "v$VERSION" "release/Copybot-Setup-$VERSION.exe.sig" --repo "$REPO" --clobber
-          gh release edit "v$VERSION" --draft=false --repo "$REPO"
+          gh release upload "v$VERSION" "release/Copybot-Setup-$VERSION.exe.sig" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "v$VERSION" --draft=false --latest --repo "$GITHUB_REPOSITORY"

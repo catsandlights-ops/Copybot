@@ -190,13 +190,15 @@ refuses any update without a valid signature, even if the GitHub account or down
 ### Publishing an update
 
 1. Make the code change and commit it.
-2. Bump the version and push the tag:
+2. Bump the version and push to `main`:
    ```bash
-   npm version patch        # 0.3.0 → 0.3.1  (use minor/major for bigger releases)
-   git push --follow-tags
+   npm version patch --no-git-tag-version   # 0.3.0 → 0.3.1  (minor/major for bigger releases)
+   git commit -am "Release 0.3.1" && git push
    ```
-3. GitHub Actions (`.github/workflows/release.yml`) builds the Windows installer, signs it and
-   publishes the release. Installed apps pick it up within 4 hours, or right away with "Check for updates".
+3. GitHub Actions (`.github/workflows/release.yml`) sees the new version, builds the Windows
+   installer, signs it and publishes the release. You can also start it from the **Actions** tab
+   (**Release update → Run workflow**). Installed apps pick it up within 4 hours, or right away with
+   "Check for updates".
 
 ### One-time setup for releases
 
