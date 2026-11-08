@@ -49,6 +49,7 @@ Mac and Linux: build from source (see [Building it yourself](#building-it-yourse
 - **Discover early buyers:** paste tokens that pumped; wallets that were early on several of them rank highest.
 - **Analyze:** a wallet's real on-chain record (win rate, profit, return, trades per day, hold time), with bot and "too fast to copy" warnings.
 - **Copy** good wallets in one click.
+- **Backtest:** replay up to 5 wallets' real trades with your current settings, with an adjustable copy-delay cost (you always buy higher and sell lower than they did) and fees. Shows total profit, win rate, worst dip, a profit chart, per-wallet results, skipped trades and every trade. Exits follow their sells; stop-loss and take-profit steps aren't replayed.
 - **Wallet scout** (*Find wallets for me*): Copybot picks tokens that pumped recently, finds their early buyers (plus DexCheck top traders), checks each wallet's real record, and **Claude picks the most suitable ones** and explains why (a rule-based ranking without Claude). With the autopilot managing wallets, it runs once a day and adds its picks, up to your maximum.
 
 ### Markets hub

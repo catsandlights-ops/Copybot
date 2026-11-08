@@ -172,6 +172,12 @@ td.r, th.r { text-align: right; }
 .pick .why { color: var(--muted); font-size: 13px; margin: 8px 0 10px; }
 .pick .nums { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
 .pick .nums b { color: var(--text); }
+.bt-curve { padding: 8px 18px 16px; }
+.bt-curve svg { width: 100%; height: 220px; display: block; }
+.bt-axis { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; margin-top: 6px; }
+.bt-form { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .bt-form { grid-template-columns: 1fr; } }
+.bt-hist { display: flex; gap: 6px; flex-wrap: wrap; }
 .tokchips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 18px 12px; }
 .ai-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 640px) { .ai-item { grid-template-columns: 1fr; } .ai-item .why { grid-column: 1; } .ai-item .meta { text-align: left; } }
@@ -434,6 +440,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
     <button class="nav" data-page="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg>Markets</button>
     <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
     <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
+    <button class="nav" data-page="backtest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>Backtest</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
     <button class="nav" data-page="autopilot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Autopilot<span class="count" id="nav-ai"></span></button>
     <button class="nav" data-page="learn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>Learn</button>
@@ -622,13 +629,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
     el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-06">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
@@ -787,7 +794,7 @@ function renderWallets(el) {
       <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a></div>
     </div></div>
     <div class="card">
-      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
+      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
       ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
       <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
@@ -847,6 +854,7 @@ function scoutCard() {
     const added = r.added.includes(p.address), copying = inList(p.address);
     return `<div class="pick"><div class="row" style="justify-content:space-between">${walletLink(p.address)}${copying ? `<span class="tag buy">${added ? 'Added' : 'Copying'}</span>` : `<button class="btn sm primary" data-scout-add="${esc(p.address)}" data-mult="${p.sizeMultiplier}" data-budget="${p.budgetSol}">Copy</button>`}</div>
       <div class="why">${esc(p.reason)}</div>
+      <div style="margin:-4px 0 8px"><button class="btn sm ghost" data-backtest="${esc(p.address)}">Backtest this wallet</button></div>
       <div class="nums"><span>Win rate <b>${Math.round((rep.winRate || 0) * 100)}%</b></span><span>Return <b class="${cls(rep.roiPct)}">${pct(rep.roiPct || 0)}</b></span><span>Trades <b>${rep.closedTokens ?? '–'}</b></span><span>Holds <b>${rep.closedTokens ? hrs(rep.medianHoldMin) : '–'}</b></span>${rep.earlyOn?.length ? `<span>Early on <b>${esc(rep.earlyOn.join(', '))}</b></span>` : ''}</div>
       ${p.sizeMultiplier !== 1 || p.budgetSol ? `<div class="muted" style="font-size:12px;margin-top:8px">Suggested size ×${p.sizeMultiplier}${p.budgetSol ? ` · budget ${p.budgetSol} SOL` : ''}</div>` : ''}</div>`;
   };
@@ -907,11 +915,12 @@ function renderJobs() { const el = $('#jobs'); if (el) { el.innerHTML = jobsHtml
 function jobsHtml() {
   if (!S.jobs.length) return '<div class="empty">Results from discovery and analysis show up here.</div>';
   return S.jobs.map((j) => {
-    const title = j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
+    const title = j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
     const head = `<div class="job-h">${j.status === 'running' || j.status === 'queued' ? '<span class="spinner"></span>' : j.status === 'error' ? '<span class="dot bad"></span>' : '<span class="dot ok"></span>'}
       <b style="font-weight:600">${title}</b><span class="muted" style="font-size:12.5px">${esc(j.status === 'error' ? j.error : j.progress)}</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:12px">${time(j.createdAt)}</span></div>`;
     if (j.status !== 'done') return `<div class="job">${head}</div>`;
     if (j.kind === 'scout') return `<div class="job">${head}<div class="muted" style="padding:0 18px 12px;font-size:13px">Results are shown in the Wallet scout card above.</div></div>`;
+    if (j.kind === 'backtest') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the backtest results →</a></div></div>`;
     return `<div class="job">${head}${j.kind === 'analyze' ? analyzeTable(j.result) : discoverTable(j.result)}</div>`;
   }).join('');
 }
@@ -926,7 +935,7 @@ function analyzeTable(rs) {
       <td class="r num">${Math.round(r.tradesPerDay)}</td>
       <td class="r num">${sol(r.medianBuySol, 2)}</td>
       <td class="r num">${r.closedTokens ? (r.medianHoldMin < 60 ? r.medianHoldMin.toFixed(1) + 'm' : (r.medianHoldMin / 60).toFixed(1) + 'h') : '—'}</td>
-      <td class="r">${inList(r.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(r.wallet)}">Copy</button>`}</td>
+      <td class="r" style="white-space:nowrap"><button class="btn sm ghost" data-backtest="${esc(r.wallet)}">Backtest</button> ${inList(r.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(r.wallet)}">Copy</button>`}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 function discoverTable(res) {
@@ -942,6 +951,101 @@ function discoverTable(res) {
 function bindJobs() {
   document.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.add, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list')));
   document.querySelectorAll('[data-analyze-list]').forEach((b) => (b.onclick = () => startAnalyze(b.dataset.analyzeList.split(','))));
+}
+
+// ----- backtest -----
+const dateFmt = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
+async function startBacktest(wallets, txs, delayPct) {
+  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, txs, delayPct }));
+  if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); go('backtest'); }
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-backtest]');
+  if (b) { e.preventDefault(); startBacktest(b.dataset.backtest.split(','), S.btTxs || 600, S.btDelay ?? 5); }
+  const o = e.target.closest('[data-bt-open]');
+  if (o) { e.preventDefault(); S.btJob = Number(o.dataset.btOpen); go('backtest'); }
+});
+function curveSvg(curve, from, to) {
+  if (curve.length < 2) return '<div class="muted" style="padding:20px 0;text-align:center">Not enough closed trades to draw a chart.</div>';
+  const W = 1000, H = 220, pad = 8;
+  const t0 = from ?? curve[0][0], t1 = Math.max((to ?? curve[curve.length - 1][0]), t0 + 1);
+  const pts = [[t0, 0], ...curve];
+  const vals = pts.map((p) => p[1]);
+  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), span = hi - lo || 1;
+  const x = (t) => ((t - t0) / (t1 - t0)) * W, y = (v) => pad + (1 - (v - lo) / span) * (H - 2 * pad);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
+  const last = vals[vals.length - 1];
+  const col = last >= 0 ? 'var(--green)' : 'var(--red)';
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Profit over time">
+    <defs><linearGradient id="btfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    <line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>
+    <path d="${line}L${x(pts[pts.length - 1][0]).toFixed(1)},${y(0)}L0,${y(0)}Z" fill="url(#btfill)"/>
+    <path d="${line}" fill="none" stroke="${col}" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
+    <div class="bt-axis"><span>${dateFmt(t0)}</span><span>high ${signed(hi, 3)} · low ${signed(lo, 3)} SOL</span><span>${dateFmt(t1)}</span></div>`;
+}
+function btResult(j) {
+  const r = j.result, s = r.settings;
+  const label = (w) => S.config.wallets.find((x) => x.address === w)?.label;
+  const wname = (w) => (label(w) ? `${esc(label(w))} <span class="muted">${short(w)}</span>` : walletLink(w));
+  const skippedTotal = Object.values(r.skipped).reduce((a, n) => a + n, 0);
+  const copied = r.wallets.reduce((a, w) => a + w.copied, 0);
+  const unpriced = r.open.filter((o) => o.valueSol === null).length;
+  return `
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${r.from ? ` · ${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">Your settings: ${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, last ${s.txs} transactions per wallet.</div></div></div></div>
+    ${!r.from ? '<div class="card"><div class="empty"><h3>No SOL swaps found</h3>These wallets have no token trades in the transactions read. Try a longer history.</div></div>' : `
+    <div class="grid stats">
+      <div class="card stat"><div class="k">${ICON.coin}Total profit</div><div class="v num ${cls(r.totalSol)}">${signed(r.totalSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${r.roiPct != null ? `${pct(r.roiPct)} on ${sol(r.spentSol, 2)} SOL spent` : ''}</div></div>
+      <div class="card stat"><div class="k">${ICON.star}Win rate</div><div class="v num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '–'}</div><div class="s">${r.wins} of ${r.closed} sells in profit</div></div>
+      <div class="card stat"><div class="k">${pixelSvg(HEART)}Worst dip</div><div class="v num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">largest drop from a high point</div></div>
+      <div class="card stat"><div class="k">${ICON.key}Trades copied</div><div class="v num">${copied}</div><div class="s">${skippedTotal} skipped by your limits</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Profit over time</h2><span class="spacer"></span><span class="muted" style="font-size:12px">closed trades only · realized ${signed(r.realizedSol, 3)} SOL</span></div><div class="bt-curve">${curveSvg(r.curve, r.from, r.to)}</div></div>
+    <div class="grid two" style="margin-bottom:16px">
+      <div class="card"><div class="card-h"><h2>By wallet</h2></div><div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th class="r">Their buys</th><th class="r">Copied</th><th class="r">Win rate</th><th class="r">Profit</th><th></th></tr></thead><tbody>
+        ${r.wallets.map((w) => `<tr><td>${wname(w.wallet)}</td><td class="r num">${w.signals}</td><td class="r num">${w.copied}</td><td class="r num">${w.closed ? Math.round((w.wins / w.closed) * 100) + '%' : '–'}</td><td class="r num ${cls(w.pnlSol)}">${signed(w.pnlSol, 3)}</td>
+          <td class="r">${inList(w.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(w.wallet)}">Copy</button>`}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card"><div class="card-h"><h2>Skipped and still open</h2></div><div class="card-b stack">
+        <div class="row" style="gap:6px">${skippedTotal ? Object.entries(r.skipped).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip">${esc(k)} <b>${n}</b></span>`).join('') : '<span class="muted">Nothing was skipped.</span>'}</div>
+        <div class="muted" style="font-size:13px">${r.open.length ? `${r.open.length} position${r.open.length > 1 ? 's' : ''} would still be open: cost ${sol(r.open.reduce((a, o) => a + o.costSol, 0), 3)} SOL${r.unrealizedSol != null ? `, worth ${signed(r.unrealizedSol, 3)} SOL vs cost at today's prices` : `. ${unpriced} couldn't be priced today (likely dead) and count as a total loss`}.` : 'No positions would still be open.'}</div>
+        ${r.best ? `<div class="muted" style="font-size:13px">Best trade <b class="pos">${signed(r.best.pnl, 3)}</b> · worst <b class="${cls(r.worst.pnl)}">${signed(r.worst.pnl, 3)}</b> SOL</div>` : ''}
+      </div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Trades</h2><span class="spacer"></span><span class="muted" style="font-size:12px">newest first${r.trades.length >= 200 ? ', last 200' : ''}</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th>When</th><th>Side</th><th>Token</th><th>Copied from</th><th class="r">SOL</th><th class="r">Profit</th><th>Why</th></tr></thead><tbody>
+      ${r.trades.slice(0, 100).map((t) => `<tr><td class="muted num">${dateFmt(t.t)} ${new Date(t.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td><span class="tag ${t.side}">${t.side}</span></td><td>${tokenLink(t.mint)}</td><td>${wname(t.wallet)}</td><td class="r num">${sol(t.sol, 3)}</td><td class="r num ${cls(t.pnl)}">${t.pnl != null ? signed(t.pnl, 3) : ''}</td><td class="muted" style="font-size:12.5px">${esc(t.reason || '')}</td></tr>`).join('')}
+      </tbody></table></div></div>`}
+    ${r.unreadable ? `<div class="banner warn"><div><b>${r.unreadable} of ${r.read} transactions couldn't be read</b> (the connection was rate-limiting), so some trades may be missing and the numbers are less certain. A private RPC (Settings → Connection) fixes this.</div></div>` : ''}
+    <div class="banner info"><div><b>How to read this.</b> It replays these wallets' real trades with your current settings, buying ${s.delayPct}% higher and selling ${s.delayPct}% lower than they did, because you always trade after them, plus network fees. It exits when they sell. Stop-loss and take-profit steps aren't replayed (that needs minute-by-minute prices), and past results don't predict future ones.</div></div>`;
+}
+function renderBacktest(el) {
+  const list = S.jobs.filter((j) => j.kind === 'backtest');
+  const j = list.find((x) => x.id === S.btJob) || list[0];
+  const mine = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>What would copying have made?</h2><div class="muted" style="font-size:12.5px">Replays up to 5 wallets' real trades with your current settings (buy size, limits, budgets, copying sells, daily loss limit).</div></div></div>
+      <div class="card-b bt-form">
+        <div class="stack"><textarea class="input mono" id="bt-wallets" rows="4" placeholder="Wallet addresses, one per line (up to 5)">${esc(S.btWallets || '')}</textarea>
+          <div class="row"><button class="btn sm ghost" id="bt-mine" ${mine.length ? '' : 'disabled'}>Use the wallets I copy</button></div></div>
+        <div class="stack">
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Copy-delay cost <span class="with-unit" style="width:120px"><input type="number" id="bt-delay" min="0" max="50" step="0.5" value="${S.btDelay ?? 5}"><span>%</span></span></label>
+          <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.</div>
+          <button class="btn primary" id="bt-go">Run backtest</button>
+        </div>
+      </div></div>
+    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
+    ${!j ? `<div class="card"><div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No backtests yet</h3>Enter wallets above, or press <b>Backtest</b> next to any wallet on the Wallets or Find wallets pages.</div></div>`
+      : j.status === 'done' ? btResult(j)
+      : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
+      : `<div class="card"><div class="empty"><span class="spinner"></span><h3 style="margin-top:12px">Running the backtest…</h3>${esc(j.progress)}</div></div>`}`;
+  $('#bt-mine').onclick = () => { $('#bt-wallets').value = mine.join('\n'); };
+  $('#bt-go').onclick = () => {
+    const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    S.btTxs = Number($('#bt-txs').value); S.btDelay = Number($('#bt-delay').value);
+    startBacktest(wallets, S.btTxs, S.btDelay);
+  };
+  el.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.add, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list')));
 }
 
 // ----- trades -----
@@ -1529,6 +1633,7 @@ function connectEvents() {
     const j = JSON.parse(e.data);
     upsertJob(j);
     if (S.page === 'research') { if (j.kind === 'scout') render(); else renderJobs(); }
+    if (S.page === 'backtest' && j.kind === 'backtest') render();
     if (S.page === 'autopilot' && j.kind === 'scout') renderAutopilot($('#content'), true);
   });
   es.onerror = () => { $('#run-pill').innerHTML = '<span class="pill"><span class="dot bad"></span>Disconnected</span>'; };

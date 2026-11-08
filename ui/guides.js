@@ -11,7 +11,7 @@ window.GUIDE_CATS = {
 window.GUIDES = [
   {
     id: 'whats-new-06', cat: 'news', mins: 2, title: "What's new in Copybot 0.6",
-    teaser: 'The wallet scout finds wallets worth copying, and a Solscan holder check skips tokens a few wallets control.',
+    teaser: 'Backtesting, the wallet scout, and a Solscan holder check that skips tokens a few wallets control.',
     body: `
 <p>Finding good wallets was the hardest part of copy trading. Now Copybot can do it for you.</p>
 <h3>The wallet scout</h3>
@@ -22,6 +22,9 @@ window.GUIDES = [
 <li><b>Claude picks the most suitable ones</b> and explains why. Without Claude, the rules rank them.</li>
 </ol>
 <p>Try it on <b>Find wallets → Find wallets for me</b>. It takes 5–15 minutes.</p>
+<h3>Backtest</h3>
+<p>The new <b>Backtest</b> page answers "what would copying these wallets have made?" It replays up to 5 wallets' real trades with your current settings, buying a little higher and selling a little lower than they did (you always trade after them). You get the total profit, win rate, worst dip, a chart and every trade. There's a <b>Backtest</b> button next to wallets on the Wallets and Find wallets pages too.</p>
+<p class="tip">A wallet that made money for itself can still lose money for you, because you buy after it. Backtest before you copy.</p>
 <h3>Solscan holder check</h3>
 <p>Add a Solscan API key (Settings → Connection) and Copybot checks who owns each token before buying. It skips tokens that one wallet, or a small group, controls. Claude sees the same numbers when it decides. Change the limits in Settings → Token filters.</p>
 <h3>With the autopilot</h3>
@@ -86,6 +89,7 @@ window.GUIDES = [
 <p>Copy trading is only as good as the wallets you copy. A wallet that looks amazing for one week is often just lucky, or is a bot you can't keep up with.</p>
 <h3>Where to look</h3>
 <ul>
+<li><b>Backtest first:</b> before copying a wallet, run it on the Backtest page. It shows what copying it would have made <i>for you</i>, after the price you lose by trading later.</li>
 <li><b>Find wallets → Find wallets for me:</b> the easiest way. Copybot picks tokens that pumped recently, finds their early buyers, checks each wallet's record, and Claude (or the rules) picks the best ones.</li>
 <li><b>Find wallets → Discover early buyers:</b> paste 3–5 tokens that pumped recently. Wallets that were early on <i>several</i> of them rank highest.</li>
 <li><b>Markets → Top traders</b> for a token (needs a free DexCheck key), with a <b>Copy</b> button.</li>

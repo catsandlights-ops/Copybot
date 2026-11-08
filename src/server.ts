@@ -23,6 +23,8 @@ import { getSolUsd } from './market';
 import { marketSkipReason, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
+import { runBacktest } from './backtest';
+import { quoteSell } from './jupiter';
 import { passesBasics, pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
@@ -110,7 +112,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover' | 'scout';
+  kind: 'analyze' | 'discover' | 'scout' | 'backtest';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -749,6 +751,46 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         reports.push(score(w, swaps));
       }
       return reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/jobs/backtest') {
+    const b = await readBody(req);
+    const wallets = addressList(b.wallets, 5, 'wallet address');
+    const txs = Math.min(2000, Math.max(100, Number(b.txs) || 600));
+    const delayPct = Math.min(50, Math.max(0, Number.isFinite(Number(b.delayPct)) ? Number(b.delayPct) : 5));
+    const job = addJob('backtest', { wallets, txs, delayPct }, async (progress) => {
+      const conn = makeConnection();
+      const swaps = [];
+      const stats = { read: 0, failed: 0 };
+      for (const [i, w] of wallets.entries()) {
+        swaps.push(
+          ...(await fetchSwaps(
+            conn,
+            w,
+            txs,
+            (n, t) => {
+              if (n % 25 === 0 || n === t) progress(`Wallet ${i + 1}/${wallets.length}: reading transaction ${n} of ${t}`);
+            },
+            { tries: 5, stats },
+          )),
+        );
+      }
+      // Your current settings; wallets you don't copy yet use size ×1 and no budget.
+      const cfg = structuredClone(engine.cfg);
+      for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
+      const opts = { delayPct, feeSol: 0.0002 };
+      const first = runBacktest(swaps, cfg, opts);
+      // Price what would still be held today.
+      const marks = new Map<string, number | null>();
+      for (const [i, o] of first.open.slice(0, 25).entries()) {
+        progress(`Pricing open positions (${i + 1}/${Math.min(25, first.open.length)})…`);
+        const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
+        const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
+        marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+      }
+      return { ...runBacktest(swaps, cfg, opts, marks), unreadable: stats.failed, read: stats.read, settings: { delayPct, txs, sizing: cfg.buy.sizing, fixedSol: cfg.buy.fixedSol, percentOfTarget: cfg.buy.percentOfTarget, copySells: cfg.sell.copySells } };
     });
     return send(res, 200, job);
   }
