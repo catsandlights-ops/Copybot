@@ -12,7 +12,8 @@ const path = require('node:path');
 
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 const PUBLIC_KEY = crypto.createPublicKey(fs.readFileSync(path.join(__dirname, 'update-public-key.pem'), 'utf8'));
-const pkg = require('../package.json');
+
+class BadSignature extends Error {}
 
 let state = { state: 'idle', currentVersion: app.getVersion() };
 let verifiedFile = null;
@@ -23,12 +24,32 @@ function setState(s) {
   onState(state);
 }
 
+/**
+ * The GitHub repo updates come from. Read from app-update.yml, the same file electron-updater
+ * uses to find updates. (package.json's "build" section is stripped from the installed app.)
+ */
+function feedRepo() {
+  const yml = fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8');
+  const owner = /^owner:\s*([\w.-]+)\s*$/m.exec(yml)?.[1];
+  const repo = /^repo:\s*([\w.-]+)\s*$/m.exec(yml)?.[1];
+  if (!owner || !repo) throw new Error('update source is not configured in app-update.yml');
+  return { owner, repo };
+}
+
 /** Where the .sig for a downloaded installer lives (next to the installer in the release). */
 function signatureUrl(info) {
   const file = info.files?.[0]?.url || info.path;
+  if (!/^[\w.-]+$/.test(file) || !/^[\w.-]+$/.test(info.version)) throw new Error('unexpected update file name');
   if (process.env.COPYBOT_UPDATE_URL) return `${process.env.COPYBOT_UPDATE_URL.replace(/\/$/, '')}/${file}.sig`;
-  const pub = pkg.build.publish;
-  return `https://github.com/${pub.owner}/${pub.repo}/releases/download/v${info.version}/${file}.sig`;
+  const { owner, repo } = feedRepo();
+  return `https://github.com/${owner}/${repo}/releases/download/v${info.version}/${file}.sig`;
+}
+
+/** Throws BadSignature if the file isn't signed by us, or Error if it couldn't be checked. */
+async function verifyDownload(file, info) {
+  const sig = await fetchSignature(signatureUrl(info));
+  if (!signatureValid(file, sig)) throw new BadSignature('signature does not match');
+  return sig;
 }
 
 function signatureValid(file, sigB64) {
@@ -70,15 +91,19 @@ function init({ onStateChange, log }) {
   autoUpdater.on('update-downloaded', async (info) => {
     setState({ state: 'verifying', version: info.version });
     try {
-      const sig = await fetchSignature(signatureUrl(info));
-      if (!signatureValid(info.downloadedFile, sig)) throw new Error('signature does not match');
+      const sig = await verifyDownload(info.downloadedFile, info);
       verifiedFile = { path: info.downloadedFile, sig, version: info.version };
       setState({ state: 'ready', version: info.version, releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes.slice(0, 2000) : null });
     } catch (e) {
       verifiedFile = null;
       fs.rmSync(info.downloadedFile, { force: true });
-      log(`Update ${info.version} rejected: ${e.message}`);
-      setState({ state: 'rejected', version: info.version, message: `Update ${info.version} was rejected because its security signature is invalid. It was not installed.` });
+      log(`Update ${info.version} not installed: ${e.message}`);
+      if (e instanceof BadSignature) {
+        setState({ state: 'rejected', version: info.version, message: `Update ${info.version} was rejected because its security signature is invalid. It was not installed.` });
+      } else {
+        // Couldn't check (offline, GitHub hiccup…). Fail safe: don't install, try again later.
+        setState({ state: 'error', version: info.version, message: `Update ${info.version} couldn't be verified right now, so it wasn't installed. Copybot will try again later.`, detail: String(e.message).slice(0, 200) });
+      }
     }
   });
 
@@ -107,4 +132,4 @@ async function install(beforeQuit) {
   autoUpdater.quitAndInstall(true, true); // silent install, reopen Copybot afterwards
 }
 
-module.exports = { init, checkNow, install, getState: () => state };
+module.exports = { init, checkNow, install, getState: () => state, _test: { signatureUrl, verifyDownload, BadSignature } };
