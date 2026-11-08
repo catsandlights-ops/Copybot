@@ -303,7 +303,7 @@ export class BotEngine extends EventEmitter {
         if (late) return skip(late);
       }
     }
-    await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet);
+    await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
   }
 
   /** Our trade history (for per-wallet results). */
@@ -400,7 +400,7 @@ export class BotEngine extends EventEmitter {
     const p = this.state.positions[s.mint];
     if (!p || !p.sources.includes(s.wallet)) return;
     const fraction = s.tokenPost === 0n || s.tokenPre === 0n ? 1 : Number(s.tokenAmount) / Number(s.tokenPre);
-    await this.trader.sell(s.mint, fraction, `copied ${this.labels.get(s.wallet)} selling ${(fraction * 100).toFixed(0)}%`);
+    await this.trader.sell(s.mint, fraction, `copied ${this.labels.get(s.wallet)} selling ${(fraction * 100).toFixed(0)}%`, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
   }
 
   private async pollLoop(wallet: string, gen: number) {

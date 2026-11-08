@@ -113,6 +113,28 @@ export function holderSkipReason(h: { largestPct: number; top10Pct: number } | n
 }
 
 // ---------------------------------------------------------------------------
+// Copy gap: how much worse our fill was than the copied wallet's
+// ---------------------------------------------------------------------------
+
+/**
+ * Percent we lost to copying late on one trade (positive = worse for us).
+ * Buys: we paid more per token than they did. Sells: we got less per token.
+ */
+export function copyGapPct(side: 'buy' | 'sell', theirSol: number, theirRaw: bigint, ourSol: number, ourRaw: bigint): number | null {
+  if (theirRaw <= 0n || ourRaw <= 0n || theirSol <= 0 || ourSol <= 0) return null;
+  const ratio = ourSol / Number(ourRaw) / (theirSol / Number(theirRaw));
+  if (!Number.isFinite(ratio)) return null;
+  return side === 'buy' ? (ratio - 1) * 100 : (1 - ratio) * 100;
+}
+
+export const median = (xs: number[]) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+// ---------------------------------------------------------------------------
 // Circuit breaker: daily loss limit + pause after a losing streak
 // ---------------------------------------------------------------------------
 

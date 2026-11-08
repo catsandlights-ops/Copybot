@@ -163,3 +163,17 @@ test('walletRecords: our results per copied wallet, shared sells split', () => {
   assert.deepEqual(r.A, { trades: 1, closed: 2, wins: 1, pnlSol: 0.15000000000000002 });
   assert.deepEqual(r.B, { trades: 1, closed: 1, wins: 0, pnlSol: -0.05 });
 });
+
+test('copyGapPct: buys paying more and sells getting less are both positive (worse for us)', async () => {
+  const { copyGapPct, median } = await import('./rules');
+  // They paid 1 SOL for 1,000,000 raw; we paid 0.1 SOL for 90,000 raw → 11.1% more per token.
+  assert.ok(Math.abs(copyGapPct('buy', 1, 1_000_000n, 0.1, 90_000n)! - 11.111) < 0.01);
+  // They sold 1,000,000 raw for 2 SOL; we sold 100,000 raw for 0.19 SOL → 5% less.
+  assert.ok(Math.abs(copyGapPct('sell', 2, 1_000_000n, 0.19, 100_000n)! - 5) < 1e-9);
+  // We beat them (price dipped before we bought) → negative gap.
+  assert.ok(copyGapPct('buy', 1, 1_000_000n, 0.1, 110_000n)! < 0);
+  assert.equal(copyGapPct('buy', 1, 0n, 0.1, 5n), null);
+  assert.equal(median([5, 1, 3]), 3);
+  assert.equal(median([4, 1, 3, 2]), 2.5);
+  assert.equal(median([]), null);
+});

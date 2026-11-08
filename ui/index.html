@@ -765,13 +765,24 @@ async function sellPosition(mint, fraction) {
 
 // ----- wallets -----
 /** Your own results from copying each wallet, from the trade history in the current mode. */
+const medianOf = (xs) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b), m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+/** Your measured copy gap across all copied trades in this mode: { median, n }. */
+function measuredGap() {
+  const g = S.trades.filter((t) => t.mode === S.config.mode && typeof t.gapPct === 'number').map((t) => t.gapPct);
+  return { median: medianOf(g), n: g.length };
+}
 function walletStats() {
   const mode = S.config.mode, weekAgo = Date.now() - 7 * 86400_000;
   const out = {}, lastBuy = {};
-  const get = (a) => (out[a] ??= { buys: 0, sells: 0, wins: 0, pnl: 0, week: 0 });
+  const get = (a) => (out[a] ??= { buys: 0, sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [] });
   for (const t of [...S.trades].reverse()) { // oldest first
     if (t.mode !== mode) continue;
-    if (t.side === 'buy') { lastBuy[t.mint] = t.source; if (t.source) get(t.source).buys++; continue; }
+    if (t.side === 'buy') {
+      lastBuy[t.mint] = t.source;
+      if (t.source) { const w = get(t.source); w.buys++; if (typeof t.gapPct === 'number') w.gaps.push(t.gapPct); if (typeof t.lagSec === 'number') w.lags.push(t.lagSec); }
+      continue;
+    }
+    if (typeof t.gapPct === 'number' && t.sources?.length === 1) get(t.sources[0]).gaps.push(t.gapPct);
     const srcs = t.sources || (lastBuy[t.mint] ? [lastBuy[t.mint]] : []);
     for (const a of srcs) {
       const share = (t.pnl || 0) / srcs.length, w = get(a);
@@ -796,10 +807,11 @@ function renderWallets(el) {
     <div class="card">
       <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
       ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
-      <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
+      <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
           const held = S.status.positions.filter((p) => p.sources.includes(w.address)).length;
-          const st = stats[w.address] || { sells: 0, wins: 0, pnl: 0, week: 0 };
+          const st = stats[w.address] || { sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [] };
+          const gap = medianOf(st.gaps), lag = medianOf(st.lags);
           const losing = st.sells >= 5 && st.pnl < 0;
           return `<tr class="wallet-row">
             <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
@@ -808,6 +820,7 @@ function renderWallets(el) {
             <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
             <td class="r num">${st.sells ? Math.round((st.wins / st.sells) * 100) + '%' : '—'}</td>
             <td class="r num muted">${st.sells || '—'}</td>
+            <td class="r num ${gap == null ? 'muted' : gap > 10 ? 'neg' : ''}" title="${gap == null ? 'Measured on your next copied trades' : `Median of ${st.gaps.length} trades${lag != null ? `, ${lag.toFixed(1)} s behind them` : ''}`}">${gap == null ? '—' : `${gap > 0 ? '−' : '+'}${Math.abs(gap).toFixed(1)}%`}</td>
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
@@ -1030,7 +1043,7 @@ function renderBacktest(el) {
         <div class="stack">
           <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
           <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Copy-delay cost <span class="with-unit" style="width:120px"><input type="number" id="bt-delay" min="0" max="50" step="0.5" value="${S.btDelay ?? 5}"><span>%</span></span></label>
-          <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.</div>
+          <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.${(() => { const g = measuredGap(); return g.n >= 5 ? ` <b>Your measured gap: ${g.median.toFixed(1)}%</b> over ${g.n} trades. <a href="#" id="bt-use-gap">Use it</a>` : ''; })()}</div>
           <button class="btn primary" id="bt-go">Run backtest</button>
         </div>
       </div></div>
@@ -1039,6 +1052,8 @@ function renderBacktest(el) {
       : j.status === 'done' ? btResult(j)
       : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
       : `<div class="card"><div class="empty"><span class="spinner"></span><h3 style="margin-top:12px">Running the backtest…</h3>${esc(j.progress)}</div></div>`}`;
+  const ug = $('#bt-use-gap');
+  if (ug) ug.onclick = (e) => { e.preventDefault(); $('#bt-delay').value = Math.max(0, +measuredGap().median.toFixed(1)); };
   $('#bt-mine').onclick = () => { $('#bt-wallets').value = mine.join('\n'); };
   $('#bt-go').onclick = () => {
     const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
