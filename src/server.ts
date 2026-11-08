@@ -25,7 +25,7 @@ const UI_FILE = process.env.COPYBOT_UI || path.join(path.dirname(fileURLToPath(i
 const FONTS = new Set(['press-start-2p.woff2', 'vt323.woff2']); // the only files served besides the page
 
 // ---------- display preferences (theme). Kept apart from config.json so changing them never restarts the bot ----------
-const THEMES = ['retro', 'modern'] as const;
+const THEMES = ['enchanted', 'modern'] as const;
 type UiPrefs = { theme: (typeof THEMES)[number] };
 function loadUiPrefs(): UiPrefs {
   try {
@@ -34,7 +34,7 @@ function loadUiPrefs(): UiPrefs {
   } catch {
     /* defaults */
   }
-  return { theme: 'retro' };
+  return { theme: 'enchanted' };
 }
 let uiPrefs = loadUiPrefs();
 export const TOKEN = crypto.randomBytes(32).toString('base64url');
