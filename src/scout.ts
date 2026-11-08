@@ -43,9 +43,11 @@ export function pickTokens(rows: PoolRow[], now: number, max = 5): ScoutToken[] 
   const ok = rows
     .filter((r) => !SKIP_MINTS.has(r.mint))
     .filter((r) => (r.change.h24 ?? 0) >= 30)
-    .filter((r) => r.createdAt && now - r.createdAt >= 3 * 3_600_000 && now - r.createdAt <= 7 * 86_400_000)
+    .filter((r) => r.createdAt && now - r.createdAt >= 3 * 3_600_000 && now - r.createdAt <= 3 * 86_400_000)
     .filter((r) => (r.liquidityUsd ?? 0) >= 20_000 && (r.volume24h ?? 0) >= 50_000)
-    .filter((r) => (r.buys24h ?? 0) + (r.sells24h ?? 0) <= 40_000)
+    // Early buyers are found by reading the token's history back to its launch, so skip tokens with
+    // too much history to reach the start (estimated from the last 24h of trading and its age).
+    .filter((r) => ((r.buys24h ?? 0) + (r.sells24h ?? 0)) * Math.max(1, (now - r.createdAt!) / 86_400_000) <= 25_000)
     .sort((a, b) => (b.change.h24 ?? 0) - (a.change.h24 ?? 0));
   for (const r of ok) {
     if (seen.has(r.mint)) continue;
@@ -75,6 +77,9 @@ export function pickCandidates(early: Candidate[], topTraders: Map<string, strin
     .sort((a, b) => score(b) - score(a))
     .slice(0, max);
 }
+
+/** Hard minimum for any wallet the scout adds or suggests, whoever picked it (Claude or the rules). */
+export const passesBasics = (r: Report) => ruleScore(r) > 0;
 
 /** Rule-based quality score, used to rank when Claude isn't available. Negative = don't copy. */
 export function ruleScore(r: Report): number {

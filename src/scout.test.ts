@@ -20,8 +20,10 @@ test('pickTokens: pumped, 3h–7d old, liquid, not too busy; best first; no dupl
     row({ mint: 'FLAT', change: { h1: 0, h24: 10 } }),
     row({ mint: 'BABY', createdAt: now - 1 * H }),
     row({ mint: 'OLD', createdAt: now - 30 * 24 * H }),
+    row({ mint: 'FOURDAYS', createdAt: now - 96 * H }),
+    row({ mint: 'LONGBUSY', createdAt: now - 60 * H, buys24h: 6000, sells24h: 5000 }), // ~27k txs over its life
     row({ mint: 'THIN', liquidityUsd: 5_000 }),
-    row({ mint: 'BUSY', buys24h: 60_000 }),
+    row({ mint: 'BUSY', buys24h: 30_000 }),
     row({ mint: 'NODATE', createdAt: null }),
     row({ mint: 'So11111111111111111111111111111111111111112' }),
   ], now);
@@ -65,4 +67,11 @@ test('rulePicks ranks the best and explains why', () => {
   const p = rulePicks([rep({ wallet: 'ok' }), rep({ wallet: 'great', winRate: 0.7, roiPct: 150 }), rep({ wallet: 'bot', tradesPerDay: 900 })], 3);
   assert.deepEqual(p.map((x) => x.address), ['great', 'ok']);
   assert.match(p[0].reason, /70% win rate on 25 closed trades/);
+});
+
+test('passesBasics: the hard floor for any scout pick', async () => {
+  const { passesBasics } = await import('./scout');
+  assert.equal(passesBasics(rep({})), true);
+  // The wallet the first real scout run surfaced: losing money and trading 269 times a day.
+  assert.equal(passesBasics(rep({ closedTokens: 10, winRate: 0.4, realizedPnlSol: -1.44, roiPct: -6, tradesPerDay: 269, medianHoldMin: 72 })), false);
 });

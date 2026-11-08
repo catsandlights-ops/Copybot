@@ -23,7 +23,7 @@ import { getSolUsd } from './market';
 import { marketSkipReason, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
-import { pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
+import { passesBasics, pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -214,7 +214,7 @@ const scoutView = (r: ScoutReport): ai.CandidateView => ({
 /** Wallets the AI may add: the ones the user analyzed or discovered, plus the latest scout results. */
 function aiCandidates(): ai.CandidateView[] {
   const out = new Map<string, ai.CandidateView>();
-  for (const r of lastScout?.reports ?? []) if (r.swaps > 0) out.set(r.wallet, scoutView(r));
+  for (const r of lastScout?.reports ?? []) if (passesBasics(r)) out.set(r.wallet, scoutView(r));
   for (const j of jobs) {
     if (j.status !== 'done') continue;
     if (j.kind === 'scout') continue; // covered by lastScout
@@ -319,7 +319,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding early buyers…`);
     perMint.set(
       t.mint,
-      await earlyBuyers(conn, t.mint, 120, 25, (w) => notes.push(`${t.symbol}: ${w.replace(/^⚠\s*/, '').replace(/ Use --pages to go deeper\./, '')}`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
+      await earlyBuyers(conn, t.mint, 120, 30, (w) => notes.push(`${t.symbol}: ${w.replace(/^⚠\s*/, '').replace(/ Use --pages to go deeper\./, '')}`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
     );
   }
   const top = new Map<string, string[]>();
@@ -336,7 +336,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
 
   const reports: ScoutReport[] = [];
   for (const [i, c] of cands.entries()) {
-    const swaps = await fetchSwaps(conn, c.wallet, 300, (n, t) => {
+    const swaps = await fetchSwaps(conn, c.wallet, 500, (n, t) => {
       if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
     }).catch(() => null);
     if (swaps) reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn });
@@ -349,14 +349,18 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   const free = Math.max(0, cfg.ai.maxWallets - cfg.wallets.filter((w) => w.enabled).length);
   const max = autoAdd ? Math.min(cfg.ai.scoutMaxPicks, free) : cfg.ai.scoutMaxPicks;
   if (autoAdd && !free) notes.push(`You already copy ${cfg.ai.maxWallets} wallets (the autopilot's maximum), so nothing new was added.`);
-  let picks = rulePicks(reports, max);
+  // Only wallets that pass the basic checks can be picked, by Claude or by the rules.
+  const eligible = reports.filter(passesBasics);
+  let picks = rulePicks(eligible, max);
   let pickedBy: ScoutResult['pickedBy'] = 'rules';
-  let summary = picks.length ? 'Ranked by win rate, return and number of trades.' : 'None of the wallets passed the basic checks (10+ closed trades, profitable, not a bot, not too fast).';
-  if (max > 0 && hasSecret('ANTHROPIC_API_KEY')) {
+  let summary = picks.length
+    ? 'Ranked by win rate, return and number of trades.'
+    : `None of the ${reports.length} wallets checked passed the basics: 10+ finished trades, profitable overall, not a bot, and not selling within 2 minutes. Most wallets that catch one pump don't keep winning.`;
+  if (max > 0 && eligible.length && hasSecret('ANTHROPIC_API_KEY')) {
     progress('Claude is choosing…');
     const recs = walletRecords(engine.readTrades(), cfg.mode);
     const current = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
-    const r = await ai.pickWallets(cfg, current, reports.filter((x) => x.swaps > 0).map(scoutView), max);
+    const r = await ai.pickWallets(cfg, current, eligible.map(scoutView), max);
     if (r) {
       picks = r.picks;
       pickedBy = 'claude';
