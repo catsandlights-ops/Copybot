@@ -131,6 +131,15 @@ td.r, th.r { text-align: right; }
 .lv-error .dot { background: var(--red); } .lv-warn .dot { background: var(--amber); } .lv-system .dot { background: var(--muted); }
 .lv-error { color: var(--red); }
 
+/* exit-plan chips */
+.plan { white-space: normal; min-width: 170px; max-width: 300px; line-height: 1.9; }
+.note.bad { white-space: nowrap; }
+.chip { display: inline-block; white-space: nowrap; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); margin: 1px 0; }
+.chip.done { background: var(--green-bg); color: var(--green); }
+.chip.trail { background: var(--amber-bg); color: var(--amber); }
+.wallet-num { width: 96px; height: 30px; text-align: right; }
+.wallet-row .label-input { min-width: 120px; }
+
 /* forms */
 .field { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .field:last-child { border-bottom: 0; }
@@ -196,7 +205,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; font-family:
 @keyframes up { from { transform: translateY(8px); opacity: 0; } }
 
 td.r { white-space: nowrap; }
-@media (max-width: 1400px) {
+@media (max-width: 1640px) {
   .two { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
@@ -438,6 +447,13 @@ td.r { white-space: nowrap; }
 :root[data-theme="arcade"] .theme-tile .sw i { border-radius: 0; border: 2px solid var(--edge); box-shadow: var(--bevel-sm); }
 :root[data-theme="arcade"] .theme-tile b { font-family: var(--px-font); font-size: 10px; font-weight: 400; text-transform: uppercase; margin-bottom: 6px; color: #fff; }
 :root[data-theme="arcade"] .theme-tile span { font-size: 18px; color: var(--muted); }
+
+/* ---- exit-plan chips + wallet inputs ---- */
+:root[data-theme="arcade"] .chip { border-radius: 0; font-size: 16px; padding: 0 6px; border: 2px solid var(--edge); background: var(--panel-2); color: var(--muted); }
+:root[data-theme="arcade"] .chip.done { background: var(--r-green); color: var(--edge); }
+:root[data-theme="arcade"] .chip.trail { background: var(--r-yellow); color: var(--edge); }
+:root[data-theme="arcade"] .wallet-num { height: 32px; font-size: 19px; width: 100px; }
+:root[data-theme="arcade"] .plan { line-height: 1.6; }
 
 /* ---- text sitting directly on the background ---- */
 :root[data-theme="arcade"] .content > .row, :root[data-theme="arcade"] .content > .row .muted { color: var(--text); text-shadow: 2px 2px 0 var(--edge); }
@@ -686,9 +702,17 @@ async function installUpdate() {
   if (ok) act(() => api('POST', '/api/update/install'));
 }
 
+async function resumeBuying() {
+  const ok = await confirmModal({ title: 'Resume buying now?', confirm: 'Resume buying',
+    body: '<p>The bot paused new buys to protect your balance. Resuming turns the daily loss limit off for the rest of today and ends the cool-down.</p>' });
+  if (ok) act(() => api('POST', '/api/guard/resume'), 'Buying resumed');
+}
+
 function banners() {
   const out = [];
   const c = S.connection, cfg = S.config;
+  const g = S.status?.guard;
+  if (g?.blocked) out.push(`<div class="banner danger"><div><b>New buys are paused.</b> ${esc(g.blocked)} Sells, stop-losses and take-profits keep running.</div><button class="btn sm" onclick="resumeBuying()">Resume buying</button></div>`);
   if (cfg.mode === 'paper') out.push(`<div class="banner info"><div><b>Paper trading.</b> The bot simulates every trade with real prices but never spends money. Run it like this for a few days before going live.</div></div>`);
   else if (!c.hasPrivateKey) out.push(`<div class="banner danger"><div><b>Live mode needs a trading wallet.</b> Add one in Settings → Connection.</div><button class="btn sm" onclick="go('settings')">Open settings</button></div>`);
   if (c.usingPublicRpc) out.push(`<div class="banner warn"><div><b>You're on the free public RPC.</b> It's rate-limited and will miss trades. Add a free Helius key for reliable copying.</div><button class="btn sm" onclick="go('settings')">Add RPC</button></div>`);
@@ -705,13 +729,14 @@ function renderDashboard(el) {
   const expPct = Math.min(100, (st.exposureSol / cfg.risk.maxTotalExposureSol) * 100 || 0);
 
   const positions = n ? `<div class="tbl-wrap"><table>
-      <thead><tr><th>Token</th><th>Copied from</th><th class="r">Cost</th><th class="r">Value</th><th class="r">PnL</th><th class="r">Held</th><th></th></tr></thead>
+      <thead><tr><th>Token</th><th>Copied from</th><th class="r">Cost</th><th class="r">Value</th><th class="r">PnL</th><th>Exit plan</th><th class="r">Held</th><th></th></tr></thead>
       <tbody>${st.positions.map((p) => `<tr>
         <td>${tokenLink(p.mint)}</td>
         <td class="muted">${esc(p.label.join(', '))}</td>
         <td class="r num">${sol(p.costSol)}</td>
         <td class="r num">${p.valueSol != null ? sol(p.valueSol) : '<span class="muted">…</span>'}</td>
         <td class="r num ${cls(p.pnlPct)}">${pct(p.pnlPct)}</td>
+        <td class="plan">${exitPlan(p)}</td>
         <td class="r muted num">${ago(p.openedAt)}</td>
         <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button></td>
       </tr>`).join('')}</tbody></table></div>`
@@ -734,6 +759,22 @@ function renderDashboard(el) {
   el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
   const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
 }
+/** What the staged exits have done for a position, and what happens next. */
+function exitPlan(p) {
+  const x = S.config.exits, done = new Set(p.steps || []);
+  const chips = [];
+  const step = (id, on, label) => { if (on) chips.push(`<span class="chip ${done.has(id) ? 'done' : ''}">${done.has(id) ? '✓ ' : ''}${label}</span>`); };
+  step('recover', x.recoverCostAtPct > 0, `cost back +${x.recoverCostAtPct}%`);
+  step('tp1', x.tp1AtPct > 0, `TP1 +${x.tp1AtPct}%`);
+  step('tp2', x.tp2AtPct > 0, `TP2 +${x.tp2AtPct}%`);
+  const peakGain = ((p.peakMultiple || 1) - 1) * 100;
+  if (x.trailingStopPct > 0 && peakGain >= x.trailingAfterPct) {
+    const floor = ((p.peakMultiple || 1) * (1 - x.trailingStopPct / 100) - 1) * 100;
+    chips.push(`<span class="chip trail" title="Peak +${peakGain.toFixed(0)}%. Sells everything if it falls to ${pct(floor)}.">trailing: sells below ${pct(floor)}</span>`);
+  }
+  return chips.join(' ') || '<span class="muted">stop-loss only</span>';
+}
+
 function feedItem(l) {
   return `<div class="feed-item lv-${esc(l.level)} ${l.level === 'skip' ? 'skip' : ''}"><span class="t">${time(l.t)}</span><span class="dot"></span><span>${esc(l.msg.trim())}</span></div>`;
 }
@@ -748,8 +789,26 @@ async function sellPosition(mint, fraction) {
 }
 
 // ----- wallets -----
+/** Your own results from copying each wallet, from the trade history in the current mode. */
+function walletStats() {
+  const mode = S.config.mode, weekAgo = Date.now() - 7 * 86400_000;
+  const out = {}, lastBuy = {};
+  const get = (a) => (out[a] ??= { buys: 0, sells: 0, wins: 0, pnl: 0, week: 0 });
+  for (const t of [...S.trades].reverse()) { // oldest first
+    if (t.mode !== mode) continue;
+    if (t.side === 'buy') { lastBuy[t.mint] = t.source; if (t.source) get(t.source).buys++; continue; }
+    const srcs = t.sources || (lastBuy[t.mint] ? [lastBuy[t.mint]] : []);
+    for (const a of srcs) {
+      const share = (t.pnl || 0) / srcs.length, w = get(a);
+      w.sells++; w.pnl += share; if (share > 0) w.wins++; if (t.t >= weekAgo) w.week += share;
+    }
+  }
+  return out;
+}
+
 function renderWallets(el) {
   const ws = S.config.wallets;
+  const stats = walletStats();
   el.innerHTML = `
     <div class="card" style="margin-bottom:16px"><div class="card-b">
       <form class="row" id="add-wallet">
@@ -761,14 +820,22 @@ function renderWallets(el) {
     </div></div>
     <div class="card">
       <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
-      ${ws.length ? `<div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Positions</th><th></th></tr></thead><tbody>
+      ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
+      <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
           const held = S.status.positions.filter((p) => p.sources.includes(w.address)).length;
+          const st = stats[w.address] || { sells: 0, wins: 0, pnl: 0, week: 0 };
+          const losing = st.sells >= 5 && st.pnl < 0;
           return `<tr class="wallet-row">
             <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
             <td><input class="label-input" data-label="${i}" value="${esc(w.label || '')}" placeholder="Add a nickname"></td>
             <td>${walletLink(w.address)}</td>
+            <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
+            <td class="r num">${st.sells ? Math.round((st.wins / st.sells) * 100) + '%' : '—'}</td>
+            <td class="r num muted">${st.sells || '—'}</td>
             <td class="r num muted">${held || '—'}</td>
+            <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
+            <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
             <td class="r" style="white-space:nowrap"><button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
@@ -782,6 +849,8 @@ function renderWallets(el) {
   };
   el.querySelectorAll('[data-toggle]').forEach((c) => (c.onchange = () => saveWallets(ws.map((w, i) => (i == c.dataset.toggle ? { ...w, enabled: c.checked } : w)))));
   el.querySelectorAll('[data-label]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.label ? { ...w, label: inp.value.trim() } : w)), 'Saved')));
+  el.querySelectorAll('[data-mult]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.mult ? { ...w, sizeMultiplier: Number(inp.value) } : w)), 'Saved')));
+  el.querySelectorAll('[data-budget]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.budget ? { ...w, maxExposureSol: Number(inp.value) } : w)), 'Saved')));
   el.querySelectorAll('[data-remove]').forEach((b) => (b.onclick = async () => {
     const w = ws[b.dataset.remove];
     if (await confirmModal({ title: `Stop copying ${esc(w.label || short(w.address))}?`, body: '<p>Open positions from this wallet stay open, but its sells will no longer be copied.</p>', confirm: 'Remove' }))
@@ -910,11 +979,27 @@ const FIELDS = [
     { k: 'buy.minSol', label: 'Smallest buy', unit: 'SOL' },
     { k: 'buy.maxSol', label: 'Largest buy', unit: 'SOL' },
     { k: 'buy.minTargetBuySol', label: 'Ignore their buys under', unit: 'SOL', help: 'Skips their tiny test buys.' },
+    { k: 'risk.maxPriceDriftPct', label: "Don't chase", unit: '% above', help: 'Skip the buy if the price is already this much higher than what they paid. 0 = off.' },
   ]},
-  { title: 'Selling', desc: 'When to get out.', fields: [
+  { title: 'Selling', desc: 'Take profits in steps, and protect gains with a trailing stop. Percentages are gains over your entry price (+100% = 2x).', fields: [
     { k: 'sell.copySells', label: 'Copy their sells', type: 'toggle', help: 'If they sell half their tokens, you sell half of yours.' },
     { k: 'risk.stopLossPct', label: 'Stop-loss', unit: '% down', help: 'Sell everything if a position falls this much.' },
-    { k: 'risk.takeProfitPct', label: 'Take-profit', unit: '% up', help: 'Sell everything if a position rises this much.' },
+    { k: 'exits.recoverCostAtPct', label: 'Take back my cost at', unit: '% up', help: 'Sell just enough to get the SOL you put in back out (at 2x that is half). The rest rides for free. 0 = off.' },
+    { k: 'exits.tp1AtPct', label: 'Take-profit 1 at', unit: '% up', help: '0 = off.' },
+    { k: 'exits.tp1SellPct', label: 'Take-profit 1 sells', unit: '% of rest' },
+    { k: 'exits.tp2AtPct', label: 'Take-profit 2 at', unit: '% up', help: 'Must be higher than take-profit 1. 0 = off.' },
+    { k: 'exits.tp2SellPct', label: 'Take-profit 2 sells', unit: '% of rest' },
+    { k: 'exits.trailingAfterPct', label: 'Start trailing stop after', unit: '% up', help: 'Once a position has been up this much, the trailing stop watches it.' },
+    { k: 'exits.trailingStopPct', label: 'Trailing stop', unit: '% drop', help: 'Then sell everything if it falls this much from its highest point. 0 = off.' },
+    { k: 'risk.takeProfitPct', label: 'Sell everything at', unit: '% up', help: 'Optional: close the whole position at this gain. 0 = off (use the steps above).' },
+  ]},
+  { title: 'Token filters', desc: 'Market checks before every buy, using Dexscreener data. 0 turns a filter off.', fields: [
+    { k: 'filters.minLiquidityUsd', label: 'Minimum liquidity', unit: 'USD', step: 1000, help: 'Thin pools mean big slippage: often -20% to -50% on the way out. Pump.fun tokens still on their bonding curve have no pool figure; the buy-then-sell check covers them.' },
+    { k: 'filters.maxTradePctOfLiquidity', label: 'Max buy size vs pool', unit: '% of pool', help: 'Skip if your buy would be this big a share of the pool. It would move the price against you.' },
+    { k: 'filters.minMarketCapUsd', label: 'Minimum market cap', unit: 'USD', step: 1000 },
+    { k: 'filters.maxMarketCapUsd', label: 'Maximum market cap', unit: 'USD', step: 1000 },
+    { k: 'filters.minTokenAgeMin', label: 'Minimum token age', unit: 'min', step: 1, help: 'Skip tokens whose first pool is newer than this.' },
+    { k: 'filters.skipIfNoMarketData', label: 'Skip tokens with no market data', type: 'toggle', help: "Brand-new launches may not be listed yet. On = skip them, off = only the other safety checks apply." },
   ]},
   { title: 'Limits', desc: 'Caps that protect your balance.', fields: [
     { k: 'risk.maxOpenPositions', label: 'Max tokens held at once', unit: 'tokens', step: 1 },
@@ -922,6 +1007,9 @@ const FIELDS = [
     { k: 'risk.skipIfAlreadyHolding', label: "Don't buy more of a token you hold", type: 'toggle' },
     { k: 'risk.maxSignalAgeSec', label: 'Ignore trades older than', unit: 'sec', step: 1, help: "If the bot sees a trade late, the price has probably moved." },
     { k: 'risk.solReserve', label: 'Always keep in wallet', unit: 'SOL', help: 'Left untouched to pay transaction fees.' },
+    { k: 'risk.dailyLossLimitSol', label: 'Daily loss limit', unit: 'SOL', help: 'Stop new buys for the rest of the day after losing this much. Sells and exits keep running. 0 = off.' },
+    { k: 'risk.pauseAfterLosses', label: 'Pause after losses in a row', unit: 'trades', step: 1, help: 'A cool-down after a losing streak. 0 = off.' },
+    { k: 'risk.pauseMinutes', label: 'Pause length', unit: 'min', step: 1 },
   ]},
   { title: 'Safety checks', desc: 'Run before every buy to avoid scams and illiquid tokens.', fields: [
     { k: 'safety.slippageBps', label: 'Max slippage', unit: '%', toView: (v) => v / 100, fromView: (v) => Math.round(v * 100), help: 'How much worse than the quoted price a trade may fill.' },

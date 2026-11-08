@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import { PublicKey } from '@solana/web3.js';
 
-export type WalletCfg = { address: string; label: string; enabled: boolean };
+/** sizeMultiplier scales every buy copied from this wallet; maxExposureSol caps SOL in its positions (0 = no cap). */
+export type WalletCfg = { address: string; label: string; enabled: boolean; sizeMultiplier: number; maxExposureSol: number };
 
 export type Config = {
   mode: 'paper' | 'live';
@@ -16,6 +17,29 @@ export type Config = {
     skipIfAlreadyHolding: boolean;
     maxSignalAgeSec: number;
     solReserve: number;
+    maxPriceDriftPct: number; // don't chase: skip if our price is this much above the copied wallet's entry (0 = off)
+    dailyLossLimitSol: number; // stop new buys for the day after losing this much (0 = off)
+    pauseAfterLosses: number; // pause new buys after this many losing sells in a row (0 = off)
+    pauseMinutes: number;
+  };
+  /** Staged exits. Percentages are gains over our entry price (100 = 2x). 0 turns a step off. */
+  exits: {
+    recoverCostAtPct: number; // sell enough to get the original SOL back
+    tp1AtPct: number;
+    tp1SellPct: number; // % of what's left
+    tp2AtPct: number;
+    tp2SellPct: number;
+    trailingAfterPct: number; // trailing stop arms once the position has been up this much
+    trailingStopPct: number; // then sells everything if it falls this much from its peak
+  };
+  /** Market-data filters (Dexscreener). 0 turns a filter off. */
+  filters: {
+    minLiquidityUsd: number;
+    maxTradePctOfLiquidity: number;
+    minMarketCapUsd: number;
+    maxMarketCapUsd: number;
+    minTokenAgeMin: number;
+    skipIfNoMarketData: boolean;
   };
   safety: {
     slippageBps: number;
@@ -38,11 +62,17 @@ export const DEFAULT_CONFIG: Config = {
     maxOpenPositions: 5,
     maxTotalExposureSol: 1,
     stopLossPct: 40,
-    takeProfitPct: 150,
+    takeProfitPct: 0,
     skipIfAlreadyHolding: true,
     maxSignalAgeSec: 30,
     solReserve: 0.05,
+    maxPriceDriftPct: 15,
+    dailyLossLimitSol: 0.3,
+    pauseAfterLosses: 4,
+    pauseMinutes: 60,
   },
+  exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30 },
+  filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false },
   safety: {
     slippageBps: 300,
     maxRoundTripLossPct: 12,
@@ -65,16 +95,32 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'risk.maxOpenPositions': [1, 100, 'Max tokens held at once'],
   'risk.maxTotalExposureSol': [0.001, 10_000, 'Max SOL in open positions'],
   'risk.stopLossPct': [1, 100, 'Stop-loss'],
-  'risk.takeProfitPct': [1, 100_000, 'Take-profit'],
+  'risk.takeProfitPct': [0, 100_000, 'Sell everything at'],
   'risk.maxSignalAgeSec': [1, 600, 'Ignore trades older than'],
   'risk.solReserve': [0, 100, 'Always keep in wallet'],
+  'risk.maxPriceDriftPct': [0, 1_000, "Don't chase"],
+  'risk.dailyLossLimitSol': [0, 10_000, 'Daily loss limit'],
+  'risk.pauseAfterLosses': [0, 50, 'Pause after losses in a row'],
+  'risk.pauseMinutes': [1, 10_080, 'Pause length'],
+  'exits.recoverCostAtPct': [0, 100_000, 'Take back my cost at'],
+  'exits.tp1AtPct': [0, 100_000, 'Take-profit 1 at'],
+  'exits.tp1SellPct': [1, 100, 'Take-profit 1 sell amount'],
+  'exits.tp2AtPct': [0, 100_000, 'Take-profit 2 at'],
+  'exits.tp2SellPct': [1, 100, 'Take-profit 2 sell amount'],
+  'exits.trailingAfterPct': [0, 100_000, 'Arm trailing stop after'],
+  'exits.trailingStopPct': [0, 99, 'Trailing stop'],
+  'filters.minLiquidityUsd': [0, 1e10, 'Minimum liquidity'],
+  'filters.maxTradePctOfLiquidity': [0, 100, 'Max trade size vs liquidity'],
+  'filters.minMarketCapUsd': [0, 1e13, 'Minimum market cap'],
+  'filters.maxMarketCapUsd': [0, 1e13, 'Maximum market cap'],
+  'filters.minTokenAgeMin': [0, 525_600, 'Minimum token age'],
   'safety.slippageBps': [10, 5_000, 'Max slippage', (v) => `${v / 100}%`],
   'safety.maxRoundTripLossPct': [0.1, 100, 'Max buy-then-sell loss'],
   'execution.priorityFeeMaxLamports': [0, 50_000_000, 'Max priority fee', (v) => `${v / 1e9} SOL`],
   'monitor.pollIntervalSec': [1, 300, 'Backup check interval'],
   'monitor.exitCheckIntervalSec': [5, 3_600, 'Stop-loss check interval'],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
@@ -136,6 +182,10 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
     else if (v !== undefined) fail(`Invalid value for ${path}`);
   }
   if (out.buy.minSol > out.buy.maxSol) fail('Smallest buy cannot be larger than largest buy');
+  const f = out.filters;
+  if (f.maxMarketCapUsd > 0 && f.minMarketCapUsd > f.maxMarketCapUsd) fail('Minimum market cap cannot be above the maximum');
+  const x = out.exits;
+  if (x.tp1AtPct > 0 && x.tp2AtPct > 0 && x.tp2AtPct <= x.tp1AtPct) fail('Take-profit 2 must be higher than take-profit 1');
 
   const wallets = Array.isArray(input?.wallets) ? input.wallets : [];
   if (wallets.length > 100) fail('At most 100 wallets');
@@ -147,7 +197,18 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
     }
     if (seen.has(w.address)) continue;
     seen.add(w.address);
-    out.wallets.push({ address: w.address, label: cleanLabel(w.label) || `trader-${out.wallets.length + 1}`, enabled: w.enabled !== false });
+    const num = (v: unknown, min: number, max: number, def: number, name: string) => {
+      if (v === undefined) return def;
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) fail(`${name} must be between ${min} and ${max}`);
+      return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def;
+    };
+    out.wallets.push({
+      address: w.address,
+      label: cleanLabel(w.label) || `trader-${out.wallets.length + 1}`,
+      enabled: w.enabled !== false,
+      sizeMultiplier: num(w.sizeMultiplier, 0.1, 10, 1, 'Size multiplier'),
+      maxExposureSol: num(w.maxExposureSol, 0, 10_000, 0, 'Wallet budget'),
+    });
   }
 
   const bl = Array.isArray(input?.safety?.blacklist) ? input.safety.blacklist : [];
@@ -166,7 +227,11 @@ export function loadConfig(): Config {
     return structuredClone(DEFAULT_CONFIG);
   }
   try {
-    return sanitizeConfig(JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')), false);
+    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+    // Upgrade from before staged exits: the old all-or-nothing take-profit default (150%) would fire
+    // before the new steps, so turn it off. A value the user chose themselves is kept.
+    if (!raw.exits && raw.risk?.takeProfitPct === 150) raw.risk.takeProfitPct = 0;
+    return sanitizeConfig(raw, false);
   } catch {
     // Unreadable file: keep a copy for the user and start from defaults.
     fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.broken-${Date.now()}`);

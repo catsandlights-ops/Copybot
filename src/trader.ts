@@ -12,7 +12,8 @@ export type Trade = {
   mint: string;
   sol: number;
   tokenRaw: string;
-  source?: string;
+  source?: string; // buys: the wallet we copied
+  sources?: string[]; // sells: the wallet(s) the position was copied from
   pnl?: number;
   reason?: string;
   sig: string;
@@ -65,17 +66,20 @@ export class Trader {
     this.hooks.log(`BUY ${short(mint)} for ${r.sol.toFixed(4)} SOL (copying ${this.hooks.name(source)})`, 'buy');
   }
 
-  /** Sell `fraction` (0..1] of our position. */
-  async sell(mint: string, fraction: number, reason: string) {
+  /** Sell `fraction` (0..1] of our position. Returns the realized P&L, or null if nothing was sold. */
+  async sell(mint: string, fraction: number, reason: string): Promise<number | null> {
     const p = this.state.positions[mint];
-    if (!p) return;
+    if (!p) return null;
     const held = BigInt(p.amountRaw);
     const all = fraction >= 0.95;
     const amount = all ? held : (held * BigInt(Math.round(fraction * 1e6))) / 1_000_000n;
-    if (amount <= 0n) return;
+    if (amount <= 0n) return null;
 
     const q = await quoteSell(mint, amount, this.cfg.safety.slippageBps);
-    if (!q) return this.hooks.log(`SELL ${short(mint)} skipped: no route (${reason})`, 'warn');
+    if (!q) {
+      this.hooks.log(`SELL ${short(mint)} skipped: no route (${reason})`, 'warn');
+      return null;
+    }
     const r = await this.swap(q);
     const soldFrac = Math.min(1, Number(r.tokenRaw) / Number(held));
     const costPortion = p.costSol * soldFrac;
@@ -84,7 +88,8 @@ export class Trader {
     p.amountRaw = (held - r.tokenRaw > 0n ? held - r.tokenRaw : 0n).toString();
     p.costSol -= costPortion;
     if (all || BigInt(p.amountRaw) === 0n) delete this.state.positions[mint];
-    this.record({ t: Date.now(), mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sig: r.sig });
+    this.record({ t: Date.now(), mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sources: [...p.sources], sig: r.sig });
     this.hooks.log(`SELL ${short(mint)} ${(soldFrac * 100).toFixed(0)}% for ${r.sol.toFixed(4)} SOL, PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} (${reason})`, 'sell');
+    return pnl;
   }
 }

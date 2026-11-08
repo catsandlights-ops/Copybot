@@ -14,7 +14,8 @@
     "dist:win": "npm run bundle && electron-builder --win",
     "dist:mac": "npm run bundle && electron-builder --mac",
     "dist:linux": "npm run bundle && electron-builder --linux",
-    "sign-update": "node scripts/sign-update.mjs"
+    "sign-update": "node scripts/sign-update.mjs",
+    "test": "tsx --test src/*.test.ts"
   },
   "devDependencies": {
     "@solana/web3.js": "^1.99.0",

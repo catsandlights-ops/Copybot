@@ -380,6 +380,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return send(res, 200, { ok: true });
   }
 
+  if (route === 'POST /api/guard/resume') {
+    engine.resumeBuying();
+    return send(res, 200, engine.snapshot());
+  }
+
   if (route === 'POST /api/positions/refresh') {
     await engine.valuePositions();
     return send(res, 200, engine.snapshot());
