@@ -24,6 +24,7 @@ import { marketSkipReason, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
+import { tradesCsv } from './csv';
 import { quoteSell } from './jupiter';
 import { passesBasics, pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
 
@@ -121,14 +122,27 @@ type Job = {
   createdAt: number;
 };
 const jobs: Job[] = [];
-let jobSeq = 0;
+// Finished backtests are kept across restarts (the other jobs are quick to re-run).
+const BACKTESTS_FILE = 'data/backtests.json';
+try {
+  const saved = JSON.parse(fs.readFileSync(BACKTESTS_FILE, 'utf8'));
+  if (Array.isArray(saved)) jobs.push(...saved.filter((j) => j?.kind === 'backtest' && j.status === 'done').slice(0, 10));
+} catch {
+  /* none yet */
+}
+function saveBacktests() {
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(BACKTESTS_FILE, JSON.stringify(jobs.filter((j) => j.kind === 'backtest' && j.status === 'done').slice(0, 10)));
+}
+let jobSeq = jobs.reduce((a, j) => Math.max(a, j.id), 0);
 let jobChain: Promise<void> = Promise.resolve();
 
 function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) => void) => Promise<unknown>) {
   if (jobs.filter((j) => j.status === 'queued' || j.status === 'running').length >= 5) throw new HttpError(429, 'Too many jobs waiting. Let the current ones finish first.');
   const job: Job = { id: ++jobSeq, kind, status: 'queued', progress: 'Waiting…', input, createdAt: Date.now() };
   jobs.unshift(job);
-  if (jobs.length > 20) jobs.pop();
+  // Keep the list short, but never drop a saved backtest just because other jobs ran.
+  while (jobs.length > 20) jobs.splice(jobs.map((j) => j.kind === 'backtest').lastIndexOf(false), 1);
   const progress = (p: string) => {
     job.progress = p;
     broadcast('job', job);
@@ -140,6 +154,7 @@ function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) =
     try {
       job.result = await run(progress);
       job.status = 'done';
+      if (job.kind === 'backtest') saveBacktests();
       progress('Done');
     } catch (e) {
       job.status = 'error';
@@ -501,6 +516,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       clearInterval(ping);
     });
     return;
+  }
+
+  if (route === 'GET /api/trades.csv') {
+    const mode = url.searchParams.get('mode');
+    const labels = new Map(engine.cfg.wallets.map((w) => [w.address, w.label]));
+    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/csv; charset=utf-8' });
+    return res.end(tradesCsv(readTrades(1e9).reverse().filter((t: any) => mode !== 'paper' && mode !== 'live' ? true : t.mode === mode), labels));
   }
 
   if (route === 'GET /api/state') {

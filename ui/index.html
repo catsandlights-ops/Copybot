@@ -1049,6 +1049,17 @@ function renderBacktest(el) {
 }
 
 // ----- trades -----
+async function exportCsv(mode) {
+  try {
+    const r = await fetch(`/api/trades.csv?mode=${mode}`, { headers: { 'x-copybot-token': TOKEN || '' } });
+    if (!r.ok) throw new Error(`Export failed (${r.status})`);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = `copybot-trades-${mode}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) { toast(e.message, true); }
+}
 function renderTrades(el) {
   const f = S.tradeFilter;
   const ts = S.trades.filter((t) => f === 'all' || t.mode === f);
@@ -1059,6 +1070,7 @@ function renderTrades(el) {
     <div class="row" style="margin-bottom:16px">
       <div class="seg" id="tf">${['all', 'paper', 'live'].map((m) => `<button class="${f === m ? 'on' : ''}" data-f="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
       <span class="spacer" style="flex:1"></span>
+      ${ts.length ? `<button class="btn sm" id="csv-btn">Export CSV</button>` : ''}
       <span class="muted">${ts.length} trades · ${sells.length ? `${Math.round((wins / sells.length) * 100)}% profitable sells · ` : ''}<span class="${cls(total)}">${signed(total, 3)} SOL</span></span>
     </div>
     <div class="card">${ts.length ? `<div class="tbl-wrap"><table>
@@ -1074,6 +1086,7 @@ function renderTrades(el) {
         <td class="r">${t.sig && t.sig !== 'PAPER' ? `<a href="https://solscan.io/tx/${esc(t.sig)}" target="_blank" rel="noopener" style="font-size:12.5px">View tx</a>` : ''}</td>
       </tr>`).join('')}</tbody></table></div>` : '<div class="empty"><h3>No trades yet</h3>Trades the bot makes appear here.</div>'}</div>`;
   el.querySelectorAll('#tf button').forEach((b) => (b.onclick = () => { S.tradeFilter = b.dataset.f; render(); }));
+  const cb = $('#csv-btn'); if (cb) cb.onclick = () => exportCsv(S.tradeFilter);
 }
 const labelFor = (addr) => { const w = S.config.wallets.find((x) => x.address === addr); return w?.label || short(addr); };
 
