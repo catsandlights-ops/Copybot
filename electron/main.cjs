@@ -6,7 +6,12 @@ const { pathToFileURL } = require('node:url');
 const updater = require('./updater.cjs');
 
 const BASE = path.join(__dirname, '..'); // app files (ui/, dist/)
-const EXTERNAL_HOSTS = new Set(['solscan.io', 'dexscreener.com', 'www.helius.dev', 'helius.dev', 'nodejs.org']);
+// Links may only open these sites in the user's browser (news sources, data providers, key sign-up pages).
+const EXTERNAL_HOSTS = new Set([
+  'solscan.io', 'dexscreener.com', 'www.helius.dev', 'helius.dev', 'nodejs.org',
+  'blockworks.com', 'blockworks.co', 'www.coindesk.com', 'coindesk.com', 'www.theblock.co', 'theblock.co', 'decrypt.co',
+  'www.geckoterminal.com', 'www.coingecko.com', 'dexcheck.ai', 'api.dexcheck.ai', 'console.anthropic.com', 'docs.anthropic.com',
+]);
 
 let win = null;
 let engine = null;

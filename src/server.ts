@@ -15,33 +15,41 @@ import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
 import { isAddress, sanitizeConfig, saveConfig } from './config';
-import { canEncryptKey, encryptPlaintextKey, isHttpsUrl, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
+import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
 import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
+import * as markets from './markets';
+import { getSolUsd } from './market';
+import { marketSkipReason, walletRecords } from './rules';
+import * as ai from './ai';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
 const UI_FILE = process.env.COPYBOT_UI || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
-const FONTS = new Set(['press-start-2p.woff2', 'vt323.woff2']); // the only files served besides the page
+// The only files served besides the page: [path relative to ui/, content type].
+const STATIC: Record<string, [string, string]> = {
+  '/fonts/press-start-2p.woff2': ['fonts/press-start-2p.woff2', 'font/woff2'],
+  '/guides.js': ['guides.js', 'text/javascript; charset=utf-8'],
+};
 
-// ---------- display preferences (theme). Kept apart from config.json so changing them never restarts the bot ----------
-const THEMES = ['arcade', 'modern'] as const;
-type UiPrefs = { theme: (typeof THEMES)[number] };
+// ---------- display preferences (light/dark). Kept apart from config.json so changing them never restarts the bot ----------
+const MODES = ['system', 'light', 'dark'] as const;
+type UiPrefs = { mode: (typeof MODES)[number] };
 function loadUiPrefs(): UiPrefs {
   try {
-    const t = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')).theme;
-    if (THEMES.includes(t)) return { theme: t };
+    const m = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')).mode; // older versions stored a "theme" instead
+    if (MODES.includes(m)) return { mode: m };
   } catch {
     /* defaults */
   }
-  return { theme: 'arcade' };
+  return { mode: 'system' };
 }
 let uiPrefs = loadUiPrefs();
 export const TOKEN = crypto.randomBytes(32).toString('base64url');
 
 const SECURITY_HEADERS = {
   'content-security-policy':
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https://coin-images.coingecko.com https://assets.geckoterminal.com https://cdn.dexscreener.com; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'referrer-policy': 'no-referrer',
@@ -88,6 +96,7 @@ function broadcast(type: string, data: unknown) {
 let statusTimer: NodeJS.Timeout | null = null;
 engine.on('log', (e) => broadcast('log', e));
 engine.on('trade', (t) => broadcast('trade', t));
+ai.onDecision((d) => broadcast('ai', d));
 engine.on('status', () => {
   if (statusTimer) return; // coalesce bursts
   statusTimer = setTimeout(() => {
@@ -174,7 +183,109 @@ function connectionInfo() {
     desktop: !!process.env.COPYBOT_DESKTOP,
     keyError: engine.keyError,
     walletAddress: engine.kp?.publicKey.toBase58() ?? null,
+    hasDexcheckKey: hasSecret('DEXCHECK_API_KEY'),
+    dexcheckEncrypted: secretIsEncrypted('DEXCHECK_API_KEY'),
+    hasAnthropicKey: hasSecret('ANTHROPIC_API_KEY'),
+    anthropicEncrypted: secretIsEncrypted('ANTHROPIC_API_KEY'),
   };
+}
+
+// ---------- autopilot: wallet reviews ----------
+const WALLET_REVIEW_FILE = 'data/ai-wallet-review.json';
+let lastWalletReview = (() => {
+  try {
+    return Number(JSON.parse(fs.readFileSync(WALLET_REVIEW_FILE, 'utf8')).at) || 0;
+  } catch {
+    return 0;
+  }
+})();
+let walletReviewBusy = false;
+
+/** Wallets the AI may add: the ones the user analyzed or discovered in this session. */
+function aiCandidates(): ai.CandidateView[] {
+  const out = new Map<string, ai.CandidateView>();
+  for (const j of jobs) {
+    if (j.status !== 'done') continue;
+    if (j.kind === 'analyze') {
+      for (const r of j.result as any[]) {
+        if (r.swaps > 0) out.set(r.wallet, { address: r.wallet, source: 'analyzed', stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, notes: r.notes } });
+      }
+    } else {
+      for (const c of (j.result as any).candidates ?? []) {
+        if (!out.has(c.wallet)) out.set(c.wallet, { address: c.wallet, source: 'early buyer', stats: { earlyOnTokens: c.mints.length, solSpentEarly: c.sol } });
+      }
+    }
+  }
+  const mine = new Set(engine.cfg.wallets.map((w) => w.address));
+  return [...out.values()].filter((c) => !mine.has(c.address));
+}
+
+async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary: string }> {
+  if (walletReviewBusy) throw new HttpError(409, 'Claude is already reviewing your wallets.');
+  const cfg = engine.cfg;
+  if (!cfg.wallets.length && !aiCandidates().length) throw new HttpError(400, 'Add some wallets, or analyze a few candidates on the Find wallets page first.');
+  walletReviewBusy = true;
+  lastWalletReview = Date.now();
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(WALLET_REVIEW_FILE, JSON.stringify({ at: lastWalletReview }));
+  try {
+    const recs = walletRecords(engine.readTrades(), cfg.mode);
+    const view: ai.WalletView[] = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
+    engine.log('Claude is reviewing your wallets…', 'ai');
+    const r = await ai.reviewWallets(cfg, view, aiCandidates());
+    if (!r) throw new HttpError(502, ai.aiStatus(cfg).lastError ?? 'Claude did not answer.');
+    if (!r.changes.length) {
+      engine.log(`Claude: no wallet changes. ${r.summary}`, 'ai');
+      return r;
+    }
+    // Apply to the latest config, never going over the active-wallet limit.
+    const next = structuredClone(engine.cfg);
+    const applied: ai.WalletChange[] = [];
+    const active = () => next.wallets.filter((w) => w.enabled).length;
+    for (const ch of r.changes) {
+      const w = next.wallets.find((x) => x.address === ch.address);
+      if (ch.action === 'add') {
+        if (w || active() >= cfg.ai.maxWallets || next.wallets.length >= 100) continue;
+        next.wallets.push({ address: ch.address, label: `ai-${ch.address.slice(0, 4)}`, enabled: true, sizeMultiplier: ch.sizeMultiplier, maxExposureSol: ch.budgetSol });
+      } else if (!w) continue;
+      else if (ch.action === 'pause') w.enabled = false;
+      else if (ch.action === 'resume') {
+        if (w.enabled || active() >= cfg.ai.maxWallets) continue;
+        w.enabled = true;
+      } else {
+        w.sizeMultiplier = ch.sizeMultiplier;
+        w.maxExposureSol = ch.budgetSol;
+      }
+      applied.push(ch);
+    }
+    if (applied.length) {
+      const clean = sanitizeConfig(next, false);
+      await applyChange(() => saveConfig(clean));
+      for (const ch of applied) engine.log(`Claude: ${ch.action} ${ch.address.slice(0, 4)}…${ch.address.slice(-4)}${ch.action === 'pause' ? '' : ` (size ×${ch.sizeMultiplier}${ch.budgetSol ? `, budget ${ch.budgetSol} SOL` : ''})`}: ${ch.reason}`, 'ai');
+    }
+    return { changes: applied, summary: r.summary };
+  } finally {
+    walletReviewBusy = false;
+  }
+}
+
+// Automatic wallet reviews while the bot is running.
+setInterval(() => {
+  const a = engine.cfg.ai;
+  if (!engine.running || !a.enabled || !a.manageWallets || walletReviewBusy) return;
+  if (Date.now() - lastWalletReview < a.walletReviewHours * 3_600_000) return;
+  runWalletReview().catch((e) => engine.log(`Claude wallet review: ${(e as Error).message}`, 'warn'));
+}, 10 * 60_000).unref();
+
+// ---------- watchlist ----------
+const WATCHLIST = 'data/watchlist.json';
+function readWatchlist(): string[] {
+  try {
+    const l = JSON.parse(fs.readFileSync(WATCHLIST, 'utf8'));
+    return Array.isArray(l) ? l.filter(isAddress).slice(0, 30) : [];
+  } catch {
+    return [];
+  }
 }
 
 async function readBody(req: http.IncomingMessage): Promise<any> {
@@ -232,10 +343,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(UI_FILE));
   }
-  const font = /^\/fonts\/([a-z0-9-]+\.woff2)$/.exec(url.pathname)?.[1];
-  if (req.method === 'GET' && font && FONTS.has(font)) {
-    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'font/woff2', 'cache-control': 'public, max-age=86400' });
-    return res.end(fs.readFileSync(path.join(path.dirname(UI_FILE), 'fonts', font)));
+  const asset = req.method === 'GET' ? STATIC[url.pathname] : undefined;
+  if (asset) {
+    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': asset[1], 'cache-control': 'no-cache' });
+    return res.end(fs.readFileSync(path.join(path.dirname(UI_FILE), asset[0])));
   }
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
@@ -294,7 +405,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/connection') {
     const b = await readBody(req);
-    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey']) {
+    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey']) {
       if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
     }
     const env: Record<string, string> = {};
@@ -316,10 +427,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       }
     }
     try {
-      await applyChange(() => {
-        if (Object.keys(env).length) updateEnv(env);
-        if (newKey !== null) savePrivateKey(newKey);
-      });
+      // Data-source keys don't affect trading, so saving one never restarts the bot.
+      if (typeof b.dexcheckKey === 'string') saveSecret('DEXCHECK_API_KEY', b.dexcheckKey);
+      if (typeof b.anthropicKey === 'string') {
+        if (b.anthropicKey.trim() && !/^sk-ant-[\w-]{20,}$/.test(b.anthropicKey.trim())) throw new Error('That doesn’t look like an Anthropic API key (it starts with sk-ant-).');
+        saveSecret('ANTHROPIC_API_KEY', b.anthropicKey);
+      }
+      if (Object.keys(env).length || newKey !== null) {
+        await applyChange(() => {
+          if (Object.keys(env).length) updateEnv(env);
+          if (newKey !== null) savePrivateKey(newKey);
+        });
+      }
     } catch (e) {
       throw new HttpError(400, (e as Error).message);
     }
@@ -354,10 +473,74 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return send(res, 200, engine.snapshot());
   }
 
+  // ---------- Markets hub ----------
+  if (url.pathname.startsWith('/api/markets/')) {
+    const q = url.searchParams;
+    const reply = async (fn: () => Promise<unknown>) => {
+      try {
+        return send(res, 200, { data: await fn() });
+      } catch (e: any) {
+        return send(res, e.needsKey ? 200 : 502, { error: e.message ?? 'Market data is unavailable right now.', needsKey: !!e.needsKey });
+      }
+    };
+    switch (route) {
+      case 'GET /api/markets/overview':
+        return reply(() => markets.overview());
+      case 'GET /api/markets/pools': {
+        const kind = q.get('kind') === 'new' ? 'new' : 'trending';
+        return reply(() => markets.pools(kind));
+      }
+      case 'GET /api/markets/token': {
+        const mint = q.get('mint');
+        if (!isAddress(mint)) throw new HttpError(400, 'Not a valid token address');
+        return reply(async () => {
+          const t = await markets.token(mint);
+          if (!t) return null;
+          // Would Copybot's own token filters let it buy this right now?
+          const solUsd = await getSolUsd().catch(() => null);
+          const verdict = marketSkipReason(
+            { liquidityUsd: t.totalLiquidityUsd, marketCapUsd: t.marketCapUsd, createdAt: t.oldestPoolAt },
+            engine.cfg.filters,
+            solUsd ? engine.cfg.buy.fixedSol * solUsd : null,
+            Date.now(),
+          );
+          return { ...t, filterVerdict: verdict, watched: readWatchlist().includes(mint) };
+        });
+      }
+      case 'GET /api/markets/chart': {
+        const pool = q.get('pool'), tf = q.get('tf') ?? '1h';
+        if (!isAddress(pool) || !markets.isTimeframe(tf)) throw new HttpError(400, 'Invalid chart request');
+        return reply(() => markets.chart(pool, tf));
+      }
+      case 'GET /api/markets/search':
+        return reply(() => markets.search(String(q.get('q') ?? '')));
+      case 'GET /api/markets/news':
+        return reply(() => markets.news());
+      case 'GET /api/markets/whales':
+        return reply(() => markets.whales(Math.min(1e7, Math.max(1000, Number(q.get('min')) || 10_000))));
+      case 'GET /api/markets/top-traders': {
+        const pool = q.get('pool'), duration = q.get('duration') ?? '7d';
+        if (!isAddress(pool) || !(markets.DURATIONS as readonly string[]).includes(duration)) throw new HttpError(400, 'Invalid request');
+        return reply(() => markets.topTraders(pool, duration as (typeof markets.DURATIONS)[number]));
+      }
+      case 'GET /api/markets/watchlist':
+        return reply(() => markets.tokens(readWatchlist()));
+      case 'PUT /api/markets/watchlist': {
+        const b = await readBody(req);
+        if (!isAddress(b.mint)) throw new HttpError(400, 'Not a valid token address');
+        const list = readWatchlist().filter((m) => m !== b.mint);
+        if (b.watch) list.unshift(b.mint);
+        fs.mkdirSync('data', { recursive: true });
+        fs.writeFileSync(WATCHLIST, JSON.stringify(list.slice(0, 30)));
+        return send(res, 200, { watched: !!b.watch });
+      }
+    }
+  }
+
   if (route === 'PUT /api/ui') {
     const b = await readBody(req);
-    if (!THEMES.includes(b.theme)) throw new HttpError(400, 'Unknown theme');
-    uiPrefs = { theme: b.theme };
+    if (!MODES.includes(b.mode)) throw new HttpError(400, 'Unknown appearance');
+    uiPrefs = { mode: b.mode };
     fs.mkdirSync('data', { recursive: true });
     fs.writeFileSync('data/ui.json', JSON.stringify(uiPrefs));
     broadcast('ui', uiPrefs);
@@ -378,6 +561,32 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       throw new HttpError(400, (e as Error).message);
     }
     return send(res, 200, { ok: true });
+  }
+
+  if (route === 'GET /api/ai') {
+    return send(res, 200, { ...ai.aiStatus(engine.cfg), lastWalletReview, walletReviewBusy, reviewBusy: engine.aiBusy, candidates: aiCandidates().length });
+  }
+
+  if (route === 'POST /api/ai/test') {
+    return send(res, 200, await ai.testAi(engine.cfg));
+  }
+
+  if (route === 'POST /api/ai/review-positions') {
+    try {
+      await engine.reviewPositionsNow();
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    return send(res, 200, { ok: true });
+  }
+
+  if (route === 'POST /api/ai/review-wallets') {
+    return send(res, 200, await runWalletReview());
+  }
+
+  if (route === 'POST /api/guard/resume') {
+    engine.resumeBuying();
+    return send(res, 200, engine.snapshot());
   }
 
   if (route === 'POST /api/positions/refresh') {

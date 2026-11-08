@@ -124,6 +124,38 @@ Good copy targets have:
 | `safety.rejectFreezeAuthority` | skip tokens whose creator can freeze your tokens (common scam) |
 | `safety.blacklist` | token mints never to buy |
 
+### Exits, filters and safety limits
+
+- **Staged take-profits** (Settings → Selling): at **+100% (2x)** sell enough to take your cost back,
+  then sell part at take-profit 1 (+300%) and take-profit 2 (+900%). A **trailing stop** arms after
+  +50% and sells everything if the price falls 30% from its peak. The Dashboard's *Exit plan* column
+  shows what's done (✓) and where the trailing stop sits.
+- **Don't chase** (Settings → Buying): skip a copy if the price is already more than 15% above what the
+  copied wallet paid. You always buy after them; this stops the bot paying a pumped price.
+- **Token filters** (Settings → Token filters, from Dexscreener data): minimum liquidity ($10K),
+  max buy size vs the pool (2%), optional market-cap range and minimum token age. Pump.fun tokens still
+  on their bonding curve have no pool figure; the buy-then-sell check covers those.
+- **Circuit breaker** (Settings → Limits): stop new buys for the day after a **0.3 SOL** loss, and
+  pause for 60 min after **4 losing trades in a row**. Sells and exits keep running. *Resume buying* on
+  the Dashboard overrides it.
+- **Per-wallet scoreboard** (Wallets): your own profit, win rate and sells from copying each wallet,
+  a "losing money" flag, plus **Size ×** (scale buys from that wallet) and **Budget** (cap its SOL).
+
+All of these have safe defaults. Set a value to 0 to turn that rule off.
+
+### Markets, Learn and the AI autopilot
+
+- **Markets**: SOL/BTC/ETH prices, trending and new Solana pools (GeckoTerminal), token details with
+  charts (Dexscreener), crypto news and a watchlist. Whale trades and top traders need a free
+  DexCheck API key (Settings → Connection).
+- **Learn**: short guides on setup, finding wallets, exits, risk and going live.
+- **Autopilot** (off by default): Claude (Opus 5.5) decides buy/skip and size for each copy signal
+  that passed every hard check, reviews open positions and can sell early, and manages wallets
+  (pause, resize, or add wallets you analyzed on Find wallets). Its answers are always clamped to your
+  limits and re-checked against a fresh quote. Needs your own Anthropic API key; a **daily AI budget**
+  (default $3) caps the spend, after which the normal rules take over. The Autopilot page logs every
+  decision, and checks what each skipped token did an hour later.
+
 ## 4. Run
 
 ```bash

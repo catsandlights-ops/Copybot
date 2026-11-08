@@ -1,0 +1,216 @@
+// Copybot guides, shown on the Learn page. Plain HTML authored here (trusted content).
+// Categories: start, strategy, safety, features, news
+window.GUIDE_CATS = {
+  start: { label: 'Getting started', color: 'var(--r-green)' },
+  strategy: { label: 'Strategy', color: 'var(--r-blue)' },
+  safety: { label: 'Safety', color: 'var(--r-red)' },
+  features: { label: 'Features', color: 'var(--r-violet)' },
+  news: { label: "What's new", color: 'var(--r-orange)' },
+};
+
+window.GUIDES = [
+  {
+    id: 'whats-new-05', cat: 'news', mins: 3, title: "What's new in Copybot 0.5",
+    teaser: 'Smart exits, token filters, a circuit breaker, a wallet scoreboard, the Markets hub, the AI autopilot and a new look.',
+    body: `
+<p>Copybot 0.5 is the biggest update so far. Here's everything that changed.</p>
+<h3>Trading</h3>
+<ul>
+<li><b>Staged exits.</b> At 2x Copybot takes your cost back, then takes profit at +300% and +900%, and a trailing stop protects the rest. See <a href="#" data-guide="exits">How exits work</a>.</li>
+<li><b>Don't chase.</b> If the price is already more than 15% above what the copied wallet paid, Copybot skips the copy.</li>
+<li><b>Token filters.</b> Minimum liquidity, maximum buy size compared to the pool, plus optional market-cap and token-age limits.</li>
+<li><b>Circuit breaker.</b> No new buys after a 0.3 SOL loss in a day, and a 60-minute pause after 4 losing trades in a row.</li>
+<li><b>Wallet scoreboard.</b> Your own profit and win rate from each wallet you copy, with a per-wallet size and budget.</li>
+</ul>
+<h3>New pages</h3>
+<ul>
+<li><b>Markets:</b> prices, trending and brand-new Solana tokens, token details with charts, crypto news and a watchlist.</li>
+<li><b>Autopilot:</b> let Claude decide what to buy, when to sell and which wallets to copy, always inside your limits.</li>
+<li><b>Learn:</b> the guides you're reading now.</li>
+</ul>
+<h3>Look</h3>
+<p>One new theme that mixes the clean modern layout with rainbow colors, in <b>light and dark</b>. Switch it in Settings → Look, or with the sun/moon button at the top. Copybot also has a new leaf icon.</p>
+<p class="tip">Your old "sell everything at +150%" setting was switched off so the new staged exits can work. You can turn it back on in Settings → Selling.</p>`,
+  },
+  {
+    id: 'getting-started', cat: 'start', mins: 4, title: 'Getting started with Copybot',
+    teaser: 'From install to your first paper trade in five steps.',
+    body: `
+<p>Copybot watches Solana wallets you choose. When one of them buys or sells a token, Copybot can copy the trade within seconds.</p>
+<ol class="big">
+<li><b>Add a fast connection.</b> Settings → Connection → paste a free Helius RPC link. See <a href="#" data-guide="rpc">Connect a fast RPC</a>. The free public connection misses trades.</li>
+<li><b>Find wallets worth copying.</b> Use <b>Find wallets</b> or the top traders in <b>Markets</b>, then check each one's record with <b>Analyze</b>. See <a href="#" data-guide="finding-wallets">Finding wallets worth copying</a>.</li>
+<li><b>Add 2–3 wallets</b> on the Wallets page. Spreading across a few traders means one bad week doesn't sink you.</li>
+<li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices but never spends money.</li>
+<li><b>Review after a few days.</b> The Wallets scoreboard shows which wallets actually made <i>you</i> money. Pause the ones that didn't.</li>
+</ol>
+<p class="tip">Only go live after paper mode has been profitable for a while, and only with money you can afford to lose. See <a href="#" data-guide="going-live">Going live safely</a>.</p>`,
+  },
+  {
+    id: 'rpc', cat: 'start', mins: 2, title: 'Connect a fast RPC (Helius)',
+    teaser: "Why the free public connection misses trades, and how to fix it in two minutes.",
+    body: `
+<p>An <b>RPC</b> is Copybot's connection to the Solana blockchain. Every trade it sees and every price it checks goes through it.</p>
+<p>The free public RPC is shared by everyone and heavily rate-limited. You'll see "RPC is rate-limiting the bot" in Live activity, and some trades get missed.</p>
+<h3>Set up Helius (free)</h3>
+<ol>
+<li>Go to <b>helius.dev</b> and create a free account.</li>
+<li>Copy your RPC link. It looks like <code>https://mainnet.helius-rpc.com/?api-key=…</code></li>
+<li>In Copybot: <b>Settings → Connection</b>, paste it, then <b>Save connection</b> and <b>Test connection</b>.</li>
+</ol>
+<p>You should see green checkmarks, and the sidebar will say <b>Private RPC</b>.</p>`,
+  },
+  {
+    id: 'finding-wallets', cat: 'strategy', mins: 5, title: 'Finding wallets worth copying',
+    teaser: 'What a good copy target looks like, and the red flags that mean "skip".',
+    body: `
+<p>Copy trading is only as good as the wallets you copy. A wallet that looks amazing for one week is often just lucky, or is a bot you can't keep up with.</p>
+<h3>Where to look</h3>
+<ul>
+<li><b>Find wallets → Discover early buyers:</b> paste 3–5 tokens that pumped recently. Wallets that were early on <i>several</i> of them rank highest.</li>
+<li><b>Markets → Top traders</b> for a token (needs a free DexCheck key), with a <b>Copy</b> button.</li>
+</ul>
+<h3>What good looks like (Analyze)</h3>
+<ul>
+<li><b>Many closed trades</b>, ideally weeks or months of them. One huge win proves nothing.</li>
+<li><b>Positive profit and ROI</b> across those trades, with a win rate that isn't wildly high (real traders lose often).</li>
+<li><b>Holds of minutes to hours</b>, not seconds. You always buy after them, so you need time to catch up.</li>
+<li><b>Fewer than ~100 trades a day.</b> More than that is usually a bot.</li>
+</ul>
+<h3>Red flags</h3>
+<ul>
+<li>"+1,000% last month": usually huge risk, not skill.</li>
+<li>Most of the profit from a single trade.</li>
+<li>Tiny buys that they sell seconds later.</li>
+</ul>
+<p class="tip">Copy 2–3 wallets with different styles, then check the Wallets scoreboard weekly. Pause wallets that are losing you money.</p>`,
+  },
+  {
+    id: 'exits', cat: 'strategy', mins: 4, title: 'How exits work: take back cost, take-profits, trailing stop',
+    teaser: 'Copybot sells in stages so you lock in wins without missing the big runs.',
+    body: `
+<p>Selling everything at one target means you either sell too early or give it all back. Copybot sells in steps instead. All percentages are gains over <b>your</b> entry price (+100% = 2x).</p>
+<ol class="big">
+<li><b>Take back my cost (+100%).</b> At 2x, Copybot sells just enough to get your original SOL back, which is half the position. The rest is "free".</li>
+<li><b>Take-profit 1 (+300%):</b> sell 50% of what's left.</li>
+<li><b>Take-profit 2 (+900%):</b> sell 50% of what's left again.</li>
+<li><b>Trailing stop.</b> Once a token has been up 50%, Copybot remembers its highest value. If it then falls 30% from that peak, it sells everything.</li>
+<li><b>Stop-loss (−40%):</b> if a position falls 40% from your entry, Copybot sells everything.</li>
+</ol>
+<h3>Example</h3>
+<p>You buy for 0.05 SOL. It goes to 2x: Copybot sells 0.05 SOL worth and you're back to even. It runs to 5x and then drops: the trailing stop sells the rest around 3.5x. You kept a big part of the run, with no risk after the first step.</p>
+<p>The Dashboard's <b>Exit plan</b> column shows ✓ next to steps that are done, and where the trailing stop will sell. Every step is adjustable in <b>Settings → Selling</b>; set a step to 0 to turn it off.</p>`,
+  },
+  {
+    id: 'risk', cat: 'strategy', mins: 4, title: 'Sizing and risk limits',
+    teaser: 'How much to put in each trade, budgets per wallet, and the circuit breaker.',
+    body: `
+<p>Meme coins can drop 90% in minutes. Good sizing keeps one bad trade, or one bad day, from hurting you.</p>
+<ul>
+<li><b>Keep each buy small.</b> A common rule is to risk only 1–2% of your trading money per position on volatile tokens. Settings → Buying sets the amount.</li>
+<li><b>Cap the total.</b> "Max SOL in open positions" limits how much can be in trades at once.</li>
+<li><b>Per-wallet Size ×.</b> On the Wallets page you can copy your best wallet at 1.5× and a riskier one at 0.5×.</li>
+<li><b>Per-wallet Budget.</b> Caps how much SOL a single wallet's trades can tie up.</li>
+</ul>
+<h3>The circuit breaker</h3>
+<p>Two automatic brakes protect you on a bad day (Settings → Limits):</p>
+<ul>
+<li><b>Daily loss limit (0.3 SOL):</b> no new buys for the rest of the day.</li>
+<li><b>Losing streak (4 in a row):</b> a 60-minute cool-down.</li>
+</ul>
+<p>Sells, stop-losses and take-profits always keep running. You can override it with <b>Resume buying</b> on the Dashboard.</p>
+<p class="tip">If you raise your trade sizes, raise the daily loss limit to match. Otherwise it will trip after a single loss.</p>`,
+  },
+  {
+    id: 'safety-checks', cat: 'safety', mins: 5, title: 'The safety checks, explained',
+    teaser: "Everything Copybot checks before it buys, and before it signs anything.",
+    body: `
+<p>Before every buy, a token has to pass all of these:</p>
+<ul>
+<li><b>Freeze check:</b> skips tokens whose creator can freeze your tokens so you can't sell.</li>
+<li><b>Buy-then-sell test:</b> gets a quote to buy and then sell straight back. If it can't sell, or the round trip loses more than 12%, it skips. This catches most "honeypots" and very thin pools.</li>
+<li><b>Liquidity filters:</b> skips pools under $10K, and buys that would be more than 2% of the pool.</li>
+<li><b>Don't chase:</b> skips if the price is already 15% above what the copied wallet paid.</li>
+<li><b>Limits and budgets:</b> max positions, max SOL in trades, per-wallet budgets, and the circuit breaker.</li>
+</ul>
+<h3>Before signing a live trade</h3>
+<p>Copybot checks every swap transaction <b>before</b> your wallet signs it:</p>
+<ul>
+<li>It may only use the expected programs.</li>
+<li>It can't send SOL or tokens anywhere except your own accounts.</li>
+<li>Its fee must be within your limit.</li>
+<li>It's simulated against the live blockchain to confirm it takes no more SOL than the trade plus fees.</li>
+</ul>
+<p>Even a hacked data provider can't empty your wallet.</p>
+<p class="tip">Pump.fun tokens still on their bonding curve have no pool size listed. For those, the buy-then-sell test is what measures the real exit cost.</p>`,
+  },
+  {
+    id: 'going-live', cat: 'safety', mins: 3, title: 'Going live safely',
+    teaser: 'The checklist before you let Copybot spend real SOL.',
+    body: `
+<ol class="big">
+<li><b>Paper trade first,</b> for at least a few days, and check that the Wallets scoreboard is positive.</li>
+<li><b>Use a brand-new wallet</b> just for Copybot (in Phantom: add a new account), funded only with money you can afford to lose.</li>
+<li><b>Add a fast RPC.</b> Live trading on the free connection misses exits too, not just entries.</li>
+<li><b>Paste the key</b> in Settings → Trading wallet. On Windows it's encrypted so only your user account can read it. It never leaves your PC.</li>
+<li><b>Switch Settings → Trading mode to Live</b> and start the bot.</li>
+</ol>
+<p class="tip">Start with small buys. You can always raise them once live results match paper.</p>`,
+  },
+  {
+    id: 'autopilot', cat: 'features', mins: 5, title: 'The AI autopilot (Claude)',
+    teaser: 'What Claude decides, what it can never do, what it costs, and how to judge it.',
+    body: `
+<p>The autopilot lets <b>Claude</b>, Anthropic's AI model, make the trading decisions:</p>
+<ul>
+<li><b>Buys:</b> for each copy signal that passes the safety checks, Claude decides <i>buy or skip</i> and how much, and explains why.</li>
+<li><b>Open positions:</b> every few minutes it reviews them and can sell early or hold.</li>
+<li><b>Wallets:</b> it reviews your copied wallets and candidates, and can pause wallets, add new ones from the candidate list, and adjust sizes and budgets.</li>
+</ul>
+<h3>What it can never do</h3>
+<ul>
+<li>Go past your limits: trade size, total SOL, budgets, daily loss limit, stop-loss.</li>
+<li>Skip any safety check, or send money anywhere except through normal buys and sells.</li>
+<li>Copy a wallet that isn't on a candidate list it was given.</li>
+</ul>
+<h3>Cost</h3>
+<p>You use your own Anthropic API key (from console.anthropic.com) and pay Anthropic per decision, roughly <b>$0.02–0.04</b> each with Claude Opus 5.5. A <b>daily AI budget</b> (Settings → Autopilot) caps the spend. When it's used up, Copybot falls back to its normal rules.</p>
+<h3>Is it working?</h3>
+<p>The Autopilot page tracks every decision. For buys Claude <i>skipped</i>, it records what they would have made an hour later, so you can see whether its skips helped. Judge it in paper mode first.</p>
+<p class="tip">No AI can reliably predict meme coins. Treat the autopilot as an experiment, and let the numbers decide whether it stays on.</p>`,
+  },
+  {
+    id: 'markets', cat: 'features', mins: 3, title: 'Using the Markets hub',
+    teaser: 'Prices, trending and new tokens, token details, news and your watchlist.',
+    body: `
+<ul>
+<li><b>Overview:</b> BTC, ETH and SOL prices and their 24-hour change.</li>
+<li><b>Trending and New pools:</b> the hottest Solana pools right now, and brand-new launches. Click any token to see details.</li>
+<li><b>Token details:</b> price chart, liquidity, market cap, volume, buys vs sells and age. These are the same numbers Copybot's filters use.</li>
+<li><b>Watchlist:</b> star a token to keep it on your list.</li>
+<li><b>News:</b> headlines from Blockworks, CoinDesk, The Block and Decrypt. Click one to read it in your browser.</li>
+<li><b>Whales and top traders</b> (optional): add a free DexCheck API key in Settings to see big trades and the best traders on a token, with buttons to Analyze or Copy them.</li>
+</ul>
+<p class="tip">High volume with low liquidity, or far more sells than buys, are warning signs. The Markets hub shows both at a glance.</p>`,
+  },
+  {
+    id: 'glossary', cat: 'start', mins: 4, title: 'Glossary: trading words in plain English',
+    teaser: 'Liquidity, slippage, market cap, bonding curve, honeypot and more.',
+    body: `
+<dl class="gloss">
+<dt>SOL</dt><dd>Solana's coin. Copybot buys and sells tokens with SOL.</dd>
+<dt>Token / mint</dt><dd>A coin on Solana. Its "mint address" is its unique ID.</dd>
+<dt>Liquidity</dt><dd>How much money sits in a token's trading pool. More liquidity means you can buy and sell without moving the price much.</dd>
+<dt>Slippage</dt><dd>The difference between the price you expected and the price you got. Thin pools mean big slippage.</dd>
+<dt>Market cap</dt><dd>Price × supply: the total value of all tokens. Under $1M is the riskiest tier.</dd>
+<dt>Bonding curve</dt><dd>How brand-new pump.fun tokens trade before they "graduate" to a normal pool.</dd>
+<dt>Honeypot</dt><dd>A scam token you can buy but can't sell.</dd>
+<dt>Rug pull</dt><dd>When creators pull the money out of the pool and the price collapses.</dd>
+<dt>P&amp;L</dt><dd>Profit and loss. "Realized" means from sells you've made; "open" means if you sold now.</dd>
+<dt>Stop-loss / take-profit</dt><dd>Automatic sells when a position falls or rises by a set amount.</dd>
+<dt>Trailing stop</dt><dd>A stop-loss that moves up as the price rises, to protect gains.</dd>
+<dt>RPC</dt><dd>Copybot's connection to the blockchain.</dd>
+<dt>Paper trading</dt><dd>Simulated trading with real prices and no real money.</dd>
+</dl>`,
+  },
+];

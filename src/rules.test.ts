@@ -1,0 +1,165 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { DEFAULT_CONFIG, sanitizeConfig } from './config';
+import { buyBlockReason, freshGuard, marketSkipReason, planExit, priceDriftPct, recordSell, walletExposureSol, walletRecords } from './rules';
+import { summarizePairs } from './market';
+
+const cfg = structuredClone(DEFAULT_CONFIG); // stop-loss 40, recover at +100, tp1 +300/50%, tp2 +900/50%, trail 30% after +50
+const pos = (extra = {}) => ({ costSol: 1, steps: [] as any[], peakMultiple: 1, ...extra });
+
+// ---------------- staged exits ----------------
+test('no action while price is flat', () => {
+  assert.equal(planExit(pos(), 1.1, cfg).action, null);
+});
+
+test('stop-loss sells everything at -40%', () => {
+  const a = planExit(pos(), 0.6, cfg).action!;
+  assert.equal(a.fraction, 1);
+  assert.match(a.reason, /stop-loss/);
+});
+
+test('at 2x sells half to take the cost back', () => {
+  const a = planExit(pos(), 2, cfg).action!;
+  assert.equal(a.step, 'recover');
+  assert.equal(a.fraction, 0.5);
+});
+
+test('at 2.5x the cost-back sale is 40% of the holding', () => {
+  const a = planExit(pos(), 2.5, cfg).action!;
+  assert.equal(a.step, 'recover');
+  assert.ok(Math.abs(a.fraction - 0.4) < 1e-9);
+});
+
+test('steps run in order and never repeat', () => {
+  assert.equal(planExit(pos({ steps: ['recover'] }), 4, cfg).action!.step, 'tp1');
+  assert.equal(planExit(pos({ steps: ['recover', 'tp1'] }), 10, cfg).action!.step, 'tp2');
+  assert.equal(planExit(pos({ steps: ['recover', 'tp1', 'tp2'], peakMultiple: 10 }), 10, cfg).action, null);
+});
+
+test('trailing stop is not armed below +50%', () => {
+  // peaked at +40% then fell 30%: trailing not armed, no stop-loss yet
+  assert.equal(planExit(pos({ peakMultiple: 1.4 }), 0.98, cfg).action, null);
+});
+
+test('trailing stop sells everything after falling 30% from the peak', () => {
+  const r = planExit(pos({ steps: ['recover'], peakMultiple: 3 }), 2.0, cfg); // 33% off a 3x peak
+  assert.equal(r.action!.fraction, 1);
+  assert.match(r.action!.reason, /trailing stop/);
+});
+
+test('peak is remembered and only goes up', () => {
+  assert.equal(planExit(pos({ peakMultiple: 1.3 }), 1.2, cfg).peakMultiple, 1.3);
+  assert.equal(planExit(pos({ peakMultiple: 1.3 }), 1.45, cfg).peakMultiple, 1.45);
+});
+
+test('sell-everything target still works when set', () => {
+  const c = structuredClone(cfg);
+  c.risk.takeProfitPct = 150;
+  const a = planExit(pos(), 2.6, c).action!;
+  assert.equal(a.fraction, 1);
+  assert.match(a.reason, /take-profit \+160%/);
+});
+
+test('steps set to 0 are off', () => {
+  const c = structuredClone(cfg);
+  c.exits.recoverCostAtPct = 0;
+  assert.equal(planExit(pos(), 2.2, c).action, null);
+});
+
+// ---------------- don't chase ----------------
+test('price drift: same price is 0%, 20% more expensive is +20%', () => {
+  // they paid 1 SOL for 1,000,000 raw units
+  assert.equal(Math.round(priceDriftPct(1, 1_000_000n, 100_000_000n, 100_000n)!), 0);
+  assert.equal(Math.round(priceDriftPct(1, 1_000_000n, 120_000_000n, 100_000n)!), 20);
+  assert.equal(priceDriftPct(1, 0n, 1n, 1n), null);
+});
+
+// ---------------- market filters ----------------
+const f = cfg.filters; // min liquidity $10K, max 2% of pool
+const now = Date.UTC(2026, 10, 8, 12);
+test('market filters: low liquidity, big trade, market cap range, token age, missing data', () => {
+  assert.match(marketSkipReason({ liquidityUsd: 5_000, marketCapUsd: 50_000, createdAt: null }, f, 10, now)!, /liquidity \$5\.0K is below \$10\.0K/);
+  assert.match(marketSkipReason({ liquidityUsd: 20_000, marketCapUsd: 50_000, createdAt: null }, f, 1_000, now)!, /5\.0% of the pool/);
+  assert.equal(marketSkipReason({ liquidityUsd: 20_000, marketCapUsd: 50_000, createdAt: null }, f, 100, now), null);
+  const g = { ...f, minMarketCapUsd: 100_000, maxMarketCapUsd: 5_000_000, minTokenAgeMin: 30 };
+  assert.match(marketSkipReason({ liquidityUsd: 1e6, marketCapUsd: 50_000, createdAt: null }, g, 10, now)!, /below \$100\.0K/);
+  assert.match(marketSkipReason({ liquidityUsd: 1e6, marketCapUsd: 9e6, createdAt: null }, g, 10, now)!, /above \$5\.0M/);
+  assert.match(marketSkipReason({ liquidityUsd: 1e6, marketCapUsd: 1e6, createdAt: now - 10 * 60_000 }, g, 10, now)!, /10 min old/);
+  assert.equal(marketSkipReason(null, f, 10, now), null);
+  assert.match(marketSkipReason(null, { ...f, skipIfNoMarketData: true }, 10, now)!, /no market data/);
+});
+
+test('summarizePairs adds up liquidity across pools and keeps the oldest pool time', () => {
+  const m = 'MINT';
+  const info = summarizePairs(m, [
+    { chainId: 'solana', baseToken: { address: m, symbol: 'LEAF', name: 'Leaf' }, liquidity: { usd: 1000 }, marketCap: 50_000, pairCreatedAt: 2000, volume: { h24: 300 }, priceChange: { h1: 12 }, txns: { h1: { buys: 40, sells: 10 } } },
+    { chainId: 'solana', baseToken: { address: m }, liquidity: { usd: 500 }, fdv: 60_000, pairCreatedAt: 1000, volume: { h24: 200 } },
+    { chainId: 'ethereum', baseToken: { address: m }, liquidity: { usd: 99999 } },
+  ])!;
+  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, buys1h: 40, sells1h: 10 });
+  assert.equal(summarizePairs(m, []), null);
+});
+
+test('pump.fun bonding-curve tokens: unknown liquidity is not treated as $0', () => {
+  const m = 'PUMP';
+  const info = summarizePairs(m, [{ chainId: 'solana', baseToken: { address: m }, liquidity: undefined, marketCap: 20_000, pairCreatedAt: 5 }])!;
+  assert.equal(info.liquidityUsd, null);
+  assert.equal(marketSkipReason(info, f, 10, now), null); // liquidity checks skipped
+  assert.match(marketSkipReason(info, { ...f, minMarketCapUsd: 50_000 }, 10, now)!, /market cap/); // other filters still apply
+});
+
+// ---------------- circuit breaker ----------------
+test('daily loss limit blocks buys until tomorrow, unless resumed', () => {
+  const t = Date.UTC(2026, 10, 8, 12);
+  let g = freshGuard(t);
+  let r = recordSell(g, -0.2, cfg.risk, t);
+  assert.equal(r.event, null);
+  r = recordSell(r.guard, -0.15, cfg.risk, t);
+  assert.match(r.event!, /Daily loss limit/);
+  assert.match(buyBlockReason(r.guard, cfg.risk, t)!, /daily loss limit/);
+  assert.equal(buyBlockReason({ ...r.guard, resumedDay: r.guard.day }, cfg.risk, t), null);
+  assert.equal(buyBlockReason(r.guard, cfg.risk, t + 36 * 3600_000), null); // next day
+});
+
+test('4 losses in a row pause buys for 60 minutes; a win resets the streak', () => {
+  const t = Date.UTC(2026, 10, 8, 12);
+  const risk = { ...cfg.risk, dailyLossLimitSol: 0 };
+  let g = freshGuard(t);
+  for (const pnl of [-0.01, -0.01, 0.02, -0.01, -0.01, -0.01]) g = recordSell(g, pnl, risk, t).guard;
+  assert.equal(g.lossStreak, 3);
+  const r = recordSell(g, -0.01, risk, t);
+  assert.match(r.event!, /4 losing trades in a row/);
+  assert.ok(buyBlockReason(r.guard, risk, t + 30 * 60_000));
+  assert.equal(buyBlockReason(r.guard, risk, t + 61 * 60_000), null);
+});
+
+// ---------------- per-wallet budgets ----------------
+test('wallet exposure splits shared positions', () => {
+  const ps = [{ costSol: 0.1, sources: ['A'] }, { costSol: 0.2, sources: ['A', 'B'] }, { costSol: 0.5, sources: ['C'] }];
+  assert.ok(Math.abs(walletExposureSol(ps, 'A') - 0.2) < 1e-12);
+  assert.equal(walletExposureSol(ps, 'C'), 0.5);
+});
+
+// ---------------- config ----------------
+test('config: new wallet fields default and validate', () => {
+  const c = sanitizeConfig({ wallets: [{ address: 'GG5ATPW7bxGm5y4aGa2uWWZV1JvjETiM2Rabc2fT8Y7f' }] }, true);
+  assert.equal(c.wallets[0].sizeMultiplier, 1);
+  assert.equal(c.wallets[0].maxExposureSol, 0);
+  assert.throws(() => sanitizeConfig({ wallets: [{ address: 'GG5ATPW7bxGm5y4aGa2uWWZV1JvjETiM2Rabc2fT8Y7f', sizeMultiplier: 50 }] }, true), /Size multiplier/);
+  assert.throws(() => sanitizeConfig({ exits: { tp1AtPct: 300, tp2AtPct: 200 } }, true), /higher than take-profit 1/);
+});
+
+test('walletRecords: our results per copied wallet, shared sells split', () => {
+  const r = walletRecords(
+    [
+      { mode: 'paper', side: 'buy', source: 'A' },
+      { mode: 'paper', side: 'buy', source: 'B' },
+      { mode: 'paper', side: 'sell', sources: ['A'], pnl: 0.2 },
+      { mode: 'paper', side: 'sell', sources: ['A', 'B'], pnl: -0.1 },
+      { mode: 'live', side: 'sell', sources: ['A'], pnl: 5 },
+    ],
+    'paper',
+  );
+  assert.deepEqual(r.A, { trades: 1, closed: 2, wins: 1, pnlSol: 0.15000000000000002 });
+  assert.deepEqual(r.B, { trades: 1, closed: 1, wins: 0, pnlSol: -0.05 });
+});

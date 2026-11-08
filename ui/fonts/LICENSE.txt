@@ -1,7 +1,6 @@
 Fonts bundled with Copybot (SIL Open Font License 1.1)
 
 press-start-2p.woff2: Press Start 2P by CodeMan38
-vt323.woff2: VT323 by Peter Hull
 
 Copyright 2012 The Press Start 2P Project Authors (cody@zone38.net), with Reserved Font Name "Press Start 2P"
 
