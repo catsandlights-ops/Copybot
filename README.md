@@ -18,6 +18,10 @@ shortcut or the Start menu.
 `npm install && npm run dist:mac`. The app isn't signed by Apple, so the first time you open it,
 right-click Copybot → **Open** → **Open** (or go to System Settings → Privacy & Security → *Open Anyway*).
 
+**Look:** Copybot comes with two themes, picked in **Settings → Look**: **Rainbow arcade** (the default:
+pixel fonts, rainbow colors, hearts and coins) and **Modern** (clean and minimal, follows light/dark mode).
+Switching themes is instant and never stops the bot.
+
 What the desktop app does:
 - Runs the bot inside the app. There's no terminal or browser to keep open.
 - Keeps your computer from sleeping while the bot is running.
