@@ -1426,6 +1426,12 @@ const FIELDS = [
     { k: 'exits.trailingStopPct', label: 'Trailing stop', unit: '% drop', help: 'Then sell everything if it falls this much from its highest point. 0 = off.' },
     { k: 'risk.takeProfitPct', label: 'Sell everything at', unit: '% up', help: 'Optional: close the whole position at this gain. 0 = off (use the steps above).' },
   ]},
+  { title: 'Rug protection', desc: 'While you hold a token, sell everything at once if it looks like a rug pull or a dump. Checked with the stop-loss. 0 turns a check off.', fields: [
+    { k: 'protect.liquidityDropPct', label: 'Sell if liquidity drains by', unit: '% from high', help: 'The pool emptying out is the classic rug pull. Compared with the highest liquidity seen since you bought. Pump.fun tokens still on their bonding curve have no pool figure, so this waits until they graduate.' },
+    { k: 'protect.crashPct', label: 'Sell if value crashes by', unit: '%', help: 'A drop this big within the window below, even if you\'re still in profit.' },
+    { k: 'protect.crashWindowMin', label: 'Crash window', unit: 'min', step: 1 },
+    { k: 'protect.maxSellBuyRatio', label: 'Sell if sellers outnumber buyers', unit: '× (5 min)', help: 'E.g. 3 = three times more sells than buys in the last 5 minutes, with at least 20 sells.' },
+  ]},
   { title: 'Token filters', desc: 'Market checks before every buy, using Dexscreener data (and Solscan for holders). 0 turns a filter off.', fields: [
     { k: 'filters.minLiquidityUsd', label: 'Minimum liquidity', unit: 'USD', step: 1000, help: 'Thin pools mean big slippage: often -20% to -50% on the way out. Pump.fun tokens still on their bonding curve have no pool figure; the buy-then-sell check covers them.' },
     { k: 'filters.maxTradePctOfLiquidity', label: 'Max buy size vs pool', unit: '% of pool', help: 'Skip if your buy would be this big a share of the pool. It would move the price against you.' },

@@ -8,7 +8,7 @@ import { checkToken } from './safety';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
 import { hasSecret, onRpcSwitch } from './env';
-import { buyBlockReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
+import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
 import fs from 'node:fs';
@@ -435,7 +435,24 @@ export class BotEngine extends EventEmitter {
           p.peakMultiple = peakMultiple;
           changed = true;
         }
-        if (!action) continue;
+        if (!action) {
+          const peakBefore = p.peakLiquidityUsd;
+          const why = await this.checkDanger(p, v.valueSol).catch(() => null);
+          if (p.peakLiquidityUsd !== peakBefore) changed = true;
+          if (why && gen === this.gen && !this.exiting.has(p.mint)) {
+            changed = true;
+            this.log(`${short(p.mint)}: ${why}. Selling everything.`, 'warn');
+            this.exiting.add(p.mint);
+            this.enqueue(async () => {
+              try {
+                await this.trader.sell(p.mint, 1, why);
+              } finally {
+                this.exiting.delete(p.mint);
+              }
+            });
+          }
+          continue;
+        }
         this.exiting.add(p.mint);
         this.enqueue(async () => {
           try {
@@ -453,6 +470,22 @@ export class BotEngine extends EventEmitter {
       if (changed) saveState(this.state, this.cfg.mode);
       await sleep(this.cfg.monitor.exitCheckIntervalSec * 1000);
     }
+  }
+
+  /** Recent value samples per position, for the crash check. */
+  private samples = new Map<string, [number, number][]>();
+
+  /** Rug/dump protection: liquidity drain, fast crash, heavy selling. Updates the liquidity high. */
+  private async checkDanger(p: import('./state').Position, valueSol: number): Promise<string | null> {
+    const pr = this.cfg.protect;
+    if (!pr.liquidityDropPct && !pr.crashPct && !pr.maxSellBuyRatio) return null;
+    const now = Date.now();
+    const s = (this.samples.get(p.mint) ?? []).filter(([t]) => now - t <= Math.max(pr.crashWindowMin, 1) * 60_000);
+    s.push([now, valueSol]);
+    this.samples.set(p.mint, s);
+    const info = pr.liquidityDropPct || pr.maxSellBuyRatio ? await getMarketInfo(p.mint).catch(() => null) : null;
+    if (info?.liquidityUsd != null && info.liquidityUsd > (p.peakLiquidityUsd ?? 0)) p.peakLiquidityUsd = info.liquidityUsd;
+    return dangerReason({ now, valueSol, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null }, pr);
   }
 
   async valuePositions() {

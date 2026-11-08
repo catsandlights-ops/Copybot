@@ -96,7 +96,7 @@ test('summarizePairs adds up liquidity across pools and keeps the oldest pool ti
     { chainId: 'solana', baseToken: { address: m }, liquidity: { usd: 500 }, fdv: 60_000, pairCreatedAt: 1000, volume: { h24: 200 } },
     { chainId: 'ethereum', baseToken: { address: m }, liquidity: { usd: 99999 } },
   ])!;
-  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, buys1h: 40, sells1h: 10 });
+  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, buys1h: 40, sells1h: 10, buys5m: null, sells5m: null });
   assert.equal(summarizePairs(m, []), null);
 });
 
@@ -176,4 +176,20 @@ test('copyGapPct: buys paying more and sells getting less are both positive (wor
   assert.equal(median([5, 1, 3]), 3);
   assert.equal(median([4, 1, 3, 2]), 2.5);
   assert.equal(median([]), null);
+});
+
+test('dangerReason: rug, crash and dump checks', async () => {
+  const { dangerReason } = await import('./rules');
+  const p = { liquidityDropPct: 50, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 3 };
+  const now = 10 * 60_000;
+  const base = { now, valueSol: 1, samples: [[now - 60_000, 1], [now, 1]] as [number, number][], liquidityUsd: 50_000, peakLiquidityUsd: 60_000, buys5m: 30, sells5m: 40 };
+  assert.equal(dangerReason(base, p), null);
+  assert.match(dangerReason({ ...base, liquidityUsd: 20_000 }, p)!, /liquidity fell 67%/);
+  assert.equal(dangerReason({ ...base, liquidityUsd: null }, p), null); // bonding curve: no pool figure
+  assert.match(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 120_000, 1], [now, 0.6]] }, p)!, /value fell 40% in under 5 min/);
+  // A slow decline outside the window doesn't count.
+  assert.equal(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 10 * 60_000, 1], [now, 0.6]] }, p), null);
+  assert.match(dangerReason({ ...base, buys5m: 5, sells5m: 25 }, p)!, /25 sells vs 5 buys/);
+  assert.equal(dangerReason({ ...base, buys5m: 1, sells5m: 10 }, p), null); // too few sells to judge
+  assert.equal(dangerReason({ ...base, liquidityUsd: 1, buys5m: 0, sells5m: 99 }, { liquidityDropPct: 0, crashPct: 0, crashWindowMin: 5, maxSellBuyRatio: 0 }), null);
 });

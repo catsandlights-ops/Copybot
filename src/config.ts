@@ -32,6 +32,13 @@ export type Config = {
     trailingAfterPct: number; // trailing stop arms once the position has been up this much
     trailingStopPct: number; // then sells everything if it falls this much from its peak
   };
+  /** Rug and dump protection for open positions. 0 turns a check off. */
+  protect: {
+    liquidityDropPct: number; // sell if the pool's liquidity falls this much from its high since we bought
+    crashPct: number; // sell if the position loses this much within crashWindowMin
+    crashWindowMin: number;
+    maxSellBuyRatio: number; // sell if sells outnumber buys this many times over in the last 5 minutes (20+ sells)
+  };
   /** Market-data filters (Dexscreener). 0 turns a filter off. */
   filters: {
     minLiquidityUsd: number;
@@ -90,6 +97,7 @@ export const DEFAULT_CONFIG: Config = {
     pauseMinutes: 60,
   },
   exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30 },
+  protect: { liquidityDropPct: 50, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 3 },
   filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false, maxTopHolderPct: 15, maxTop10HoldersPct: 50 },
   safety: {
     slippageBps: 300,
@@ -129,6 +137,10 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'exits.tp2SellPct': [1, 100, 'Take-profit 2 sell amount'],
   'exits.trailingAfterPct': [0, 100_000, 'Arm trailing stop after'],
   'exits.trailingStopPct': [0, 99, 'Trailing stop'],
+  'protect.liquidityDropPct': [0, 99, 'Liquidity drain limit'],
+  'protect.crashPct': [0, 99, 'Crash limit'],
+  'protect.crashWindowMin': [1, 60, 'Crash window'],
+  'protect.maxSellBuyRatio': [0, 100, 'Sell pressure limit'],
   'filters.minLiquidityUsd': [0, 1e10, 'Minimum liquidity'],
   'filters.maxTradePctOfLiquidity': [0, 100, 'Max trade size vs liquidity'],
   'filters.minMarketCapUsd': [0, 1e13, 'Minimum market cap'],
