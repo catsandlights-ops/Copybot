@@ -64,6 +64,14 @@ jobs:
         with: { node-version: 22 }
       - if: steps.check.outputs.skip != 'true'
         run: npm ci
+
+      # Never publish an update that fails its checks: installed apps would install it automatically.
+      - name: Type-check
+        if: steps.check.outputs.skip != 'true'
+        run: npx tsc --noEmit
+      - name: Run tests
+        if: steps.check.outputs.skip != 'true'
+        run: npm test
       - if: steps.check.outputs.skip != 'true'
         run: npm run bundle
 
