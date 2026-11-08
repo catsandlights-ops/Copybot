@@ -319,7 +319,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding early buyers…`);
     perMint.set(
       t.mint,
-      await earlyBuyers(conn, t.mint, 120, 30, (w) => notes.push(`${t.symbol}: ${w.replace(/^⚠\s*/, '').replace(/ Use --pages to go deeper\./, '')}`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
+      await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol} is a very busy token, so its "early buyers" here are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
     );
   }
   const top = new Map<string, string[]>();

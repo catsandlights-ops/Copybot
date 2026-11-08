@@ -855,7 +855,7 @@ function scoutCard() {
     <div class="tokchips"><span class="muted" style="font-size:12.5px;align-self:center">Tokens scanned:</span>${r.tokens.map((t) => `<span class="chip">${esc(t.symbol)} <b class="pos">+${t.change24hPct.toFixed(0)}%</b></span>`).join('')}</div>
     ${r.notes.length ? `<div class="banner warn" style="margin:0 18px 12px">${r.notes.map(esc).join('<br>')}</div>` : ''}
     ${r.picks.length ? `<div class="picks">${r.picks.map(pickCard).join('')}</div>` : '<div class="empty" style="padding:16px">No wallet was good enough this time. That\'s normal: most wallets that catch one pump don\'t keep winning.</div>'}
-    <details style="padding:0 18px 16px"><summary class="muted" style="cursor:pointer;font-size:13px">All ${r.reports.length} wallets checked</summary>${analyzeTable(r.reports)}</details>`;
+    <details style="padding:0 18px 16px"><summary class="muted" style="cursor:pointer;font-size:13px">${r.reports.length === 1 ? 'The 1 wallet' : `All ${r.reports.length} wallets`} checked</summary>${analyzeTable(r.reports)}</details>`;
   return `<div class="card" style="margin-bottom:16px">
     <div class="scout-hero"><div class="orb" style="width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--rainbow);color:#fff;flex:none">${ICON_SPARK}</div>
       <div style="flex:1;min-width:260px"><h2 style="margin:0 0 4px;font-size:18px">Let Copybot find wallets for you</h2>
@@ -1294,7 +1294,7 @@ const FIELDS = [
     { k: 'exits.trailingStopPct', label: 'Trailing stop', unit: '% drop', help: 'Then sell everything if it falls this much from its highest point. 0 = off.' },
     { k: 'risk.takeProfitPct', label: 'Sell everything at', unit: '% up', help: 'Optional: close the whole position at this gain. 0 = off (use the steps above).' },
   ]},
-  { title: 'Token filters', desc: 'Market checks before every buy, using Dexscreener data. 0 turns a filter off.', fields: [
+  { title: 'Token filters', desc: 'Market checks before every buy, using Dexscreener data (and Solscan for holders). 0 turns a filter off.', fields: [
     { k: 'filters.minLiquidityUsd', label: 'Minimum liquidity', unit: 'USD', step: 1000, help: 'Thin pools mean big slippage: often -20% to -50% on the way out. Pump.fun tokens still on their bonding curve have no pool figure; the buy-then-sell check covers them.' },
     { k: 'filters.maxTradePctOfLiquidity', label: 'Max buy size vs pool', unit: '% of pool', help: 'Skip if your buy would be this big a share of the pool. It would move the price against you.' },
     { k: 'filters.minMarketCapUsd', label: 'Minimum market cap', unit: 'USD', step: 1000 },
