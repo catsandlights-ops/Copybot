@@ -22,11 +22,26 @@ import { earlyBuyers, rankCandidates } from './discover';
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
 const UI_FILE = process.env.COPYBOT_UI || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
+const FONTS = new Set(['press-start-2p.woff2', 'vt323.woff2']); // the only files served besides the page
+
+// ---------- display preferences (theme). Kept apart from config.json so changing them never restarts the bot ----------
+const THEMES = ['retro', 'modern'] as const;
+type UiPrefs = { theme: (typeof THEMES)[number] };
+function loadUiPrefs(): UiPrefs {
+  try {
+    const t = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')).theme;
+    if (THEMES.includes(t)) return { theme: t };
+  } catch {
+    /* defaults */
+  }
+  return { theme: 'retro' };
+}
+let uiPrefs = loadUiPrefs();
 export const TOKEN = crypto.randomBytes(32).toString('base64url');
 
 const SECURITY_HEADERS = {
   'content-security-policy':
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'referrer-policy': 'no-referrer',
@@ -217,6 +232,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/html; charset=utf-8' });
     return res.end(fs.readFileSync(UI_FILE));
   }
+  const font = /^\/fonts\/([a-z0-9-]+\.woff2)$/.exec(url.pathname)?.[1];
+  if (req.method === 'GET' && font && FONTS.has(font)) {
+    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'font/woff2', 'cache-control': 'public, max-age=86400' });
+    return res.end(fs.readFileSync(path.join(path.dirname(UI_FILE), 'fonts', font)));
+  }
   if (!url.pathname.startsWith('/api/')) return send(res, 404, { error: 'not found' });
 
   // Everything under /api needs the session token. EventSource can't send headers, so
@@ -245,6 +265,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       connection: connectionInfo(),
       jobs,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
+      ui: uiPrefs,
     });
   }
 
@@ -331,6 +352,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
     await engine.manualSell(b.mint, fraction);
     return send(res, 200, engine.snapshot());
+  }
+
+  if (route === 'PUT /api/ui') {
+    const b = await readBody(req);
+    if (!THEMES.includes(b.theme)) throw new HttpError(400, 'Unknown theme');
+    uiPrefs = { theme: b.theme };
+    fs.mkdirSync('data', { recursive: true });
+    fs.writeFileSync('data/ui.json', JSON.stringify(uiPrefs));
+    broadcast('ui', uiPrefs);
+    return send(res, 200, uiPrefs);
   }
 
   if (route === 'POST /api/update/check') {
