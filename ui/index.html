@@ -595,7 +595,7 @@ function renderChrome() {
   document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('on', n.dataset.page === S.page));
   const c = S.connection || {};
   $('#side-foot').innerHTML = `
-    <div class="row" style="gap:6px"><span class="dot ${c.usingPublicRpc ? 'warn' : 'ok'}"></span>${c.usingPublicRpc ? 'Public RPC (slow)' : 'Private RPC'}</div>
+    <div class="row" style="gap:6px"><span class="dot ${c.activeRpc === 'backup' || c.usingPublicRpc ? 'warn' : 'ok'}"></span>${c.activeRpc === 'backup' ? 'Backup RPC in use' : c.usingPublicRpc ? 'Public RPC (slow)' : 'Private RPC'}</div>
     <div class="row" style="gap:6px"><span class="dot ${c.hasPrivateKey ? 'ok' : ''}"></span>${c.hasPrivateKey ? 'Trading wallet set' : 'No trading wallet'}</div>
     ${S.app.version ? `<div class="row" style="gap:6px"><span class="dot ${S.app.update.state === 'ready' ? 'warn' : ''}"></span>v${esc(S.app.version)}${updateShort()}</div>` : ''}`;
 }
@@ -1514,6 +1514,8 @@ function renderSettings(el) {
       <div class="card" id="conn"><div class="card-h"><div><h2>Connection</h2><div class="muted" style="font-size:12.5px">Stored in the <span class="mono">.env</span> file on this computer only.</div></div></div>
         <div class="field"><div><label class="l" for="c-rpc">Solana RPC URL</label><div class="h">Get a free key at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>, then paste <span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span></div></div>
           <input class="input mono" id="c-rpc" value="${esc(c.rpcUrl)}" spellcheck="false"></div>
+        <div class="field"><div><label class="l" for="c-rpc2">Backup RPC URL <span class="muted">(optional)</span></label><div class="h">Copybot switches to this one automatically if your main RPC keeps failing, and back again after 5 minutes. Use a different provider, e.g. a free <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> endpoint.${c.activeRpc === 'backup' ? ' <b class="neg">The backup is in use right now.</b>' : ''}</div></div>
+          <input class="input mono" id="c-rpc2" value="${esc(c.backupRpcUrl || '')}" placeholder="not set" spellcheck="false"></div>
         <div class="field"><div><label class="l" for="c-jupkey">Jupiter API key <span class="muted">(optional)</span></label><div class="h">Only if you've outgrown the free tier. ${c.hasJupiterKey ? '<b>A key is saved.</b>' : ''}</div></div>
           <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="field"><div><label class="l" for="c-dexkey">DexCheck API key <span class="muted">(optional)</span></label><div class="h">Turns on whale trades and top traders in Markets. Free at <a href="https://dexcheck.ai/" target="_blank" rel="noopener">dexcheck.ai</a> (API dashboard → Settings → API Keys). ${c.hasDexcheckKey ? `<b>A key is saved${c.dexcheckEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
@@ -1549,7 +1551,7 @@ function renderSettings(el) {
   $('#s-save').onclick = saveSettings;
   el.querySelectorAll('#mode-seg button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
   $('#c-save').onclick = async () => {
-    const body = { rpcUrl: $('#c-rpc').value };
+    const body = { rpcUrl: $('#c-rpc').value, backupRpcUrl: $('#c-rpc2').value };
     if ($('#c-jupkey').value) body.jupiterKey = $('#c-jupkey').value;
     if ($('#c-dexkey').value) { body.dexcheckKey = $('#c-dexkey').value; S.m.data = {}; }
     if ($('#c-sskey').value) body.solscanKey = $('#c-sskey').value;
@@ -1578,7 +1580,7 @@ function connTestHtml() {
   const t = S.connTest;
   if (!t) return '';
   if (!t.ok) return `<span class="neg">✕ ${esc(t.error)}</span>`;
-  return `<span class="${t.rpcMs < 800 ? 'pos' : ''}">✓ RPC ${t.rpcMs} ms</span> · ${t.jupiterOk ? `<span class="pos">✓ Jupiter ${t.jupMs} ms</span>` : '<span class="neg">✕ Jupiter unreachable</span>'}${t.solscan ? (t.solscan.ok ? ' · <span class="pos">✓ Solscan</span>' : ` · <span class="neg">✕ Solscan: ${esc(t.solscan.error)}</span>`) : ''}${t.solPrice ? ` · SOL ≈ $${t.solPrice.toFixed(2)}` : ''}`;
+  return `<span class="${t.rpcMs < 800 ? 'pos' : ''}">✓ RPC ${t.rpcMs} ms</span> · ${t.jupiterOk ? `<span class="pos">✓ Jupiter ${t.jupMs} ms</span>` : '<span class="neg">✕ Jupiter unreachable</span>'}${t.backup ? (t.backup.ok ? ` · <span class="pos">✓ Backup RPC ${t.backup.ms} ms</span>` : ` · <span class="neg">✕ Backup RPC: ${esc(t.backup.error)}</span>`) : ''}${t.solscan ? (t.solscan.ok ? ' · <span class="pos">✓ Solscan</span>' : ` · <span class="neg">✕ Solscan: ${esc(t.solscan.error)}</span>`) : ''}${t.solPrice ? ` · SOL ≈ $${t.solPrice.toFixed(2)}` : ''}`;
 }
 async function saveSettings() {
   const cfg = structuredClone(S.config);
@@ -1649,6 +1651,7 @@ function connectEvents() {
     if (['ready', 'rejected', 'installing'].includes(S.app.update.state) || !t) { if (!(S.page === 'settings' && S.dirty)) render(); }
     else t.innerHTML = updateText();
   });
+  es.addEventListener('connection', (e) => { S.connection = JSON.parse(e.data); renderChrome(); });
   es.addEventListener('scout', (e) => { S.scout = JSON.parse(e.data); });
   es.addEventListener('ai', (e) => {
     const d = JSON.parse(e.data);

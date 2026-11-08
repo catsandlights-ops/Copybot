@@ -7,7 +7,7 @@ import { quoteBuy, quoteSell } from './jupiter';
 import { checkToken } from './safety';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
-import { hasSecret } from './env';
+import { hasSecret, onRpcSwitch } from './env';
 import { buyBlockReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
@@ -46,6 +46,7 @@ export class BotEngine extends EventEmitter {
 
   constructor() {
     super();
+    onRpcSwitch((to, why) => this.log(to === 'backup' ? `Switched to your backup RPC: ${why}.` : `Back on your main RPC (${why}).`, to === 'backup' ? 'warn' : 'system'));
     this.reload();
   }
 

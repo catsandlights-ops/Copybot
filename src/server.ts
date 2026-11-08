@@ -8,6 +8,7 @@
  * because they don't have the token.
  */
 import http from 'node:http';
+import { Connection } from '@solana/web3.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -15,6 +16,7 @@ import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
 import { isAddress, sanitizeConfig, saveConfig } from './config';
+import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
 import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
@@ -102,6 +104,7 @@ let statusTimer: NodeJS.Timeout | null = null;
 engine.on('log', (e) => broadcast('log', e));
 engine.on('trade', (t) => broadcast('trade', t));
 ai.onDecision((d) => broadcast('ai', d));
+onRpcSwitch(() => setTimeout(() => broadcast('connection', connectionInfo()), 0));
 engine.on('status', () => {
   if (statusTimer) return; // coalesce bursts
   statusTimer = setTimeout(() => {
@@ -193,6 +196,8 @@ function readTrades(limit = 500) {
 function connectionInfo() {
   return {
     rpcUrl: rpcUrl(),
+    backupRpcUrl: backupRpcUrl(),
+    activeRpc: failover.state.active,
     usingPublicRpc: rpcUrl().includes('api.mainnet-beta.solana.com'),
     jupiterUrl: jupUrl(),
     hasJupiterKey: !!jupKey(),
@@ -564,7 +569,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/connection') {
     const b = await readBody(req);
-    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey', 'solscanKey']) {
+    for (const k of ['rpcUrl', 'backupRpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey', 'solscanKey']) {
       if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
     }
     const env: Record<string, string> = {};
@@ -572,6 +577,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       if (!isHttpsUrl(b.rpcUrl.trim())) throw new HttpError(400, 'RPC URL must be a valid https:// address');
       env.RPC_URL = b.rpcUrl.trim();
       env.WS_URL = '';
+    }
+    if (typeof b.backupRpcUrl === 'string') {
+      const u = b.backupRpcUrl.trim();
+      if (u && !isHttpsUrl(u)) throw new HttpError(400, 'Backup RPC URL must be a valid https:// address');
+      if (u && u === (env.RPC_URL ?? rpcUrl())) throw new HttpError(400, 'The backup RPC should be a different one from your main RPC');
+      env.RPC_URL_BACKUP = u;
     }
     if (typeof b.jupiterKey === 'string') env.JUPITER_API_KEY = b.jupiterKey.trim();
     let newKey: string | null = null;
@@ -618,12 +629,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       });
       const jupMs = Date.now() - t2;
       const j = q.ok ? ((await q.json()) as { outAmount: string }) : null;
+      let backup: { ok: boolean; ms?: number; error?: string } | null = null;
+      const bu = backupRpcUrl();
+      if (bu) {
+        const t3 = Date.now();
+        backup = await new Connection(bu, { commitment: 'confirmed', disableRetryOnRateLimit: true }).getSlot().then(() => ({ ok: true, ms: Date.now() - t3 }), (e) => ({ ok: false, error: (e as Error).message.slice(0, 120) }));
+      }
       let solscan: { ok: boolean; error?: string } | null = null;
       if (hasSecret('SOLSCAN_API_KEY')) {
         // BONK: an established token with many holders.
         solscan = await getHolderStats('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', null).then(() => ({ ok: true }), (e) => ({ ok: false, error: (e as Error).message.slice(0, 160) }));
       }
-      return send(res, 200, { ok: true, slot, rpcMs, jupiterOk: !!j, jupMs, solPrice: j ? Number(j.outAmount) / 1e6 / 0.1 : null, solscan });
+      return send(res, 200, { ok: true, slot, rpcMs, jupiterOk: !!j, jupMs, solPrice: j ? Number(j.outAmount) / 1e6 / 0.1 : null, solscan, backup });
     } catch (e) {
       return send(res, 200, { ok: false, error: (e as Error).message.slice(0, 200) });
     }

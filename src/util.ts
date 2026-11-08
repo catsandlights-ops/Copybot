@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { rpcUrl } from './env';
+import { rpcUrl, rpcFetch } from './env';
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -49,7 +49,7 @@ export type TokenBal = {
 export async function getTx(sig: string, tries = 8): Promise<RawTx | null> {
   for (let i = 0; i < tries; i++) {
     const res = await withRetry(async () => {
-      const r = await fetch(rpcUrl(), {
+      const r = await rpcFetch(rpcUrl(), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
