@@ -866,7 +866,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const wallets = addressList(b.wallets, 5, 'wallet address');
     const txs = Math.min(2000, Math.max(100, Number(b.txs) || 600));
     const delayPct = Math.min(50, Math.max(0, Number.isFinite(Number(b.delayPct)) ? Number(b.delayPct) : 5));
-    const job = addJob('backtest', { wallets, txs, delayPct }, async (progress) => {
+    const replayExits = b.replayExits !== false;
+    const job = addJob('backtest', { wallets, txs, delayPct, replayExits }, async (progress) => {
       const conn = makeConnection();
       const swaps = [];
       const stats = { read: 0, failed: 0 };
@@ -887,7 +888,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       const cfg = structuredClone(engine.cfg);
       for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
       const opts = { delayPct, feeSol: 0.0002 };
-      const first = runBacktest(swaps, cfg, opts);
+      let first = runBacktest(swaps, cfg, opts);
+      // Price candles for the tokens we'd have bought, so stop-loss and take-profits can be replayed.
+      const prices = new Map<string, import('./backtest').PriceSeries>();
+      if (replayExits) {
+        const bought = [...new Set(swaps.filter((s) => s.side === 'buy' && first.trades.some((t) => t.mint === s.mint)).map((s) => s.mint))];
+        const stillOpen = new Set(first.open.map((o) => o.mint));
+        for (const [i, mint] of bought.slice(0, 40).entries()) {
+          progress(`Loading price history for exits (${i + 1}/${Math.min(40, bought.length)})…`);
+          const times = swaps.filter((s) => s.mint === mint && s.blockTime).map((s) => s.blockTime! * 1000);
+          const from = Math.min(...times);
+          const to = stillOpen.has(mint) ? Date.now() : Math.max(...times) + 3_600_000;
+          const h = await markets.priceHistory(mint, from, to).catch(() => null);
+          if (h) prices.set(mint, h);
+        }
+        first = runBacktest(swaps, cfg, opts, new Map(), prices);
+      }
       // Price what would still be held today.
       const marks = new Map<string, number | null>();
       for (const [i, o] of first.open.slice(0, 25).entries()) {
@@ -896,7 +912,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
         marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
       }
-      return { ...runBacktest(swaps, cfg, opts, marks), unreadable: stats.failed, read: stats.read, settings: { delayPct, txs, sizing: cfg.buy.sizing, fixedSol: cfg.buy.fixedSol, percentOfTarget: cfg.buy.percentOfTarget, copySells: cfg.sell.copySells } };
+      return { ...runBacktest(swaps, cfg, opts, marks, prices), unreadable: stats.failed, read: stats.read, settings: { delayPct, txs, sizing: cfg.buy.sizing, fixedSol: cfg.buy.fixedSol, percentOfTarget: cfg.buy.percentOfTarget, copySells: cfg.sell.copySells } };
     });
     return send(res, 200, job);
   }

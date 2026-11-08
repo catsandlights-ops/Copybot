@@ -101,3 +101,51 @@ test('ignores sells of tokens we never copied, and per-wallet results add up', (
   assert.equal(r.worst!.wallet, B);
   assert.deepEqual(r.curve.map(([, v]) => +v.toFixed(3)), [-0.1, 0]);
 });
+
+// ---------------- exits replayed from price candles ----------------
+const STEP = 300_000;
+const series = (startMin: number, rows: [number, number, number][]) => ({
+  step: STEP,
+  candles: rows.map(([l, h, c], i) => ({ t: (T0 + startMin * 60) * 1000 + i * STEP, l, h, c })),
+});
+
+test('stop-loss fires from candles before the wallet sells', () => {
+  const c = cfg();
+  c.exits = { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
+  c.risk.stopLossPct = 40;
+  // Price USD 1.0 at the buy, then crashes to 0.5 (−50%), they sell an hour later at 3x.
+  const prices = new Map([['M', series(-5, [[1, 1, 1], [1, 1, 1], [0.9, 1, 0.95], [0.5, 0.95, 0.5], [0.5, 0.6, 0.55]])]]);
+  const swaps = [sw({ side: 'buy', mint: 'M', wallet: A }, 0), sw({ side: 'sell', mint: 'M', wallet: A, quoteAmount: 3, tokenPre: 1_000_000n }, 60)];
+  const r = runBacktest(swaps, c, noCost, new Map(), prices);
+  assert.equal(r.closed, 1);
+  const s = r.trades.find((t) => t.side === 'sell')!;
+  assert.match(s.reason!, /stop-loss/);
+  assert.ok(Math.abs(s.pnl! + 0.05) < 1e-9); // sold at 0.5x: 0.05 back for 0.1
+  assert.deepEqual(r.exitsReplayed, { tokens: 1, withPrices: 1, exitSells: 1 });
+  // Without candles, the same history follows their 3x sell.
+  assert.ok(runBacktest(swaps, c, noCost).realizedSol > 0.19);
+});
+
+test('staged take-profits from candle highs, then their sell closes the rest', () => {
+  const c = cfg();
+  c.exits = { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
+  c.risk.stopLossPct = 90;
+  const prices = new Map([['M', series(-5, [[1, 1, 1], [1, 1, 1], [1, 2.2, 2], [2, 4.5, 4], [3.5, 4, 3.8]])]]);
+  const swaps = [sw({ side: 'buy', mint: 'M', wallet: A }, 0), sw({ side: 'sell', mint: 'M', wallet: A, quoteAmount: 4, tokenPre: 1_000_000n }, 30)];
+  const r = runBacktest(swaps, c, noCost, new Map(), prices);
+  const reasons = r.trades.filter((t) => t.side === 'sell').map((t) => t.reason).reverse();
+  assert.equal(reasons.length, 3);
+  assert.match(reasons[0]!, /cost/);
+  assert.match(reasons[1]!, /take-profit 1/);
+  assert.equal(reasons[2], 'they sold everything');
+  assert.ok(r.realizedSol > 0.2);
+});
+
+test('usdAt finds the covering candle and ignores stale data', async () => {
+  const { usdAt } = await import('./backtest');
+  const s = { step: 60_000, candles: [{ t: 0, l: 1, h: 1, c: 1 }, { t: 60_000, l: 2, h: 2, c: 2 }] };
+  assert.equal(usdAt(s, 90_000), 2);
+  assert.equal(usdAt(s, 30_000), 1);
+  assert.equal(usdAt(s, -1), null);
+  assert.equal(usdAt(s, 60_000 + 3 * 60_000), null);
+});
