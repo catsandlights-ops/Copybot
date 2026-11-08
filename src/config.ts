@@ -2,7 +2,36 @@ import fs from 'node:fs';
 import { PublicKey } from '@solana/web3.js';
 
 /** sizeMultiplier scales every buy copied from this wallet; maxExposureSol caps SOL in its positions (0 = no cap). */
-export type WalletCfg = { address: string; label: string; enabled: boolean; sizeMultiplier: number; maxExposureSol: number };
+export type ExitOverrides = Partial<{
+  stopLossPct: number;
+  recoverCostAtPct: number;
+  tp1AtPct: number;
+  tp1SellPct: number;
+  tp2AtPct: number;
+  tp2SellPct: number;
+  trailingAfterPct: number;
+  trailingStopPct: number;
+}>;
+/** `exits` overrides the global exit settings for positions copied from this wallet. */
+export type WalletCfg = { address: string; label: string; enabled: boolean; sizeMultiplier: number; maxExposureSol: number; exits?: ExitOverrides };
+const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
+  stopLossPct: 'risk.stopLossPct',
+  recoverCostAtPct: 'exits.recoverCostAtPct',
+  tp1AtPct: 'exits.tp1AtPct',
+  tp1SellPct: 'exits.tp1SellPct',
+  tp2AtPct: 'exits.tp2AtPct',
+  tp2SellPct: 'exits.tp2SellPct',
+  trailingAfterPct: 'exits.trailingAfterPct',
+  trailingStopPct: 'exits.trailingStopPct',
+};
+
+/** Exit settings for a position: the opening wallet's overrides on top of the global ones. */
+export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
+  const o = cfg.wallets.find((w) => w.address === sources[0])?.exits;
+  if (!o || !Object.keys(o).length) return cfg;
+  const { stopLossPct, ...exits } = o;
+  return { risk: { ...cfg.risk, ...(stopLossPct !== undefined ? { stopLossPct } : {}) }, exits: { ...cfg.exits, ...exits } };
+}
 
 export type Config = {
   mode: 'paper' | 'live';
@@ -242,12 +271,27 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) fail(`${name} must be between ${min} and ${max}`);
       return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def;
     };
+    const exits: ExitOverrides = {};
+    if (w.exits && typeof w.exits === 'object') {
+      for (const [k, path] of Object.entries(EXIT_KEYS) as [keyof ExitOverrides, string][]) {
+        const v = w.exits[k];
+        if (v === undefined || v === null || v === '') continue;
+        const [min, max, name] = NUMBERS[path];
+        if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) {
+          fail(`${cleanLabel(w.label) || 'Wallet'}: ${name} must be between ${min} and ${max}`);
+          continue;
+        }
+        exits[k] = v;
+      }
+      if (exits.tp1AtPct && exits.tp2AtPct && exits.tp2AtPct <= exits.tp1AtPct) fail(`${cleanLabel(w.label) || 'Wallet'}: take-profit 2 must be higher than take-profit 1`);
+    }
     out.wallets.push({
       address: w.address,
       label: cleanLabel(w.label) || `trader-${out.wallets.length + 1}`,
       enabled: w.enabled !== false,
       sizeMultiplier: num(w.sizeMultiplier, 0.1, 10, 1, 'Size multiplier'),
       maxExposureSol: num(w.maxExposureSol, 0, 10_000, 0, 'Wallet budget'),
+      ...(Object.keys(exits).length ? { exits } : {}),
     });
   }
 

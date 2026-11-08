@@ -193,3 +193,21 @@ test('dangerReason: rug, crash and dump checks', async () => {
   assert.equal(dangerReason({ ...base, buys5m: 1, sells5m: 10 }, p), null); // too few sells to judge
   assert.equal(dangerReason({ ...base, liquidityUsd: 1, buys5m: 0, sells5m: 99 }, { liquidityDropPct: 0, crashPct: 0, crashWindowMin: 5, maxSellBuyRatio: 0 }), null);
 });
+
+test('per-wallet exits: overrides apply to positions opened by that wallet only, and are validated', async () => {
+  const { DEFAULT_CONFIG, exitConfigFor, sanitizeConfig } = await import('./config');
+  const W = 'So11111111111111111111111111111111111111112';
+  const c = sanitizeConfig({ wallets: [{ address: W, label: 'scalper', exits: { stopLossPct: 15, tp1AtPct: 50, trailingStopPct: '' } }] }, true);
+  assert.deepEqual(c.wallets[0].exits, { stopLossPct: 15, tp1AtPct: 50 });
+  const own = exitConfigFor(c, [W]);
+  assert.equal(own.risk.stopLossPct, 15);
+  assert.equal(own.exits.tp1AtPct, 50);
+  assert.equal(own.exits.tp2AtPct, DEFAULT_CONFIG.exits.tp2AtPct);
+  assert.equal(exitConfigFor(c, ['other']).risk.stopLossPct, DEFAULT_CONFIG.risk.stopLossPct);
+  assert.throws(() => sanitizeConfig({ wallets: [{ address: W, label: 'x', exits: { stopLossPct: 400 } }] }, true), /Stop-loss must be between/);
+  assert.throws(() => sanitizeConfig({ wallets: [{ address: W, label: 'x', exits: { tp1AtPct: 500, tp2AtPct: 100 } }] }, true), /take-profit 2 must be higher/);
+  // planExit with a wallet's tighter stop-loss sells where the global one would hold.
+  const { planExit } = await import('./rules');
+  assert.equal(planExit({ costSol: 1 }, 0.8, exitConfigFor(c, [W])).action?.fraction, 1);
+  assert.equal(planExit({ costSol: 1 }, 0.8, c).action, null);
+});

@@ -163,6 +163,7 @@ td.r, th.r { text-align: right; }
 .tag.ai { background: var(--panel-2); color: var(--accent); }
 .tag.skip { background: var(--amber-bg); color: var(--amber); }
 #ai-settings { scroll-margin-top: 110px; }
+.modal .with-unit span { min-width: 86px; text-align: center; }
 .scout-hero { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 20px 22px; }
 .scout-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .scout-steps span { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--panel-2); color: var(--muted); }
@@ -736,7 +737,8 @@ function renderDashboard(el) {
 }
 /** What the staged exits have done for a position, and what happens next. */
 function exitPlan(p) {
-  const x = S.config.exits, done = new Set(p.steps || []);
+  const { stopLossPct, ...ov } = S.config.wallets.find((w) => w.address === p.sources?.[0])?.exits || {};
+  const x = { ...S.config.exits, ...ov }, done = new Set(p.steps || []);
   const chips = [];
   const step = (id, on, label) => { if (on) chips.push(`<span class="chip ${done.has(id) ? 'done' : ''}">${done.has(id) ? '✓ ' : ''}${label}</span>`); };
   step('recover', x.recoverCostAtPct > 0, `cost back +${x.recoverCostAtPct}%`);
@@ -747,6 +749,7 @@ function exitPlan(p) {
     const floor = ((p.peakMultiple || 1) * (1 - x.trailingStopPct / 100) - 1) * 100;
     chips.push(`<span class="chip trail" title="Peak +${peakGain.toFixed(0)}%. Sells everything if it falls to ${pct(floor)}.">trailing: sells below ${pct(floor)}</span>`);
   }
+  if (Object.keys(ov).length || stopLossPct !== undefined) chips.push('<span class="chip" title="This wallet has its own exit settings (Wallets page)">wallet\'s own exits</span>');
   return chips.join(' ') || '<span class="muted">stop-loss only</span>';
 }
 
@@ -770,6 +773,38 @@ const medianOf = (xs) => { if (!xs.length) return null; const s = [...xs].sort((
 function measuredGap() {
   const g = S.trades.filter((t) => t.mode === S.config.mode && typeof t.gapPct === 'number').map((t) => t.gapPct);
   return { median: medianOf(g), n: g.length };
+}
+const EXIT_FIELDS = [
+  ['stopLossPct', 'Stop-loss', '% down', 'risk.stopLossPct'],
+  ['recoverCostAtPct', 'Take back my cost at', '% up', 'exits.recoverCostAtPct'],
+  ['tp1AtPct', 'Take-profit 1 at', '% up', 'exits.tp1AtPct'],
+  ['tp1SellPct', 'Take-profit 1 sells', '% of rest', 'exits.tp1SellPct'],
+  ['tp2AtPct', 'Take-profit 2 at', '% up', 'exits.tp2AtPct'],
+  ['tp2SellPct', 'Take-profit 2 sells', '% of rest', 'exits.tp2SellPct'],
+  ['trailingAfterPct', 'Start trailing stop after', '% up', 'exits.trailingAfterPct'],
+  ['trailingStopPct', 'Trailing stop', '% drop', 'exits.trailingStopPct'],
+];
+/** Edit one wallet's own exit settings. Blank = use the global setting. */
+function walletExitsModal(i) {
+  const w = S.config.wallets[i], o = w.exits || {};
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:560px"><h3>Exits for ${esc(w.label)}</h3>
+    <p class="muted" style="margin-top:0">Used for positions copied from this wallet. Leave a box empty to use your normal setting (shown in grey). Useful for a fast scalper vs a long holder.</p>
+    <div class="stack" style="gap:8px">${EXIT_FIELDS.map(([k, label, unit, path]) => `<label class="row" style="justify-content:space-between;gap:12px"><span>${label}</span>
+      <span class="with-unit" style="width:190px"><input type="number" min="0" step="any" data-ex="${k}" value="${o[k] ?? ''}" placeholder="${esc(getP(S.config, path))}"><span>${unit}</span></span></label>`).join('')}</div>
+    <div class="row" style="margin-top:16px"><button class="btn ghost" data-a="reset">Use normal settings</button><span class="spacer" style="flex:1"></span><button class="btn" data-a="no">Cancel</button><button class="btn primary" data-a="yes">Save</button></div></div></div>`;
+  const close = () => { $('#modal-root').innerHTML = ''; };
+  const save = async (exits) => {
+    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits } : x));
+    if (await saveWallets(wallets, 'Exit settings saved')) close();
+  };
+  $('#modal-root [data-a=no]').onclick = close;
+  $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) close(); };
+  $('#modal-root [data-a=reset]').onclick = () => save(undefined);
+  $('#modal-root [data-a=yes]').onclick = () => {
+    const exits = {};
+    for (const inp of document.querySelectorAll('[data-ex]')) if (inp.value !== '') exits[inp.dataset.ex] = Number(inp.value);
+    save(Object.keys(exits).length ? exits : undefined);
+  };
 }
 function walletStats() {
   const mode = S.config.mode, weekAgo = Date.now() - 7 * 86400_000;
@@ -824,7 +859,7 @@ function renderWallets(el) {
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits ? 'primary' : ''}" data-exits="${i}" title="${w.exits ? 'This wallet has its own exit settings' : 'Use different exit settings for this wallet'}">Exits${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;
@@ -835,6 +870,7 @@ function renderWallets(el) {
     if (ws.some((w) => w.address === address)) return toast('That wallet is already in the list', true);
     if (await saveWallets([...ws, { address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], 'Wallet added')) e.target.reset();
   };
+  el.querySelectorAll('[data-exits]').forEach((b) => (b.onclick = () => walletExitsModal(Number(b.dataset.exits))));
   el.querySelectorAll('[data-toggle]').forEach((c) => (c.onchange = () => saveWallets(ws.map((w, i) => (i == c.dataset.toggle ? { ...w, enabled: c.checked } : w)))));
   el.querySelectorAll('[data-label]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.label ? { ...w, label: inp.value.trim() } : w)), 'Saved')));
   el.querySelectorAll('[data-mult]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.mult ? { ...w, sizeMultiplier: Number(inp.value) } : w)), 'Saved')));

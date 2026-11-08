@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { Config, loadConfig } from './config';
+import { Config, exitConfigFor, loadConfig } from './config';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { quoteBuy, quoteSell } from './jupiter';
@@ -430,7 +430,7 @@ export class BotEngine extends EventEmitter {
       for (const p of Object.values(this.state.positions)) {
         const v = this.values[p.mint];
         if (!v || gen !== this.gen || this.exiting.has(p.mint)) continue;
-        const { action, peakMultiple } = planExit(p, v.valueSol, this.cfg);
+        const { action, peakMultiple } = planExit(p, v.valueSol, exitConfigFor(this.cfg, p.sources));
         if (peakMultiple !== p.peakMultiple) {
           p.peakMultiple = peakMultiple;
           changed = true;
