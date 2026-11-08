@@ -104,6 +104,14 @@ export function marketSkipReason(info: MarketInfo | null, f: Config['filters'], 
   return null;
 }
 
+/** Holder concentration check (Solscan). Null stats = no data, so no verdict. */
+export function holderSkipReason(h: { largestPct: number; top10Pct: number } | null, f: Pick<Config['filters'], 'maxTopHolderPct' | 'maxTop10HoldersPct'>): string | null {
+  if (!h) return null;
+  if (f.maxTopHolderPct > 0 && h.largestPct > f.maxTopHolderPct) return `one wallet owns ${h.largestPct.toFixed(1)}% of the supply (max ${f.maxTopHolderPct}%)`;
+  if (f.maxTop10HoldersPct > 0 && h.top10Pct > f.maxTop10HoldersPct) return `the 10 largest wallets own ${h.top10Pct.toFixed(0)}% of the supply (max ${f.maxTop10HoldersPct}%)`;
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Circuit breaker: daily loss limit + pause after a losing streak
 // ---------------------------------------------------------------------------

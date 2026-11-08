@@ -155,6 +155,12 @@ All of these have safe defaults. Set a value to 0 to turn that rule off.
   limits and re-checked against a fresh quote. Needs your own Anthropic API key; a **daily AI budget**
   (default $3) caps the spend, after which the normal rules take over. The Autopilot page logs every
   decision, and checks what each skipped token did an hour later.
+- **Wallet scout** (Find wallets → *Find wallets for me*): scans recently pumped tokens, finds their
+  early buyers (plus DexCheck top traders), analyzes their on-chain records, and Claude picks the most
+  suitable wallets (rule-based ranking without Claude). With the autopilot managing wallets it runs
+  daily and adds its picks, up to your maximum.
+- **Holder check** (optional Solscan API key): skips tokens where one wallet owns more than 15% of the
+  supply or the top 10 wallets own more than 50%. Pools and bonding curves are excluded.
 
 ## 4. Run
 

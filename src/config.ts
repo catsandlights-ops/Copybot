@@ -40,6 +40,8 @@ export type Config = {
     maxMarketCapUsd: number;
     minTokenAgeMin: number;
     skipIfNoMarketData: boolean;
+    maxTopHolderPct: number; // Solscan holder check: skip if one wallet owns more than this % (0 = off)
+    maxTop10HoldersPct: number; // ...or the 10 largest wallets together own more than this %
   };
   safety: {
     slippageBps: number;
@@ -86,7 +88,7 @@ export const DEFAULT_CONFIG: Config = {
     pauseMinutes: 60,
   },
   exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30 },
-  filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false },
+  filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false, maxTopHolderPct: 15, maxTop10HoldersPct: 50 },
   safety: {
     slippageBps: 300,
     maxRoundTripLossPct: 12,
@@ -129,6 +131,8 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'filters.minMarketCapUsd': [0, 1e13, 'Minimum market cap'],
   'filters.maxMarketCapUsd': [0, 1e13, 'Maximum market cap'],
   'filters.minTokenAgeMin': [0, 525_600, 'Minimum token age'],
+  'filters.maxTopHolderPct': [0, 100, 'Largest holder limit'],
+  'filters.maxTop10HoldersPct': [0, 100, 'Top 10 holders limit'],
   'safety.slippageBps': [10, 5_000, 'Max slippage', (v) => `${v / 100}%`],
   'safety.maxRoundTripLossPct': [0.1, 100, 'Max buy-then-sell loss'],
   'execution.priorityFeeMaxLamports': [0, 50_000_000, 'Max priority fee', (v) => `${v / 1e9} SOL`],

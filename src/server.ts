@@ -22,6 +22,7 @@ import * as markets from './markets';
 import { getSolUsd } from './market';
 import { marketSkipReason, walletRecords } from './rules';
 import * as ai from './ai';
+import { getHolderStats } from './solscan';
 import { pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
@@ -186,6 +187,8 @@ function connectionInfo() {
     walletAddress: engine.kp?.publicKey.toBase58() ?? null,
     hasDexcheckKey: hasSecret('DEXCHECK_API_KEY'),
     dexcheckEncrypted: secretIsEncrypted('DEXCHECK_API_KEY'),
+    hasSolscanKey: hasSecret('SOLSCAN_API_KEY'),
+    solscanEncrypted: secretIsEncrypted('SOLSCAN_API_KEY'),
     hasAnthropicKey: hasSecret('ANTHROPIC_API_KEY'),
     anthropicEncrypted: secretIsEncrypted('ANTHROPIC_API_KEY'),
   };
@@ -533,7 +536,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/connection') {
     const b = await readBody(req);
-    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey']) {
+    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey', 'solscanKey']) {
       if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
     }
     const env: Record<string, string> = {};
@@ -557,6 +560,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       // Data-source keys don't affect trading, so saving one never restarts the bot.
       if (typeof b.dexcheckKey === 'string') saveSecret('DEXCHECK_API_KEY', b.dexcheckKey);
+      if (typeof b.solscanKey === 'string') saveSecret('SOLSCAN_API_KEY', b.solscanKey);
       if (typeof b.anthropicKey === 'string') {
         if (b.anthropicKey.trim() && !/^sk-ant-[\w-]{20,}$/.test(b.anthropicKey.trim())) throw new Error('That doesn’t look like an Anthropic API key (it starts with sk-ant-).');
         saveSecret('ANTHROPIC_API_KEY', b.anthropicKey);
@@ -586,7 +590,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       });
       const jupMs = Date.now() - t2;
       const j = q.ok ? ((await q.json()) as { outAmount: string }) : null;
-      return send(res, 200, { ok: true, slot, rpcMs, jupiterOk: !!j, jupMs, solPrice: j ? Number(j.outAmount) / 1e6 / 0.1 : null });
+      let solscan: { ok: boolean; error?: string } | null = null;
+      if (hasSecret('SOLSCAN_API_KEY')) {
+        // BONK: an established token with many holders.
+        solscan = await getHolderStats('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', null).then(() => ({ ok: true }), (e) => ({ ok: false, error: (e as Error).message.slice(0, 160) }));
+      }
+      return send(res, 200, { ok: true, slot, rpcMs, jupiterOk: !!j, jupMs, solPrice: j ? Number(j.outAmount) / 1e6 / 0.1 : null, solscan });
     } catch (e) {
       return send(res, 200, { ok: false, error: (e as Error).message.slice(0, 200) });
     }

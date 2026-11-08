@@ -11,7 +11,7 @@ window.GUIDE_CATS = {
 window.GUIDES = [
   {
     id: 'whats-new-06', cat: 'news', mins: 2, title: "What's new in Copybot 0.6",
-    teaser: 'The wallet scout: Copybot finds wallets worth copying, and Claude picks the best ones.',
+    teaser: 'The wallet scout finds wallets worth copying, and a Solscan holder check skips tokens a few wallets control.',
     body: `
 <p>Finding good wallets was the hardest part of copy trading. Now Copybot can do it for you.</p>
 <h3>The wallet scout</h3>
@@ -22,6 +22,8 @@ window.GUIDES = [
 <li><b>Claude picks the most suitable ones</b> and explains why. Without Claude, the rules rank them.</li>
 </ol>
 <p>Try it on <b>Find wallets → Find wallets for me</b>. It takes 5–15 minutes.</p>
+<h3>Solscan holder check</h3>
+<p>Add a Solscan API key (Settings → Connection) and Copybot checks who owns each token before buying. It skips tokens that one wallet, or a small group, controls. Claude sees the same numbers when it decides. Change the limits in Settings → Token filters.</p>
 <h3>With the autopilot</h3>
 <p>If the autopilot manages your wallets, the scout runs by itself once a day while the bot is running and <b>adds its picks to your copy list</b> (2 per search, never more than your maximum). Change this in Settings → Autopilot.</p>
 <p class="tip">Most wallets that catch one pump don't keep winning, so some searches find nothing good. That's the scout doing its job.</p>`,
@@ -148,6 +150,7 @@ window.GUIDES = [
 <li><b>Freeze check:</b> skips tokens whose creator can freeze your tokens so you can't sell.</li>
 <li><b>Buy-then-sell test:</b> gets a quote to buy and then sell straight back. If it can't sell, or the round trip loses more than 12%, it skips. This catches most "honeypots" and very thin pools.</li>
 <li><b>Liquidity filters:</b> skips pools under $10K, and buys that would be more than 2% of the pool.</li>
+<li><b>Holder check</b> (with a Solscan API key): skips tokens where one wallet owns more than 15% of the supply, or the 10 largest wallets own more than 50%. Those wallets can dump on you at any moment. Liquidity pools don't count as holders.</li>
 <li><b>Don't chase:</b> skips if the price is already 15% above what the copied wallet paid.</li>
 <li><b>Limits and budgets:</b> max positions, max SOL in trades, per-wallet budgets, and the circuit breaker.</li>
 </ul>

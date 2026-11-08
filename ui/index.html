@@ -1300,6 +1300,8 @@ const FIELDS = [
     { k: 'filters.minMarketCapUsd', label: 'Minimum market cap', unit: 'USD', step: 1000 },
     { k: 'filters.maxMarketCapUsd', label: 'Maximum market cap', unit: 'USD', step: 1000 },
     { k: 'filters.minTokenAgeMin', label: 'Minimum token age', unit: 'min', step: 1, help: 'Skip tokens whose first pool is newer than this.' },
+    { k: 'filters.maxTopHolderPct', label: 'Largest holder limit', unit: '% of supply', help: () => `Skip if one wallet owns more than this. Liquidity pools don't count. ${S.connection?.hasSolscanKey ? '' : '<b>Needs a Solscan API key (Settings → Connection).</b> '}0 = off.` },
+    { k: 'filters.maxTop10HoldersPct', label: 'Top 10 holders limit', unit: '% of supply', help: 'Skip if the 10 largest wallets together own more than this. 0 = off.' },
     { k: 'filters.skipIfNoMarketData', label: 'Skip tokens with no market data', type: 'toggle', help: "Brand-new launches may not be listed yet. On = skip them, off = only the other safety checks apply." },
   ]},
   { title: 'Limits', desc: 'Caps that protect your balance.', fields: [
@@ -1353,7 +1355,7 @@ function fieldHtml(f) {
   else if (f.type === 'text') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" maxlength="1000" placeholder="none">${esc(v || '')}</textarea>`;
   else if (f.type === 'list') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" placeholder="none">${esc((v || []).join('\n'))}</textarea>`;
   else ctl = `<div class="with-unit"><input type="number" inputmode="decimal" id="${id}" data-k="${f.k}" value="${esc(+Number(v).toFixed(9))}" step="${f.step || 'any'}" min="0"><span>${f.unit}</span></div>`;
-  return `<div class="field"><div><label class="l" for="${id}">${f.label}</label>${f.help ? `<div class="h">${f.help}</div>` : ''}</div>${ctl}</div>`;
+  return `<div class="field"><div><label class="l" for="${id}">${f.label}</label>${f.help ? `<div class="h">${typeof f.help === 'function' ? f.help() : f.help}</div>` : ''}</div>${ctl}</div>`;
 }
 
 function renderSettings(el) {
@@ -1384,6 +1386,8 @@ function renderSettings(el) {
           <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="field"><div><label class="l" for="c-dexkey">DexCheck API key <span class="muted">(optional)</span></label><div class="h">Turns on whale trades and top traders in Markets. Free at <a href="https://dexcheck.ai/" target="_blank" rel="noopener">dexcheck.ai</a> (API dashboard → Settings → API Keys). ${c.hasDexcheckKey ? `<b>A key is saved${c.dexcheckEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
           <input class="input mono" id="c-dexkey" type="password" placeholder="${c.hasDexcheckKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
+        <div class="field"><div><label class="l" for="c-sskey">Solscan API key <span class="muted">(optional)</span></label><div class="h">Turns on the holder check (Settings → Token filters). Get one at <a href="https://solscan.io/apis" target="_blank" rel="noopener">solscan.io/apis</a> (needs a plan that includes token holders). ${c.hasSolscanKey ? `<b>A key is saved${c.solscanEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
+          <input class="input mono" id="c-sskey" type="password" placeholder="${c.hasSolscanKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="field"><div><label class="l" for="c-antkey">Anthropic API key <span class="muted">(for the autopilot)</span></label><div class="h">Lets Claude make trading decisions. From <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys. ${c.hasAnthropicKey ? `<b>A key is saved${c.anthropicEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
           <input class="input mono" id="c-antkey" type="password" placeholder="${c.hasAnthropicKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="card-b row" style="border-top:1px solid var(--border)">
@@ -1416,6 +1420,7 @@ function renderSettings(el) {
     const body = { rpcUrl: $('#c-rpc').value };
     if ($('#c-jupkey').value) body.jupiterKey = $('#c-jupkey').value;
     if ($('#c-dexkey').value) { body.dexcheckKey = $('#c-dexkey').value; S.m.data = {}; }
+    if ($('#c-sskey').value) body.solscanKey = $('#c-sskey').value;
     if ($('#c-antkey').value) { body.anthropicKey = $('#c-antkey').value; S.ai = null; }
     const r = await act(() => api('PUT', '/api/connection', body), 'Connection saved');
     if (r) { S.connection = r; S.connTest = null; render(); }
@@ -1441,7 +1446,7 @@ function connTestHtml() {
   const t = S.connTest;
   if (!t) return '';
   if (!t.ok) return `<span class="neg">✕ ${esc(t.error)}</span>`;
-  return `<span class="${t.rpcMs < 800 ? 'pos' : ''}">✓ RPC ${t.rpcMs} ms</span> · ${t.jupiterOk ? `<span class="pos">✓ Jupiter ${t.jupMs} ms</span>` : '<span class="neg">✕ Jupiter unreachable</span>'}${t.solPrice ? ` · SOL ≈ $${t.solPrice.toFixed(2)}` : ''}`;
+  return `<span class="${t.rpcMs < 800 ? 'pos' : ''}">✓ RPC ${t.rpcMs} ms</span> · ${t.jupiterOk ? `<span class="pos">✓ Jupiter ${t.jupMs} ms</span>` : '<span class="neg">✕ Jupiter unreachable</span>'}${t.solscan ? (t.solscan.ok ? ' · <span class="pos">✓ Solscan</span>' : ` · <span class="neg">✕ Solscan: ${esc(t.solscan.error)}</span>`) : ''}${t.solPrice ? ` · SOL ≈ $${t.solPrice.toFixed(2)}` : ''}`;
 }
 async function saveSettings() {
   const cfg = structuredClone(S.config);

@@ -266,6 +266,7 @@ export type BuySignal = {
   driftPct: number | null;
   priceImpactPct: number | null;
   market: { liquidityUsd: number | null; marketCapUsd: number | null; ageMin: number | null; volume24hUsd?: number | null; change1hPct?: number | null; buys1h?: number | null; sells1h?: number | null } | null;
+  holders?: { holderCount: number | null; largestWalletPct: number; top10WalletsPct: number; largestIsTheCopiedWallet: boolean } | null;
   portfolio: { openPositions: number; maxPositions: number; exposureSol: number; maxExposureSol: number; dayPnlSol: number };
   probe: { lamports: string; tokensOut: string };
 };
@@ -280,6 +281,7 @@ export async function decideBuy(cfg: Config, s: BuySignal): Promise<{ buy: boole
     copiedWallet: { label: clean(s.wallet.label), theirBuySol: s.wallet.theirSol, ourResultsCopyingIt: s.wallet.record },
     ourBuy: { normalSizeSol: s.ourSol, priceAboveTheirEntryPct: s.driftPct, priceImpactPct: s.priceImpactPct },
     market: s.market,
+    holdersExcludingPools: s.holders ?? 'not checked',
     portfolio: s.portfolio,
   })}</data>`;
   const r = await ask({ kind: 'buy', schema: BuySchema, prompt, effort: 'low', maxTokens: 6000, timeoutMs: 40_000, cfg });

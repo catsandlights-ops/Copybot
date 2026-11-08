@@ -6,7 +6,9 @@ import { decodeSwap, Swap } from './decode';
 import { quoteBuy, quoteSell } from './jupiter';
 import { checkToken } from './safety';
 import { exposure, loadState, saveState, State } from './state';
-import { buyBlockReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
+import { getHolderStats, HolderStats } from './solscan';
+import { hasSecret } from './env';
+import { buyBlockReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
 import fs from 'node:fs';
@@ -237,6 +239,20 @@ export class BotEngine extends EventEmitter {
       if (why) return skip(why);
     }
 
+    // Holder check (Solscan): skip tokens a few wallets control.
+    let holders: HolderStats | null = null;
+    if ((f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || useAi) && hasSecret('SOLSCAN_API_KEY')) {
+      try {
+        const supply = await this.conn.getTokenSupply(new PublicKey(s.mint)).then((r) => BigInt(r.value.amount)).catch(() => null);
+        holders = await getHolderStats(s.mint, supply);
+      } catch (e) {
+        if (f.skipIfNoMarketData) return skip(`couldn't check holders (${(e as Error).message})`);
+        this.log(`  note: couldn't check holders, continuing (${(e as Error).message})`, 'warn');
+      }
+      const why = holderSkipReason(holders, f);
+      if (why) return skip(why);
+    }
+
     let lamports = BigInt(Math.round(sol * 1e9));
     let check = await checkToken(this.conn, cfg, s.mint, lamports);
     if (!check.ok) return skip(check.reason);
@@ -264,6 +280,7 @@ export class BotEngine extends EventEmitter {
         driftPct: drift,
         priceImpactPct: Number(check.buyQuote.priceImpactPct ?? NaN) * 100 || null,
         market: info && { liquidityUsd: info.liquidityUsd, marketCapUsd: info.marketCapUsd, ageMin: info.createdAt ? Math.round((Date.now() - info.createdAt) / 60_000) : null, volume24hUsd: info.volume24hUsd, change1hPct: info.change1hPct, buys1h: info.buys1h, sells1h: info.sells1h },
+        holders: holders && { holderCount: holders.holderCount, largestWalletPct: +holders.largestPct.toFixed(2), top10WalletsPct: +holders.top10Pct.toFixed(1), largestIsTheCopiedWallet: holders.largestOwner === s.wallet },
         portfolio: { openPositions: Object.keys(state.positions).length, maxPositions: r.maxOpenPositions, exposureSol: exposure(state), maxExposureSol: r.maxTotalExposureSol, dayPnlSol: g.dayPnlSol },
         probe: { lamports: lamports.toString(), tokensOut: check.buyQuote.outAmount },
       });
