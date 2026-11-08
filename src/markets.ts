@@ -11,7 +11,7 @@ import { isAddress } from './config';
 import { readSecret } from './env';
 import { sleep } from './util';
 
-const UA = 'Copybot (+https://github.com/catsandlights-ops/copybot)';
+const UA = 'Copybot (+https://github.com/catsandlights-ops/Copybot)';
 
 // ---------------- small cache with in-flight de-duplication ----------------
 const cache = new Map<string, { at: number; value: unknown }>();
