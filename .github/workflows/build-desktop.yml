@@ -9,12 +9,12 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm ci
       - run: npm run dist:win
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Copybot-Windows
           path: release/*.exe
@@ -22,8 +22,8 @@ jobs:
   mac:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - run: npm ci
       - run: npm run bundle
@@ -36,7 +36,7 @@ jobs:
             arch=$([ "$d" = release/mac-arm64 ] && echo AppleSilicon || echo Intel)
             hdiutil create -volname Copybot -srcfolder "$d/Copybot.app" -ov -format UDZO "release/Copybot-$arch.dmg"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Copybot-Mac
           path: release/*.dmg
