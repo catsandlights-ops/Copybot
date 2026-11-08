@@ -315,6 +315,40 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
 .press { display: block; font-family: "Press Start 2P", var(--mono); font-size: 11px; letter-spacing: 1px; margin-top: 16px; text-transform: uppercase; background: var(--rainbow); -webkit-background-clip: text; background-clip: text; color: transparent; animation: blink 1.2s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* markets */
+.mk-top { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(280px, 2fr); gap: 16px; margin-bottom: 16px; }
+.coin { padding: 14px 18px; display: flex; flex-direction: column; gap: 2px; }
+.coin b { font-size: 20px; }
+.mk-search { display: flex; gap: 8px; align-items: center; padding: 14px; }
+.mk-main { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); align-items: start; }
+.two-eq { grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr); align-items: start; }
+.clickrow { cursor: pointer; }
+.tok { display: flex; align-items: center; gap: 10px; }
+.small { font-size: 12px; }
+.tthumb { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: none; vertical-align: middle; margin-right: 8px; background: var(--panel-2); }
+.tok .tthumb { margin-right: 0; }
+.tthumb.ph { display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: var(--muted); }
+.tthumb.lg { width: 52px; height: 52px; font-size: 20px; margin-right: 0; }
+.bs { height: 8px; min-width: 80px; border-radius: 99px; background: color-mix(in srgb, var(--red) 55%, transparent); overflow: hidden; }
+.bs i { display: block; height: 100%; background: var(--green); }
+.bs.big { height: 12px; margin: 6px 0 4px; }
+.news { max-height: 720px; overflow-y: auto; }
+.news-item { display: flex; flex-direction: column; gap: 3px; padding: 12px 18px; border-bottom: 1px solid var(--border); color: var(--text); text-decoration: none; }
+.news-item:hover { background: var(--panel-2); text-decoration: none; }
+.news-item .nt { font-weight: 560; line-height: 1.35; }
+.src { align-self: flex-start; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--r-violet); }
+.src-coindesk { color: var(--r-blue); } .src-theblock { color: var(--r-pink); } .src-decrypt { color: var(--r-green); } .src-blockworks { color: var(--r-orange); }
+.tok-h { padding: 20px 22px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
+.verdict { flex-basis: 100%; padding: 10px 14px; border-radius: 10px; font-weight: 560; }
+.verdict.yes { background: var(--green-bg); color: var(--green); } .verdict.no { background: var(--amber-bg); color: var(--amber); }
+.chart { width: 100%; height: auto; display: block; }
+.chart .gl { stroke: var(--border); stroke-dasharray: 3 4; }
+.chart .ax { fill: var(--faint); font-size: 11px; }
+.chart .cu { stroke: var(--green); fill: var(--green); } .chart .cd { stroke: var(--red); fill: var(--red); }
+@media (max-width: 1500px) { .mk-main { grid-template-columns: 1fr; } .news { max-height: 420px; } }
+@media (max-width: 1100px) { .mk-top { grid-template-columns: repeat(3, 1fr); } .mk-search { grid-column: 1 / -1; } .two-eq { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .mk-top { grid-template-columns: 1fr 1fr; } .card-h { flex-wrap: wrap; } }
+
 /* learn page */
 .learn-hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 24px; margin-bottom: 16px; background: linear-gradient(135deg, color-mix(in srgb, var(--r-violet) 10%, var(--panel)), color-mix(in srgb, var(--r-cyan) 8%, var(--panel))); }
 .learn-hero h2 { margin: 0 0 4px; font-size: 20px; }
@@ -369,6 +403,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
       <span>Copybot</span>
     </div>
     <button class="nav" data-page="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</button>
+    <button class="nav" data-page="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg>Markets</button>
     <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
     <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
@@ -556,13 +591,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', trades: 'Trade history', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', trades: 'Trade history', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
     el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-05">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
@@ -872,6 +907,178 @@ function renderTrades(el) {
 }
 const labelFor = (addr) => { const w = S.config.wallets.find((x) => x.address === addr); return w?.label || short(addr); };
 
+// ----- markets -----
+S.m = { tab: 'trending', tf: '1h', dur: '7d', data: {}, loading: {} };
+const usdC = (n) => n == null ? '—' : n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${n.toFixed(0)}`;
+function priceFmt(n) {
+  if (n == null) return '—';
+  if (n >= 1000) return '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (n >= 1) return '$' + n.toFixed(2);
+  if (n >= 0.001) return '$' + n.toPrecision(3);
+  // Tiny prices: $0.0₅277 means four… five zeros after the point, then 277.
+  const zeros = Math.floor(-Math.log10(n)) - 1;
+  const sig = Math.round(n * 10 ** (zeros + 4)).toString().slice(0, 4).replace(/0+$/, '');
+  return `$0.0${String(zeros).split('').map((d) => '₀₁₂₃₄₅₆₇₈₉'[d]).join('')}${sig}`;
+}
+const chg = (n) => n == null ? '<span class="muted">—</span>' : `<span class="${n >= 0 ? 'pos' : 'neg'}">${n >= 0 ? '▲' : '▼'} ${Math.abs(n).toFixed(1)}%</span>`;
+const ageOf = (t) => (t ? ago(t) : '—');
+
+/** Load a market resource once, then refresh it in the background. */
+async function mload(key, path, ttl = 60_000) {
+  const m = S.m, cur = m.data[key];
+  if (m.loading[key] || (cur && Date.now() - cur.at < ttl)) return;
+  m.loading[key] = true;
+  try {
+    const r = await fetch(path, { headers: { 'x-copybot-token': TOKEN || '' } });
+    if (r.status === 401) return showLocked();
+    const j = await r.json().catch(() => ({ error: 'Bad response' }));
+    m.data[key] = { at: Date.now(), ...j };
+  } catch (e) {
+    m.data[key] = { at: Date.now(), error: 'Could not reach market data.' };
+  } finally {
+    m.loading[key] = false;
+    if (S.page === 'markets') render();
+  }
+}
+const mdata = (key) => S.m.data[key];
+const loadingRow = (cols, msg = 'Loading…') => `<tr><td colspan="${cols}" class="empty"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px"></span>${msg}</td></tr>`;
+const errBox = (d) => `<div class="empty">${esc(d.error)}</div>`;
+const tokenThumb = (img, sym) => img ? `<img class="tthumb" src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="tthumb ph">${esc((sym || '?').slice(0, 1))}</span>`;
+
+function renderMarkets(el) {
+  if (S.m.token) return renderToken(el);
+  const ov = mdata('overview'), pools = mdata(`pools:${S.m.tab}`), news = mdata('news'), wh = mdata('whales');
+  mload('overview', '/api/markets/overview');
+  if (S.m.tab === 'watch') mload('pools:watch', '/api/markets/watchlist', 30_000);
+  else mload(`pools:${S.m.tab}`, `/api/markets/pools?kind=${S.m.tab}`);
+  mload('news', '/api/markets/news', 10 * 60_000);
+  mload('whales', '/api/markets/whales', 60_000);
+  const rows = pools?.data || [];
+  el.innerHTML = `
+    <div class="mk-top">
+      ${(ov?.data || [{ symbol: 'BTC' }, { symbol: 'ETH' }, { symbol: 'SOL' }]).map((c) => `<div class="card coin"><span class="muted">${esc(c.symbol)}</span><b class="num">${priceFmt(c.priceUsd)}</b>${chg(c.change24h)}</div>`).join('')}
+      <form class="card mk-search" id="mk-search"><input class="input" name="q" placeholder="Search a token by name, symbol or address" value="${esc(S.m.q || '')}" autocomplete="off"><button class="btn primary">Search</button></form>
+    </div>
+    ${S.m.results ? `<div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Search results</h2><span class="spacer"></span><button class="btn sm ghost" id="mk-clear">Clear</button></div>${S.m.results.length ? `<div class="tbl-wrap"><table><tbody>${S.m.results.map((t) => `<tr class="clickrow" data-open="${esc(t.mint)}"><td>${tokenThumb(t.image, t.symbol)}<b>${esc(t.symbol)}</b> <span class="muted">${esc(t.name)}</span></td><td class="r num">${priceFmt(t.priceUsd)}</td><td class="r">${chg(t.change?.h24)}</td><td class="r num">${usdC(t.liquidityUsd)}</td><td class="r num">${usdC(t.marketCapUsd)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No Solana tokens found.</div>'}</div>` : ''}
+    <div class="grid mk-main">
+      <div class="card">
+        <div class="card-h"><h2>Tokens</h2><span class="spacer"></span>
+          <div class="seg">${[['trending', 'Trending'], ['new', 'New'], ['watch', '★ Watchlist']].map(([k, l]) => `<button data-mtab="${k}" class="${S.m.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Token</th><th class="r">Price</th><th class="r">1h</th><th class="r">24h</th><th class="r">Volume 24h</th><th class="r">Liquidity</th><th class="r">Mkt cap</th><th class="r">Age</th><th>Buys / sells</th></tr></thead>
+          <tbody>${!pools ? loadingRow(9) : pools.error ? `<tr><td colspan="9">${errBox(pools)}</td></tr>` : !rows.length ? `<tr><td colspan="9" class="empty">${S.m.tab === 'watch' ? 'Your watchlist is empty. Open a token and press ★ Watch.' : 'Nothing right now.'}</td></tr>` : rows.map((t) => {
+            const b = t.buys24h ?? t.txns?.h24?.buys, sl = t.sells24h ?? t.txns?.h24?.sells, tot = (b || 0) + (sl || 0);
+            return `<tr class="clickrow" data-open="${esc(t.mint)}">
+              <td class="tok">${tokenThumb(t.image, t.symbol)}<span><b>${esc(t.symbol)}</b><br><span class="muted small">${esc(t.name)}</span></span></td>
+              <td class="r num">${priceFmt(t.priceUsd)}</td><td class="r">${chg(t.change?.h1)}</td><td class="r">${chg(t.change?.h24)}</td>
+              <td class="r num">${usdC(t.volume24h ?? t.volume?.h24)}</td><td class="r num">${usdC(t.liquidityUsd)}</td><td class="r num">${usdC(t.marketCapUsd)}</td><td class="r muted num">${ageOf(t.createdAt)}</td>
+              <td>${tot ? `<div class="bs" title="${b} buys / ${sl} sells"><i style="width:${(100 * b) / tot}%"></i></div>` : '<span class="muted">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>
+      </div>
+      <div class="card"><div class="card-h"><h2>News</h2></div>
+        <div class="news">${!news ? '<div class="empty"><span class="spinner" style="display:inline-block"></span></div>' : news.error ? errBox(news) : (news.data || []).map((n) => `<a class="news-item" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"><span class="src src-${esc(n.source.replace(/\W/g, '').toLowerCase())}">${esc(n.source)}</span><span class="nt">${esc(n.title)}</span><span class="muted small">${n.publishedAt ? ago(n.publishedAt) + ' ago' : ''}</span></a>`).join('') || '<div class="empty">No recent stories.</div>'}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-h"><h2>Whale trades</h2><span class="muted small">Big Solana trades over $10K, from DexCheck</span></div>
+      ${!wh ? '<div class="empty"><span class="spinner" style="display:inline-block"></span></div>' : wh.needsKey ? `<div class="card-b row" style="justify-content:space-between"><span class="muted">See the biggest trades on Solana and copy the wallets behind them. Needs a free DexCheck API key.</span><button class="btn sm primary" onclick="go('settings')">Add DexCheck key</button></div>` : wh.error ? errBox(wh) : walletTable((wh.data || []).map((w) => ({ ...w, label: `${w.side === 'buy' ? '<span class="tag buy">buy</span>' : '<span class="tag sell">sell</span>'} <b>${esc(w.token)}</b> <span class="num">${usdC(w.amountUsd)}</span> <span class="muted small">${w.at ? ago(w.at) + ' ago' : ''}</span>` })), 'Trade')}
+    </div>`;
+  el.querySelectorAll('[data-mtab]').forEach((b) => (b.onclick = () => { S.m.tab = b.dataset.mtab; render(); }));
+  el.querySelectorAll('[data-open]').forEach((r) => (r.onclick = () => openToken(r.dataset.open)));
+  $('#mk-search').onsubmit = async (e) => {
+    e.preventDefault();
+    const q = new FormData(e.target).get('q').trim(); S.m.q = q;
+    if (q.length > 30 && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(q)) return openToken(q);
+    const r = await act(() => api('GET', `/api/markets/search?q=${encodeURIComponent(q)}`));
+    if (r) { S.m.results = r.data || []; render(); }
+  };
+  const cl = $('#mk-clear'); if (cl) cl.onclick = () => { S.m.results = null; S.m.q = ''; render(); };
+  bindWalletActions(el);
+}
+
+/** Wallet rows with Analyze / Copy actions (whales, top traders). */
+function walletTable(rows, firstCol) {
+  if (!rows.length) return '<div class="empty">Nothing to show yet.</div>';
+  return `<div class="tbl-wrap"><table><thead><tr><th>${firstCol}</th><th>Wallet</th><th></th></tr></thead><tbody>${rows.map((w) => `<tr>
+    <td>${w.label}</td><td>${walletLink(w.wallet)}</td>
+    <td class="r" style="white-space:nowrap"><button class="btn sm" data-analyze-w="${esc(w.wallet)}">Analyze</button> ${inList(w.wallet) ? '<span class="muted small">Copying</span>' : `<button class="btn sm primary" data-copy-w="${esc(w.wallet)}">Copy</button>`}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function bindWalletActions(el) {
+  el.querySelectorAll('[data-analyze-w]').forEach((b) => (b.onclick = () => startAnalyze([b.dataset.analyzeW])));
+  el.querySelectorAll('[data-copy-w]').forEach((b) => (b.onclick = async () => {
+    const w = b.dataset.copyW;
+    if (await confirmModal({ title: 'Copy this wallet?', confirm: 'Copy wallet', body: `<p>Copybot will start copying ${short(w)}. Tip: run <b>Analyze</b> first to check its real track record.</p>` }))
+      saveWallets([...S.config.wallets, { address: w, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list');
+  }));
+}
+
+function openToken(mint) { S.m.token = mint; render(); window.scrollTo(0, 0); }
+
+function candleChart(c) {
+  if (!c.length) return '<div class="empty">No chart data for this pool yet.</div>';
+  const W = 900, H = 300, pad = 74;
+  const lo = Math.min(...c.map((k) => k.l)), hi = Math.max(...c.map((k) => k.h)), span = hi - lo || hi || 1;
+  const y = (v) => 10 + (H - 40) * (1 - (v - lo) / span), step = (W - pad - 10) / c.length, bw = Math.max(2, step * 0.62);
+  const grid = [0, 0.5, 1].map((f) => { const v = lo + span * f; return `<line x1="0" x2="${W - pad}" y1="${y(v)}" y2="${y(v)}" class="gl"/><text x="${W - pad + 6}" y="${y(v) + 4}" class="ax">${priceFmt(v)}</text>`; }).join('');
+  const bars = c.map((k, i) => {
+    const x = 5 + i * step + step / 2, up = k.c >= k.o, top = y(Math.max(k.o, k.c)), h = Math.max(1, Math.abs(y(k.o) - y(k.c)));
+    return `<line x1="${x}" x2="${x}" y1="${y(k.h)}" y2="${y(k.l)}" class="${up ? 'cu' : 'cd'}"/><rect x="${x - bw / 2}" y="${top}" width="${bw}" height="${h}" rx="1" class="${up ? 'cu' : 'cd'}"/>`;
+  }).join('');
+  const lbl = [[0, 'start'], [Math.floor(c.length / 2), 'middle'], [c.length - 1, 'end']].map(([i, anchor]) => `<text x="${5 + i * step + step / 2}" y="${H - 8}" text-anchor="${anchor}" class="ax">${new Date(c[i].t).toLocaleString([], S.m.tf === '1d' ? { month: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' })}</text>`).join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Price chart">${grid}${bars}${lbl}</svg>`;
+}
+
+function renderToken(el) {
+  const mint = S.m.token, tk = mdata(`tok:${mint}`);
+  mload(`tok:${mint}`, `/api/markets/token?mint=${mint}`, 30_000);
+  const t = tk?.data;
+  if (t?.pool) {
+    mload(`chart:${t.pool}:${S.m.tf}`, `/api/markets/chart?pool=${t.pool}&tf=${S.m.tf}`);
+    mload(`top:${t.pool}:${S.m.dur}`, `/api/markets/top-traders?pool=${t.pool}&duration=${S.m.dur}`, 5 * 60_000);
+  }
+  const back = `<button class="btn ghost" id="mk-back" style="margin-bottom:12px">← Markets</button>`;
+  if (!tk) { el.innerHTML = back + '<div class="card"><div class="empty"><span class="spinner" style="display:inline-block"></span></div></div>'; return bindBack(el); }
+  if (tk.error || !t) { el.innerHTML = back + `<div class="card">${tk.error ? errBox(tk) : '<div class="empty">No market data for this token yet. It may be too new.</div>'}</div>`; return bindBack(el); }
+  const ch = mdata(`chart:${t.pool}:${S.m.tf}`), top = mdata(`top:${t.pool}:${S.m.dur}`);
+  const bs = (p) => { const b = p?.buys || 0, s2 = p?.sells || 0, tot = b + s2; return tot ? `<div class="bs big"><i style="width:${(100 * b) / tot}%"></i></div><div class="row small muted" style="justify-content:space-between"><span class="pos">${b.toLocaleString()} buys</span><span class="neg">${s2.toLocaleString()} sells</span></div>` : '<span class="muted">—</span>'; };
+  el.innerHTML = `${back}
+    <div class="card tok-h">
+      <div class="row" style="gap:14px">${tokenThumb(t.image, t.symbol).replace('tthumb', 'tthumb lg')}<div><h2 style="margin:0">${esc(t.symbol)} <span class="muted" style="font-weight:500;font-size:15px">${esc(t.name)}</span></h2><div class="row" style="gap:12px"><b class="num" style="font-size:24px">${priceFmt(t.priceUsd)}</b>${chg(t.change?.h24)}<span class="muted small">24h</span></div></div></div>
+      <div class="row">
+        <button class="btn ${t.watched ? '' : 'primary'}" id="mk-watch">${t.watched ? '★ Watching' : '☆ Watch'}</button>
+        <a class="btn" href="https://dexscreener.com/solana/${esc(t.pool)}" target="_blank" rel="noopener">Dexscreener</a>
+        <a class="btn" href="https://solscan.io/token/${esc(t.mint)}" target="_blank" rel="noopener">Solscan</a>
+      </div>
+      <div class="verdict ${t.filterVerdict ? 'no' : 'yes'}">${t.filterVerdict ? `✗ Copybot's filters would skip it: ${esc(t.filterVerdict)}` : "✓ Passes Copybot's market filters"}</div>
+    </div>
+    <div class="grid stats" style="margin-top:16px">
+      <div class="card stat"><div class="k">Market cap</div><div class="v num">${usdC(t.marketCapUsd)}</div><div class="s">${t.pools} pool${t.pools === 1 ? '' : 's'} · ${esc(t.dex)}</div></div>
+      <div class="card stat"><div class="k">Liquidity</div><div class="v num">${t.totalLiquidityUsd == null ? 'Bonding curve' : usdC(t.totalLiquidityUsd)}</div><div class="s">${t.totalLiquidityUsd == null ? 'pump.fun: no pool figure yet' : 'across all pools'}</div></div>
+      <div class="card stat"><div class="k">Volume</div><div class="v num">${usdC(t.volume?.h24)}</div><div class="s">${usdC(t.volume?.h1)} in the last hour</div></div>
+      <div class="card stat"><div class="k">Age</div><div class="v num">${ageOf(t.oldestPoolAt)}</div><div class="s">since its first pool</div></div>
+    </div>
+    <div class="grid two-eq" style="margin-top:16px">
+      <div class="card"><div class="card-h"><h2>Price</h2><span class="spacer"></span><div class="seg">${['15m', '1h', '1d'].map((k) => `<button data-tf="${k}" class="${S.m.tf === k ? 'on' : ''}">${k}</button>`).join('')}</div></div>
+        <div class="card-b">${!ch ? '<div class="empty"><span class="spinner" style="display:inline-block"></span></div>' : ch.error ? errBox(ch) : candleChart(ch.data || [])}</div></div>
+      <div class="card"><div class="card-h"><h2>Buyers vs sellers</h2></div><div class="card-b stack">
+        <div><div class="small muted">Last hour</div>${bs(t.txns?.h1)}</div><div><div class="small muted">Last 24 hours</div>${bs(t.txns?.h24)}</div>
+        <div class="small muted">Price change: 5m ${chg(t.change?.m5)} · 1h ${chg(t.change?.h1)} · 6h ${chg(t.change?.h6)}</div></div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="card-h"><h2>Top traders</h2><span class="muted small">Most profitable wallets on this token, from DexCheck</span><span class="spacer"></span>
+      <div class="seg">${['1d', '7d', '30d'].map((k) => `<button data-dur="${k}" class="${S.m.dur === k ? 'on' : ''}">${k}</button>`).join('')}</div></div>
+      ${!top ? '<div class="empty"><span class="spinner" style="display:inline-block"></span></div>' : top.needsKey ? `<div class="card-b row" style="justify-content:space-between"><span class="muted">See who's actually making money on this token, and copy them in one click. Needs a free DexCheck API key.</span><button class="btn sm primary" onclick="go('settings')">Add DexCheck key</button></div>` : top.error ? errBox(top) :
+        walletTable((top.data || []).map((w) => ({ ...w, label: `<span class="num ${cls(w.profitUsd)}">${w.profitUsd == null ? '—' : (w.profitUsd >= 0 ? '+' : '−') + usdC(Math.abs(w.profitUsd))}</span> <span class="muted small">ROI ${w.roiPct == null ? '—' : w.roiPct.toFixed(0) + '%'} · ${w.buys ?? 0} buys / ${w.sells ?? 0} sells</span>` })), 'Profit')}
+    </div>`;
+  bindBack(el);
+  el.querySelectorAll('[data-tf]').forEach((b) => (b.onclick = () => { S.m.tf = b.dataset.tf; render(); }));
+  el.querySelectorAll('[data-dur]').forEach((b) => (b.onclick = () => { S.m.dur = b.dataset.dur; render(); }));
+  $('#mk-watch').onclick = async () => {
+    const r = await act(() => api('PUT', '/api/markets/watchlist', { mint, watch: !t.watched }), t.watched ? 'Removed from watchlist' : 'Added to watchlist');
+    if (r) { t.watched = r.watched; delete S.m.data['pools:watch']; render(); }
+  };
+  bindWalletActions(el);
+}
+function bindBack(el) { $('#mk-back').onclick = () => { S.m.token = null; render(); }; }
+// Keep market data fresh while the page is open.
+setInterval(() => { if (S.page === 'markets' && !document.hidden) render(); }, 30_000);
+
 // ----- learn -----
 function guideCard(g) {
   const c = (window.GUIDE_CATS || {})[g.cat] || { label: g.cat, color: 'var(--accent)' };
@@ -1008,6 +1215,8 @@ function renderSettings(el) {
           <input class="input mono" id="c-rpc" value="${esc(c.rpcUrl)}" spellcheck="false"></div>
         <div class="field"><div><label class="l" for="c-jupkey">Jupiter API key <span class="muted">(optional)</span></label><div class="h">Only if you've outgrown the free tier. ${c.hasJupiterKey ? '<b>A key is saved.</b>' : ''}</div></div>
           <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
+        <div class="field"><div><label class="l" for="c-dexkey">DexCheck API key <span class="muted">(optional)</span></label><div class="h">Turns on whale trades and top traders in Markets. Free at <a href="https://dexcheck.ai/" target="_blank" rel="noopener">dexcheck.ai</a> (API dashboard → Settings → API Keys). ${c.hasDexcheckKey ? `<b>A key is saved${c.dexcheckEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
+          <input class="input mono" id="c-dexkey" type="password" placeholder="${c.hasDexcheckKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="card-b row" style="border-top:1px solid var(--border)">
           <button class="btn primary" id="c-save">Save connection</button><button class="btn" id="c-test">Test connection</button>
           <span id="c-test-res" class="muted" style="font-size:13px">${connTestHtml()}</span>
@@ -1037,6 +1246,7 @@ function renderSettings(el) {
   $('#c-save').onclick = async () => {
     const body = { rpcUrl: $('#c-rpc').value };
     if ($('#c-jupkey').value) body.jupiterKey = $('#c-jupkey').value;
+    if ($('#c-dexkey').value) { body.dexcheckKey = $('#c-dexkey').value; S.m.data = {}; }
     const r = await act(() => api('PUT', '/api/connection', body), 'Connection saved');
     if (r) { S.connection = r; S.connTest = null; render(); }
   };

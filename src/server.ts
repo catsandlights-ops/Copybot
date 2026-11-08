@@ -15,9 +15,12 @@ import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
 import { isAddress, sanitizeConfig, saveConfig } from './config';
-import { canEncryptKey, encryptPlaintextKey, isHttpsUrl, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
+import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
 import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
+import * as markets from './markets';
+import { getSolUsd } from './market';
+import { marketSkipReason } from './rules';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -45,7 +48,7 @@ export const TOKEN = crypto.randomBytes(32).toString('base64url');
 
 const SECURITY_HEADERS = {
   'content-security-policy':
-    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: https://coin-images.coingecko.com https://assets.geckoterminal.com https://cdn.dexscreener.com; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'DENY',
   'referrer-policy': 'no-referrer',
@@ -178,7 +181,20 @@ function connectionInfo() {
     desktop: !!process.env.COPYBOT_DESKTOP,
     keyError: engine.keyError,
     walletAddress: engine.kp?.publicKey.toBase58() ?? null,
+    hasDexcheckKey: hasSecret('DEXCHECK_API_KEY'),
+    dexcheckEncrypted: secretIsEncrypted('DEXCHECK_API_KEY'),
   };
+}
+
+// ---------- watchlist ----------
+const WATCHLIST = 'data/watchlist.json';
+function readWatchlist(): string[] {
+  try {
+    const l = JSON.parse(fs.readFileSync(WATCHLIST, 'utf8'));
+    return Array.isArray(l) ? l.filter(isAddress).slice(0, 30) : [];
+  } catch {
+    return [];
+  }
 }
 
 async function readBody(req: http.IncomingMessage): Promise<any> {
@@ -298,7 +314,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/connection') {
     const b = await readBody(req);
-    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey']) {
+    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey']) {
       if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
     }
     const env: Record<string, string> = {};
@@ -320,10 +336,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       }
     }
     try {
-      await applyChange(() => {
-        if (Object.keys(env).length) updateEnv(env);
-        if (newKey !== null) savePrivateKey(newKey);
-      });
+      // Data-source keys don't affect trading, so saving one never restarts the bot.
+      if (typeof b.dexcheckKey === 'string') saveSecret('DEXCHECK_API_KEY', b.dexcheckKey);
+      if (Object.keys(env).length || newKey !== null) {
+        await applyChange(() => {
+          if (Object.keys(env).length) updateEnv(env);
+          if (newKey !== null) savePrivateKey(newKey);
+        });
+      }
     } catch (e) {
       throw new HttpError(400, (e as Error).message);
     }
@@ -356,6 +376,70 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
     await engine.manualSell(b.mint, fraction);
     return send(res, 200, engine.snapshot());
+  }
+
+  // ---------- Markets hub ----------
+  if (url.pathname.startsWith('/api/markets/')) {
+    const q = url.searchParams;
+    const reply = async (fn: () => Promise<unknown>) => {
+      try {
+        return send(res, 200, { data: await fn() });
+      } catch (e: any) {
+        return send(res, e.needsKey ? 200 : 502, { error: e.message ?? 'Market data is unavailable right now.', needsKey: !!e.needsKey });
+      }
+    };
+    switch (route) {
+      case 'GET /api/markets/overview':
+        return reply(() => markets.overview());
+      case 'GET /api/markets/pools': {
+        const kind = q.get('kind') === 'new' ? 'new' : 'trending';
+        return reply(() => markets.pools(kind));
+      }
+      case 'GET /api/markets/token': {
+        const mint = q.get('mint');
+        if (!isAddress(mint)) throw new HttpError(400, 'Not a valid token address');
+        return reply(async () => {
+          const t = await markets.token(mint);
+          if (!t) return null;
+          // Would Copybot's own token filters let it buy this right now?
+          const solUsd = await getSolUsd().catch(() => null);
+          const verdict = marketSkipReason(
+            { liquidityUsd: t.totalLiquidityUsd, marketCapUsd: t.marketCapUsd, createdAt: t.oldestPoolAt },
+            engine.cfg.filters,
+            solUsd ? engine.cfg.buy.fixedSol * solUsd : null,
+            Date.now(),
+          );
+          return { ...t, filterVerdict: verdict, watched: readWatchlist().includes(mint) };
+        });
+      }
+      case 'GET /api/markets/chart': {
+        const pool = q.get('pool'), tf = q.get('tf') ?? '1h';
+        if (!isAddress(pool) || !markets.isTimeframe(tf)) throw new HttpError(400, 'Invalid chart request');
+        return reply(() => markets.chart(pool, tf));
+      }
+      case 'GET /api/markets/search':
+        return reply(() => markets.search(String(q.get('q') ?? '')));
+      case 'GET /api/markets/news':
+        return reply(() => markets.news());
+      case 'GET /api/markets/whales':
+        return reply(() => markets.whales(Math.min(1e7, Math.max(1000, Number(q.get('min')) || 10_000))));
+      case 'GET /api/markets/top-traders': {
+        const pool = q.get('pool'), duration = q.get('duration') ?? '7d';
+        if (!isAddress(pool) || !(markets.DURATIONS as readonly string[]).includes(duration)) throw new HttpError(400, 'Invalid request');
+        return reply(() => markets.topTraders(pool, duration as (typeof markets.DURATIONS)[number]));
+      }
+      case 'GET /api/markets/watchlist':
+        return reply(() => markets.tokens(readWatchlist()));
+      case 'PUT /api/markets/watchlist': {
+        const b = await readBody(req);
+        if (!isAddress(b.mint)) throw new HttpError(400, 'Not a valid token address');
+        const list = readWatchlist().filter((m) => m !== b.mint);
+        if (b.watch) list.unshift(b.mint);
+        fs.mkdirSync('data', { recursive: true });
+        fs.writeFileSync(WATCHLIST, JSON.stringify(list.slice(0, 30)));
+        return send(res, 200, { watched: !!b.watch });
+      }
+    }
   }
 
   if (route === 'PUT /api/ui') {

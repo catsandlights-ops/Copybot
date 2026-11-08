@@ -75,16 +75,49 @@ export function loadKeypair(): Keypair | null {
   return pk ? parseKeypair(pk) : null;
 }
 
-/** Store (or with '' remove) the trading wallet key, encrypted when possible. */
-export function savePrivateKey(pk: string) {
-  pk = pk.trim();
+// ---------------- secrets (wallet key, API keys) ----------------
+// Each secret is stored encrypted as NAME_ENC when the OS secret box is available,
+// otherwise as plain NAME in .env (readable only by this user).
+
+export type SecretName = 'PRIVATE_KEY' | 'ANTHROPIC_API_KEY' | 'DEXCHECK_API_KEY';
+const SECRETS: SecretName[] = ['PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'DEXCHECK_API_KEY'];
+
+/** Store (or with '' remove) a secret, encrypted when possible. */
+export function saveSecret(name: SecretName, value: string) {
+  value = value.trim();
   const box = secretBox();
-  if (pk && box) updateEnv({ PRIVATE_KEY_ENC: box.encrypt(pk), PRIVATE_KEY: '' });
-  else updateEnv({ PRIVATE_KEY: pk, PRIVATE_KEY_ENC: '' });
+  if (value && box) updateEnv({ [`${name}_ENC`]: box.encrypt(value), [name]: '' });
+  else updateEnv({ [name]: value, [`${name}_ENC`]: '' });
 }
 
-/** Desktop app: encrypt a key that is still stored in plain text. */
+/** Read a secret. Throws a readable error if it's encrypted and can't be unlocked here. */
+export function readSecret(name: SecretName, label: string): string | null {
+  const enc = process.env[`${name}_ENC`]?.trim();
+  if (enc) {
+    const box = secretBox();
+    if (!box) throw new Error(`The ${label} is encrypted for the desktop app. Open Copybot from the desktop app, or add it again.`);
+    try {
+      return box.decrypt(enc);
+    } catch {
+      throw new Error(`The saved ${label} can't be unlocked on this computer or user account. Add it again in Settings.`);
+    }
+  }
+  return process.env[name]?.trim() || null;
+}
+
+export const hasSecret = (name: SecretName) => !!(process.env[`${name}_ENC`]?.trim() || process.env[name]?.trim());
+export const secretIsEncrypted = (name: SecretName) => !!process.env[`${name}_ENC`]?.trim();
+
+/** Store (or with '' remove) the trading wallet key, encrypted when possible. */
+export function savePrivateKey(pk: string) {
+  saveSecret('PRIVATE_KEY', pk);
+}
+
+/** Desktop app: encrypt any secret that is still stored in plain text. */
 export function encryptPlaintextKey() {
-  const pk = process.env.PRIVATE_KEY?.trim();
-  if (pk && secretBox()) savePrivateKey(pk);
+  if (!secretBox()) return;
+  for (const name of SECRETS) {
+    const plain = process.env[name]?.trim();
+    if (plain) saveSecret(name, plain);
+  }
 }
