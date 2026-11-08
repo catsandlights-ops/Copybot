@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="enchanted">
+<html lang="en" data-theme="arcade">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -212,201 +212,203 @@ td.r { white-space: nowrap; }
 }
 
 /* =====================================================================
-   ENCHANTED THEME  (html[data-theme="enchanted"])
-   Pixel fairytale: forest-green backdrop, dark wood frames with gold trim,
-   parchment content, wooden plaque buttons, pixel fonts. Modern theme is
-   unaffected (every rule is scoped to the data-theme attribute).
+   BLOCK ARCADE THEME  (html[data-theme="arcade"])
+   Colorful falling-block video-game look: dark grid "well", beveled
+   blocks in seven bright colors, pixel fonts, game-HUD stats.
+   Every rule is scoped to the data-theme attribute; Modern is unaffected.
    ===================================================================== */
 @font-face { font-family: "Press Start 2P"; src: url("/fonts/press-start-2p.woff2") format("woff2"); font-display: swap; }
 @font-face { font-family: "VT323"; src: url("/fonts/vt323.woff2") format("woff2"); font-display: swap; }
-.ico, .hearts, .press, .deco { display: none; }
+.ico, .hearts, .press, .deco, .blocks-deco { display: none; }
 td.r { white-space: nowrap; }
 
-:root[data-theme="enchanted"] {
-  /* palette */
-  --forest-0: #173222; --forest-1: #23472f; --forest-2: #2f5d3c; --moss: #4f8a4a; --leaf: #8fd16b;
-  --wood-0: #2b170d; --wood-1: #5a3219; --wood-2: #7a4624; --wood-3: #96592d;
-  --gold: #f4c64e; --gold-hi: #ffe58f; --gold-lo: #b8801c;
-  --parch: #f7e9c4; --parch-hi: #fff6dc; --parch-lo: #e6cf98; --ink: #24140a;
-  --rose: #d43d3d; --rose-lo: #8e2424;
+:root[data-theme="arcade"] {
+  /* the seven block colors */
+  --b-cyan: #35d6ec; --b-yellow: #ffd23f; --b-purple: #a855f7; --b-green: #4ade5a; --b-red: #ff4766; --b-blue: #4f7dff; --b-orange: #ff9533;
+  --well: #10143a; --well-2: #171d4d; --line: rgba(120, 140, 255, .09); --edge: #070920;
+  --bevel: inset 3px 3px 0 rgba(255, 255, 255, .42), inset -3px -3px 0 rgba(0, 0, 0, .32);
+  --bevel-sm: inset 2px 2px 0 rgba(255, 255, 255, .42), inset -2px -2px 0 rgba(0, 0, 0, .32);
+  --drop: 4px 4px 0 var(--edge);
   /* tokens used by the base stylesheet */
-  --bg: var(--forest-1); --panel: var(--parch); --panel-2: var(--parch-lo); --border: var(--ink); --border-strong: var(--ink);
-  --text: #3a2210; --muted: #6b4a2b; --faint: #8a6a48;
-  --accent: #b8541c; --accent-hover: #9a4515; --accent-bg: var(--parch-lo); --on-accent: var(--parch-hi);
-  --green: #2f7a32; --green-bg: #cfe9b4; --red: #b52a2a; --red-bg: #f4c7b8; --amber: #9a6510; --amber-bg: #f6dc95;
+  --bg: var(--well); --panel: #1d2560; --panel-2: #151b49; --border: var(--edge); --border-strong: var(--edge);
+  --text: #f1f3ff; --muted: #b3bcf2; --faint: #8590d0;
+  --accent: var(--b-purple); --accent-hover: #9a45ec; --accent-bg: #2b2f73; --on-accent: #ffffff;
+  --green: #5cf06c; --green-bg: #173f2a; --red: #ff6b84; --red-bg: #4a1630; --amber: var(--b-yellow); --amber-bg: #4a3a12;
   --px-font: "Press Start 2P", ui-monospace, monospace; --body-font: "VT323", ui-monospace, monospace;
-  --frame: inset 0 0 0 3px var(--gold-lo), 0 0 0 3px var(--ink), 6px 6px 0 3px rgba(10, 20, 12, .55);
   --shadow: none; --radius: 0px; --mono: "VT323", ui-monospace, monospace;
   color-scheme: dark;
 }
-:root[data-theme="enchanted"] body {
+:root[data-theme="arcade"] body {
   font-family: var(--body-font); font-size: 20px; line-height: 1.15; color: var(--text);
-  background-color: var(--forest-1);
-  /* pixel grass: two dither layers + a soft vignette */
-  background-image:
-    radial-gradient(ellipse at 50% 35%, transparent 40%, rgba(5, 15, 8, .55) 100%),
-    radial-gradient(var(--forest-2) 1.2px, transparent 1.6px),
-    radial-gradient(rgba(0, 0, 0, .18) 1.2px, transparent 1.6px);
-  background-size: 100% 100%, 12px 12px, 12px 12px;
-  background-position: 0 0, 0 0, 6px 6px;
-  background-attachment: fixed;
+  background-color: var(--well);
+  background-image: linear-gradient(var(--line) 2px, transparent 2px), linear-gradient(90deg, var(--line) 2px, transparent 2px);
+  background-size: 28px 28px; background-attachment: fixed;
   -webkit-font-smoothing: none;
 }
-:root[data-theme="enchanted"] a { color: #8a3a12; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
-:root[data-theme="enchanted"] .mono { font-family: var(--body-font); font-size: 19px; }
-:root[data-theme="enchanted"] .ico { display: inline-block; width: 20px; height: 20px; vertical-align: -4px; margin-right: 8px; }
-:root[data-theme="enchanted"] svg { shape-rendering: crispEdges; }
-:root[data-theme="enchanted"] .pos { color: var(--green); } :root[data-theme="enchanted"] .neg { color: var(--red); }
-:root[data-theme="enchanted"] .gold-title, :root[data-theme="enchanted"] .top h1, :root[data-theme="enchanted"] .brand {
-  color: var(--gold); text-shadow: 2px 0 0 var(--ink), -2px 0 0 var(--ink), 0 2px 0 var(--ink), 0 -2px 0 var(--ink), 3px 3px 0 var(--ink);
+:root[data-theme="arcade"] a { color: var(--b-cyan); }
+:root[data-theme="arcade"] .mono { font-family: var(--body-font); font-size: 19px; }
+:root[data-theme="arcade"] .muted { color: var(--muted); }
+:root[data-theme="arcade"] .ico { display: inline-block; width: 20px; height: 20px; vertical-align: -4px; margin-right: 8px; }
+:root[data-theme="arcade"] svg { shape-rendering: crispEdges; }
+:root[data-theme="arcade"] .pos { color: var(--green); } :root[data-theme="arcade"] .neg { color: var(--red); }
+
+/* ---- sidebar: block menu ---- */
+:root[data-theme="arcade"] .side { background: rgba(7, 9, 32, .72); border-right: 4px solid var(--edge); box-shadow: inset -4px 0 0 #2a3170; padding: 20px 16px 16px 14px; gap: 10px; }
+:root[data-theme="arcade"] .brand { text-transform: uppercase; font-family: var(--px-font); font-size: 15px; letter-spacing: 1px; padding: 4px 4px 22px; gap: 12px; text-shadow: 3px 3px 0 var(--edge); }
+:root[data-theme="arcade"] .brand > svg:not(.ico) { display: none; }
+:root[data-theme="arcade"] .brand .ico { display: inline-block; width: 28px; height: 28px; margin: 0; }
+:root[data-theme="arcade"] .brand .c1 { color: var(--b-cyan); } :root[data-theme="arcade"] .brand .c2 { color: var(--b-yellow); }
+:root[data-theme="arcade"] .brand .c3 { color: var(--b-purple); } :root[data-theme="arcade"] .brand .c4 { color: var(--b-green); }
+:root[data-theme="arcade"] .brand .c5 { color: var(--b-red); } :root[data-theme="arcade"] .brand .c6 { color: var(--b-blue); } :root[data-theme="arcade"] .brand .c7 { color: var(--b-orange); }
+:root[data-theme="arcade"] .nav {
+  --c: var(--b-cyan);
+  font-family: var(--px-font); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text);
+  border-radius: 0; padding: 12px 10px 12px 34px; position: relative; border: 3px solid var(--edge);
+  background: var(--panel-2); box-shadow: var(--drop);
 }
+:root[data-theme="arcade"] .nav::after { content: ""; position: absolute; left: 9px; top: 50%; margin-top: -7px; width: 14px; height: 14px; background: var(--c); box-shadow: var(--bevel-sm), 0 0 0 2px var(--edge); }
+:root[data-theme="arcade"] .nav:nth-of-type(1) { --c: var(--b-cyan); } :root[data-theme="arcade"] .nav:nth-of-type(2) { --c: var(--b-yellow); }
+:root[data-theme="arcade"] .nav:nth-of-type(3) { --c: var(--b-purple); } :root[data-theme="arcade"] .nav:nth-of-type(4) { --c: var(--b-green); }
+:root[data-theme="arcade"] .nav:nth-of-type(5) { --c: var(--b-orange); }
+:root[data-theme="arcade"] .nav svg { display: none; }
+:root[data-theme="arcade"] .nav:hover { background: #222a66; color: #fff; }
+:root[data-theme="arcade"] .nav.on { background: var(--c); color: var(--edge); box-shadow: var(--bevel), var(--drop); font-weight: 400; }
+:root[data-theme="arcade"] .nav.on::after { background: var(--edge); box-shadow: none; width: 0; height: 0; margin-top: -6px; border: 6px solid transparent; border-left: 9px solid var(--edge); animation: blink 1s steps(1) infinite; }
+:root[data-theme="arcade"] .nav .count { background: var(--edge); color: var(--b-yellow); border-radius: 0; font-family: var(--px-font); font-size: 8px; padding: 3px 5px; }
+:root[data-theme="arcade"] .blocks-deco { display: block; margin-top: auto; padding: 0 4px; }
+:root[data-theme="arcade"] .blocks-deco svg { width: 100%; height: auto; display: block; }
+:root[data-theme="arcade"] .side-foot { margin: 0; font-size: 18px; color: var(--text); background: var(--panel-2); border: 3px solid var(--edge); box-shadow: var(--drop); }
+:root[data-theme="arcade"] .dot { border-radius: 0; width: 10px; height: 10px; box-shadow: var(--bevel-sm); }
+:root[data-theme="arcade"] .dot.ok { background: var(--b-green); } :root[data-theme="arcade"] .dot.warn { background: var(--b-yellow); } :root[data-theme="arcade"] .dot.bad { background: var(--b-red); }
 
-/* ---- sidebar: carved wooden panel ---- */
-:root[data-theme="enchanted"] .side {
-  background-color: var(--forest-0);
-  background-image: radial-gradient(rgba(143, 209, 107, .10) 1.2px, transparent 1.6px); background-size: 12px 12px;
-  border-right: 4px solid var(--ink); box-shadow: inset -6px 0 0 var(--wood-1), inset -9px 0 0 var(--ink); padding: 20px 20px 20px 14px; gap: 10px;
-}
-:root[data-theme="enchanted"] .brand { font-family: var(--px-font); font-size: 14px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 6px 24px; }
-:root[data-theme="enchanted"] .brand > svg { display: none; }
-:root[data-theme="enchanted"] .brand .ico { display: inline-block; width: 26px; height: 26px; margin: 0; }
-:root[data-theme="enchanted"] .nav {
-  font-family: var(--px-font); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--parch);
-  border-radius: 0; padding: 12px 10px 12px 30px; position: relative; border: 3px solid var(--ink);
-  background: var(--wood-1) repeating-linear-gradient(0deg, transparent 0 8px, rgba(0, 0, 0, .12) 8px 10px);
-  box-shadow: inset 0 0 0 2px var(--gold-lo), 3px 3px 0 rgba(0, 0, 0, .45); text-shadow: 2px 2px 0 var(--ink);
-}
-:root[data-theme="enchanted"] .nav svg { display: none; }
-:root[data-theme="enchanted"] .nav:hover { background-color: var(--wood-2); color: var(--gold-hi); }
-:root[data-theme="enchanted"] .nav.on { background-color: var(--wood-3); color: var(--gold); box-shadow: inset 0 0 0 2px var(--gold), 3px 3px 0 rgba(0, 0, 0, .45); font-weight: 400; }
-:root[data-theme="enchanted"] .nav.on::before { content: ""; position: absolute; left: 10px; top: 50%; margin-top: -6px; border: 6px solid transparent; border-left: 8px solid var(--gold); animation: blink 1s steps(1) infinite; }
-:root[data-theme="enchanted"] .nav .count { background: var(--gold); color: var(--ink); border-radius: 0; font-family: var(--px-font); font-size: 8px; padding: 3px 5px; text-shadow: none; box-shadow: 0 0 0 2px var(--ink); }
-:root[data-theme="enchanted"] .side-foot { font-size: 18px; color: var(--text); background: var(--parch); box-shadow: var(--frame); margin: auto 4px 4px; }
-:root[data-theme="enchanted"] .dot { border-radius: 0; width: 9px; height: 9px; box-shadow: 0 0 0 2px var(--ink); }
-:root[data-theme="enchanted"] .dot.ok { background: var(--leaf); } :root[data-theme="enchanted"] .dot.warn { background: var(--gold); } :root[data-theme="enchanted"] .dot.bad { background: var(--rose); }
+/* ---- top bar ---- */
+:root[data-theme="arcade"] .top { background: rgba(7, 9, 32, .72); border-bottom: 4px solid var(--edge); box-shadow: 0 4px 0 #2a3170; margin-bottom: 4px; }
+:root[data-theme="arcade"] .top h1 { font-family: var(--px-font); font-size: 18px; text-transform: uppercase; letter-spacing: 1px; color: #fff; text-shadow: 3px 3px 0 var(--b-purple), 6px 6px 0 var(--edge); }
 
-/* ---- top bar: wooden beam ---- */
-:root[data-theme="enchanted"] .top { background: var(--forest-0); border-bottom: 3px solid var(--ink); box-shadow: 0 6px 0 var(--wood-1), 0 9px 0 var(--ink); margin-bottom: 9px; }
-:root[data-theme="enchanted"] .top h1 { font-family: var(--px-font); font-size: 18px; text-transform: uppercase; letter-spacing: 1px; }
+/* ---- panels: dark windows with block-colored title bars ---- */
+:root[data-theme="arcade"] .card { background: var(--panel); border: 3px solid var(--edge); border-radius: 0; box-shadow: 6px 6px 0 var(--edge); }
+:root[data-theme="arcade"] .card-h { --c: var(--b-cyan); --ct: var(--edge); background: var(--c); color: var(--ct); border-bottom: 3px solid var(--edge); box-shadow: var(--bevel); padding: 12px 64px 12px 16px; position: relative; min-height: 44px; }
+:root[data-theme="arcade"] .card-h::after { content: ""; position: absolute; right: 14px; top: 50%; margin-top: -5px; width: 10px; height: 10px; background: var(--edge); box-shadow: -14px 0 0 var(--edge), -28px 0 0 var(--edge); opacity: .55; }
+:root[data-theme="arcade"] .card-h h2 { font-family: var(--px-font); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; line-height: 1.6; font-weight: 400; color: var(--ct); }
+:root[data-theme="arcade"] .card-h .muted { font-size: 18px !important; color: var(--ct); opacity: .85; }
+:root[data-theme="arcade"] .card-h .btn.ghost { color: var(--ct); }
+:root[data-theme="arcade"] :is(.grid, .stack) > .card:nth-child(7n+2) .card-h { --c: var(--b-purple); --ct: #fff; }
+:root[data-theme="arcade"] :is(.grid, .stack) > .card:nth-child(7n+3) .card-h { --c: var(--b-green); }
+:root[data-theme="arcade"] :is(.grid, .stack) > .card:nth-child(7n+4) .card-h { --c: var(--b-orange); }
+:root[data-theme="arcade"] :is(.grid, .stack) > .card:nth-child(7n+5) .card-h { --c: var(--b-blue); --ct: #fff; }
+:root[data-theme="arcade"] :is(.grid, .stack) > .card:nth-child(7n+6) .card-h { --c: var(--b-yellow); }
+:root[data-theme="arcade"] :is(.grid, .stack) > .card:nth-child(7n+7) .card-h { --c: var(--b-red); --ct: #fff; }
+:root[data-theme="arcade"] .content > .card .card-h { --c: var(--b-cyan); --ct: var(--edge); }
 
-/* ---- windows: parchment framed in wood + gold ---- */
-:root[data-theme="enchanted"] .card { background: var(--parch); border: 0; border-radius: 0; box-shadow: var(--frame); margin: 3px; }
-:root[data-theme="enchanted"] .card-h {
-  background: var(--wood-1) repeating-linear-gradient(0deg, transparent 0 10px, rgba(0, 0, 0, .12) 10px 12px);
-  border-bottom: 3px solid var(--ink); box-shadow: inset 0 -3px 0 var(--gold-lo), inset 3px 0 0 var(--gold-lo), inset -3px 0 0 var(--gold-lo), inset 0 3px 0 var(--gold-lo);
-  padding: 12px 54px 12px 16px; position: relative; min-height: 44px; color: var(--parch);
-}
-/* gold rivets in the title bar */
-:root[data-theme="enchanted"] .card-h::before, :root[data-theme="enchanted"] .card-h::after { content: ""; position: absolute; top: 50%; margin-top: -4px; width: 8px; height: 8px; background: var(--gold); box-shadow: 0 0 0 2px var(--ink); }
-:root[data-theme="enchanted"] .card-h::before { display: none; }
-:root[data-theme="enchanted"] .card-h::after { right: 18px; box-shadow: 0 0 0 2px var(--ink), -16px 0 0 0 var(--gold), -16px 0 0 2px var(--ink); }
-:root[data-theme="enchanted"] .card-h h2 { font-family: var(--px-font); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; line-height: 1.6; font-weight: 400; color: var(--gold); text-shadow: 2px 2px 0 var(--ink); }
-:root[data-theme="enchanted"] .card-h .muted { font-size: 18px !important; color: var(--parch-lo); }
-:root[data-theme="enchanted"] .card-h .btn.ghost { color: var(--parch); }
+/* ---- HUD stats: SCORE-style boxes with colored block frames ---- */
+:root[data-theme="arcade"] .stat { --c: var(--b-cyan); background: var(--panel-2); border: 0; box-shadow: 0 0 0 3px var(--edge), inset 0 0 0 6px var(--c), inset 6px 6px 0 6px rgba(255, 255, 255, .25), 6px 6px 0 3px var(--edge); padding: 20px 20px 20px; margin: 3px; }
+:root[data-theme="arcade"] .stat:nth-child(1) { --c: var(--b-yellow); } :root[data-theme="arcade"] .stat:nth-child(2) { --c: var(--b-green); }
+:root[data-theme="arcade"] .stat:nth-child(3) { --c: var(--b-red); } :root[data-theme="arcade"] .stat:nth-child(4) { --c: var(--b-cyan); }
+:root[data-theme="arcade"] .stat .k { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; color: var(--c); letter-spacing: .5px; display: flex; align-items: center; }
+:root[data-theme="arcade"] .stat .v { font-family: var(--px-font); font-size: 20px; margin-top: 14px; color: #fff; text-shadow: 3px 3px 0 var(--edge); }
+:root[data-theme="arcade"] .stat .v.pos { color: var(--green); } :root[data-theme="arcade"] .stat .v.neg { color: var(--red); }
+:root[data-theme="arcade"] .stat .v small { font-family: var(--px-font); font-size: 10px !important; color: var(--muted) !important; }
+:root[data-theme="arcade"] .stat .s { color: var(--muted); font-size: 18px; margin-top: 6px; }
+:root[data-theme="arcade"] .hearts { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+:root[data-theme="arcade"] .hearts svg { width: 20px; height: 18px; }
+/* block-segment meter: each filled segment a different block color */
+:root[data-theme="arcade"] .bar { height: 18px; background: var(--edge); border-radius: 0; margin-top: 10px; padding: 3px; box-shadow: 0 0 0 2px #2a3170; }
+:root[data-theme="arcade"] .bar i { border-radius: 0; background: repeating-linear-gradient(90deg, var(--b-cyan) 0 10px, transparent 10px 12px, var(--b-yellow) 12px 22px, transparent 22px 24px, var(--b-purple) 24px 34px, transparent 34px 36px, var(--b-green) 36px 46px, transparent 46px 48px, var(--b-red) 48px 58px, transparent 58px 60px, var(--b-orange) 60px 70px, transparent 70px 72px); }
 
-/* ---- HUD tiles: wooden plaques with gold numbers ---- */
-:root[data-theme="enchanted"] .stat { background: var(--wood-1) repeating-linear-gradient(0deg, transparent 0 18px, rgba(0, 0, 0, .12) 18px 20px); color: var(--parch); padding: 16px 18px 18px; }
-:root[data-theme="enchanted"] .stat .k { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; color: var(--parch); letter-spacing: .5px; display: flex; align-items: center; text-shadow: 2px 2px 0 var(--ink); }
-:root[data-theme="enchanted"] .stat .v { font-family: var(--px-font); font-size: 19px; margin-top: 14px; color: var(--gold); text-shadow: 3px 3px 0 var(--ink); }
-:root[data-theme="enchanted"] .stat .v.pos { color: var(--leaf); } :root[data-theme="enchanted"] .stat .v.neg { color: #ff8a7a; }
-:root[data-theme="enchanted"] .stat .v small { font-family: var(--px-font); font-size: 10px !important; color: var(--parch) !important; text-shadow: 2px 2px 0 var(--ink); }
-:root[data-theme="enchanted"] .stat .s { color: var(--parch-lo); font-size: 18px; margin-top: 6px; }
-:root[data-theme="enchanted"] .stat .s a { color: var(--gold-hi); }
-:root[data-theme="enchanted"] .hearts { display: flex; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
-:root[data-theme="enchanted"] .hearts svg { width: 20px; height: 18px; }
-:root[data-theme="enchanted"] .bar { height: 16px; background: var(--wood-0); border-radius: 0; margin-top: 10px; padding: 3px; box-shadow: 0 0 0 2px var(--ink), inset 0 0 0 1px var(--gold-lo); }
-:root[data-theme="enchanted"] .bar i { border-radius: 0; background: repeating-linear-gradient(90deg, var(--leaf) 0 10px, transparent 10px 12px); }
-
-/* ---- buttons: wooden plaques with gold rims ---- */
-:root[data-theme="enchanted"] .btn {
+/* ---- buttons: beveled blocks ---- */
+:root[data-theme="arcade"] .btn {
+  --c: var(--b-blue); --ct: #fff;
   font-family: var(--px-font); font-size: 10px; text-transform: uppercase; letter-spacing: .5px; font-weight: 400;
-  color: var(--parch); background: var(--wood-1); border: 3px solid var(--ink); border-radius: 0; height: 40px; padding: 0 16px;
-  box-shadow: inset 0 0 0 2px var(--gold-lo), 3px 3px 0 rgba(10, 20, 12, .6); text-shadow: 2px 2px 0 var(--ink); transition: none;
+  color: var(--ct); background: var(--c); border: 3px solid var(--edge); border-radius: 0; height: 40px; padding: 0 16px;
+  box-shadow: var(--bevel), 3px 3px 0 var(--edge); transition: none; text-shadow: 2px 2px 0 rgba(0, 0, 0, .35);
 }
-:root[data-theme="enchanted"] .btn:hover { background: var(--wood-2); color: var(--gold-hi); }
-:root[data-theme="enchanted"] .btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: inset 0 0 0 2px var(--gold-lo); }
-:root[data-theme="enchanted"] .btn.primary { color: var(--gold); }
-:root[data-theme="enchanted"] .btn.go { background: var(--moss); color: var(--parch-hi); }
-:root[data-theme="enchanted"] .btn.go:hover { background: #5c9c55; }
-:root[data-theme="enchanted"] .btn.stop { background: var(--rose-lo); color: var(--parch-hi); }
-:root[data-theme="enchanted"] .btn.stop:hover { background: #a83030; }
-:root[data-theme="enchanted"] .btn.danger { color: #ffb0a0; }
-:root[data-theme="enchanted"] .btn.sm { height: 32px; font-size: 8px; padding: 0 10px; }
-:root[data-theme="enchanted"] .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--wood-1); text-shadow: none; }
-:root[data-theme="enchanted"] .btn.ghost:hover { background: var(--wood-1); color: var(--gold); border-color: var(--ink); text-shadow: 2px 2px 0 var(--ink); }
-:root[data-theme="enchanted"] .btn:disabled { filter: grayscale(.7) brightness(.8); }
+:root[data-theme="arcade"] .btn:hover { filter: brightness(1.12); }
+:root[data-theme="arcade"] .btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: inset -3px -3px 0 rgba(255, 255, 255, .25), inset 3px 3px 0 rgba(0, 0, 0, .32); }
+:root[data-theme="arcade"] .btn.primary { --c: var(--b-purple); }
+:root[data-theme="arcade"] .btn.go { --c: var(--b-green); --ct: var(--edge); text-shadow: none; }
+:root[data-theme="arcade"] .btn.stop { --c: var(--b-red); }
+:root[data-theme="arcade"] .btn.danger { --c: var(--b-red); }
+:root[data-theme="arcade"] .btn.sm { height: 32px; font-size: 8px; padding: 0 10px; box-shadow: var(--bevel-sm), 2px 2px 0 var(--edge); }
+:root[data-theme="arcade"] .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--text); text-shadow: none; }
+:root[data-theme="arcade"] .btn.ghost:hover { background: rgba(255, 255, 255, .12); filter: none; }
+:root[data-theme="arcade"] .btn:disabled { filter: grayscale(.8) brightness(.7); }
 
 /* ---- pills & tags ---- */
-:root[data-theme="enchanted"] .pill { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; font-weight: 400; border-radius: 0; height: 32px; padding: 0 10px; background: var(--parch); color: var(--text); box-shadow: 0 0 0 3px var(--ink), inset 0 0 0 2px var(--gold-lo); }
-:root[data-theme="enchanted"] .pill.run { background: #cfe9b4; color: #1f4a1f; }
-:root[data-theme="enchanted"] .pill.run .dot { background: var(--moss); animation: blink 1s steps(1) infinite; }
-:root[data-theme="enchanted"] .pill.paper { background: var(--gold); color: var(--ink); }
-:root[data-theme="enchanted"] .pill.live { background: var(--rose); color: var(--parch-hi); animation: blink 1.2s steps(1) infinite; }
-:root[data-theme="enchanted"] .tag { font-family: var(--px-font); font-size: 8px; border-radius: 0; padding: 3px 5px; letter-spacing: 0; color: var(--ink); box-shadow: 0 0 0 2px var(--ink); }
-:root[data-theme="enchanted"] .tag.buy { background: #b9e39a; } :root[data-theme="enchanted"] .tag.sell { background: #f3b2a4; }
-:root[data-theme="enchanted"] .tag.paper { background: var(--gold-hi); } :root[data-theme="enchanted"] .tag.live { background: var(--rose); color: var(--parch-hi); }
+:root[data-theme="arcade"] .pill { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; font-weight: 400; border-radius: 0; height: 32px; padding: 0 10px; background: var(--panel-2); color: var(--text); border: 3px solid var(--edge); box-shadow: var(--bevel-sm); }
+:root[data-theme="arcade"] .pill.run { background: var(--b-green); color: var(--edge); }
+:root[data-theme="arcade"] .pill.run .dot { background: var(--edge); box-shadow: none; animation: blink 1s steps(1) infinite; }
+:root[data-theme="arcade"] .pill.paper { background: var(--b-yellow); color: var(--edge); }
+:root[data-theme="arcade"] .pill.live { background: var(--b-red); color: #fff; animation: blink 1.2s steps(1) infinite; }
+:root[data-theme="arcade"] .tag { font-family: var(--px-font); font-size: 8px; border-radius: 0; padding: 4px 6px; letter-spacing: 0; color: var(--edge); border: 2px solid var(--edge); box-shadow: var(--bevel-sm); }
+:root[data-theme="arcade"] .tag.buy { background: var(--b-green); } :root[data-theme="arcade"] .tag.sell { background: var(--b-red); color: #fff; }
+:root[data-theme="arcade"] .tag.paper { background: var(--b-yellow); } :root[data-theme="arcade"] .tag.live { background: var(--b-orange); }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* ---- banners: parchment scrolls with rolled ends ---- */
-:root[data-theme="enchanted"] .banner { background: var(--parch-hi); color: var(--text); font-size: 19px; border-radius: 0; border: 0; position: relative; margin-left: 10px; margin-right: 10px;
-  box-shadow: 0 0 0 3px var(--ink), -10px 0 0 0 var(--parch-lo), -10px 0 0 3px var(--ink), 10px 0 0 0 var(--parch-lo), 10px 0 0 3px var(--ink), 6px 6px 0 3px rgba(10, 20, 12, .5); }
-:root[data-theme="enchanted"] .banner b { font-family: var(--px-font); font-size: 10px; font-weight: 400; text-transform: uppercase; display: block; margin-bottom: 6px; line-height: 1.6; color: var(--wood-1); }
-:root[data-theme="enchanted"] .banner.warn { background: #fbe7a8; } :root[data-theme="enchanted"] .banner.danger { background: #f6cdbf; }
-:root[data-theme="enchanted"] .banner .btn { align-self: center; }
+/* ---- banners: message boxes with a block strip ---- */
+:root[data-theme="arcade"] .banner { --c: var(--b-purple); background: var(--panel); color: var(--text); font-size: 19px; border-radius: 0; border: 3px solid var(--edge); box-shadow: inset 12px 0 0 var(--c), inset 15px 0 0 var(--edge), 4px 4px 0 var(--edge); padding-left: 30px; }
+:root[data-theme="arcade"] .banner b { font-family: var(--px-font); font-size: 10px; font-weight: 400; text-transform: uppercase; display: block; margin-bottom: 6px; line-height: 1.6; color: var(--c); }
+:root[data-theme="arcade"] .banner.warn { --c: var(--b-yellow); } :root[data-theme="arcade"] .banner.danger { --c: var(--b-red); } :root[data-theme="arcade"] .banner.info { --c: var(--b-cyan); }
+:root[data-theme="arcade"] .banner .btn { align-self: center; }
 
 /* ---- tables ---- */
-:root[data-theme="enchanted"] th { font-family: var(--px-font); font-size: 8px; text-transform: uppercase; font-weight: 400; color: var(--wood-1); background: var(--parch-lo); border-bottom: 3px solid var(--ink); letter-spacing: .5px; }
-:root[data-theme="enchanted"] td { border-bottom: 2px dashed rgba(58, 34, 16, .25); font-size: 20px; }
-:root[data-theme="enchanted"] tr:hover td { background: var(--parch-hi); }
-:root[data-theme="enchanted"] .empty { font-size: 20px; color: var(--muted); }
-:root[data-theme="enchanted"] .empty h3 { font-family: var(--px-font); font-size: 12px; text-transform: uppercase; font-weight: 400; line-height: 1.6; color: var(--wood-1); }
-:root[data-theme="enchanted"] .deco { display: block; margin: 0 auto 14px; width: 40px; height: 36px; }
-:root[data-theme="enchanted"] .deco svg { width: 40px; height: 36px; }
-:root[data-theme="enchanted"] .press { display: block; font-family: var(--px-font); font-size: 13px; color: var(--accent); margin-top: 18px; animation: blink 1.1s steps(1) infinite; }
+:root[data-theme="arcade"] th { font-family: var(--px-font); font-size: 8px; text-transform: uppercase; font-weight: 400; color: var(--b-cyan); background: var(--panel-2); border-bottom: 3px solid var(--edge); letter-spacing: .5px; }
+:root[data-theme="arcade"] td { border-bottom: 2px solid rgba(120, 140, 255, .12); font-size: 20px; }
+:root[data-theme="arcade"] tr:hover td { background: rgba(255, 255, 255, .05); }
+:root[data-theme="arcade"] .empty { font-size: 20px; color: var(--muted); }
+:root[data-theme="arcade"] .empty h3 { font-family: var(--px-font); font-size: 12px; text-transform: uppercase; font-weight: 400; line-height: 1.6; color: #fff; }
+:root[data-theme="arcade"] .deco { display: block; margin: 0 auto 16px; width: 64px; }
+:root[data-theme="arcade"] .deco svg { width: 64px; height: auto; display: block; margin: 0 auto; animation: drop 2.4s steps(6) infinite; }
+@keyframes drop { 0% { transform: translateY(-14px); } 60%, 100% { transform: translateY(0); } }
+:root[data-theme="arcade"] .press { display: block; font-family: var(--px-font); font-size: 13px; color: var(--b-yellow); margin-top: 18px; animation: blink 1.1s steps(1) infinite; text-shadow: 3px 3px 0 var(--edge); }
 
 /* ---- activity log ---- */
-:root[data-theme="enchanted"] .feed-item { font-size: 19px; border-bottom: 2px dashed rgba(58, 34, 16, .2); padding: 7px 16px; }
-:root[data-theme="enchanted"] .feed-item .t { font-family: var(--body-font); font-size: 17px; color: var(--faint); padding-top: 1px; }
-:root[data-theme="enchanted"] .lv-buy .dot { background: var(--moss); } :root[data-theme="enchanted"] .lv-sell .dot { background: var(--rose); }
-:root[data-theme="enchanted"] .lv-signal .dot { background: var(--gold); } :root[data-theme="enchanted"] .lv-system .dot { background: var(--wood-3); }
+:root[data-theme="arcade"] .feed-item { font-size: 19px; border-bottom: 2px solid rgba(120, 140, 255, .1); padding: 7px 16px; }
+:root[data-theme="arcade"] .feed-item .t { font-family: var(--body-font); font-size: 17px; color: var(--faint); padding-top: 1px; }
+:root[data-theme="arcade"] .feed-item .dot { margin-top: 6px; }
+:root[data-theme="arcade"] .lv-buy .dot { background: var(--b-green); } :root[data-theme="arcade"] .lv-sell .dot { background: var(--b-red); }
+:root[data-theme="arcade"] .lv-signal .dot { background: var(--b-cyan); } :root[data-theme="arcade"] .lv-system .dot { background: var(--b-purple); }
+:root[data-theme="arcade"] .lv-warn .dot { background: var(--b-yellow); } :root[data-theme="arcade"] .lv-error .dot { background: var(--b-red); }
 
 /* ---- forms ---- */
-:root[data-theme="enchanted"] .field { border-bottom: 2px dashed rgba(58, 34, 16, .25); }
-:root[data-theme="enchanted"] .field .l { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; font-weight: 400; line-height: 1.6; color: var(--wood-1); }
-:root[data-theme="enchanted"] .field .h { font-size: 18px; }
-:root[data-theme="enchanted"] .input, :root[data-theme="enchanted"] .with-unit { border: 3px solid var(--ink); border-radius: 0; background: var(--parch-hi); color: var(--text); font-size: 20px; box-shadow: inset 3px 3px 0 rgba(58, 34, 16, .15); }
-:root[data-theme="enchanted"] textarea.input { font-family: var(--body-font); font-size: 19px; }
-:root[data-theme="enchanted"] .with-unit input { font-size: 20px; height: 32px; color: var(--text); }
-:root[data-theme="enchanted"] .with-unit span { background: var(--wood-1); color: var(--gold); border-left: 3px solid var(--ink); font-size: 17px; }
-:root[data-theme="enchanted"] .input:focus, :root[data-theme="enchanted"] .with-unit:focus-within, :root[data-theme="enchanted"] .btn:focus-visible, :root[data-theme="enchanted"] .nav:focus-visible { outline: 3px dashed var(--gold); outline-offset: 2px; }
-:root[data-theme="enchanted"] .switch { width: 44px; height: 24px; }
-:root[data-theme="enchanted"] .switch i { border-radius: 0; border: 3px solid var(--ink); background: var(--parch-lo); }
-:root[data-theme="enchanted"] .switch i::after { border-radius: 0; width: 12px; height: 12px; left: 3px; top: 3px; background: var(--wood-1); box-shadow: none; transition: none; }
-:root[data-theme="enchanted"] .switch input:checked + i { background: var(--moss); }
-:root[data-theme="enchanted"] .switch input:checked + i::after { transform: translateX(20px); background: var(--gold); }
-:root[data-theme="enchanted"] .seg { border-radius: 0; padding: 3px; background: var(--wood-0); box-shadow: 0 0 0 3px var(--ink); }
-:root[data-theme="enchanted"] .seg button { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; border-radius: 0; color: var(--parch); }
-:root[data-theme="enchanted"] .seg button.on { background: var(--moss); color: var(--parch-hi); box-shadow: inset 0 0 0 2px var(--gold-lo); }
-:root[data-theme="enchanted"] .seg button.on.live { background: var(--rose-lo); color: var(--parch-hi); }
-:root[data-theme="enchanted"] .label-input { font-size: 20px; border-radius: 0; color: var(--text); }
-:root[data-theme="enchanted"] .savebar { border-radius: 0; background: var(--wood-1); color: var(--gold); box-shadow: var(--frame); font-family: var(--px-font); font-size: 10px; text-transform: uppercase; }
-:root[data-theme="enchanted"] .savebar .btn:not(.primary) { background: var(--wood-0); color: var(--parch); border-color: var(--ink); }
-:root[data-theme="enchanted"] .note { border-radius: 0; box-shadow: 0 0 0 2px var(--ink); font-size: 16px; color: var(--ink); background: var(--parch-lo); }
-:root[data-theme="enchanted"] .note.good { background: #b9e39a; } :root[data-theme="enchanted"] .note.bad { background: var(--gold-hi); }
-:root[data-theme="enchanted"] .spinner { border-radius: 0; border: 3px solid var(--ink); border-top-color: var(--gold); animation: spin 1s steps(4) infinite; }
-:root[data-theme="enchanted"] .copy { border-radius: 0; color: var(--wood-2); }
-:root[data-theme="enchanted"] .steps, :root[data-theme="enchanted"] .kv { font-size: 19px; }
-:root[data-theme="enchanted"] .steps b { color: var(--wood-1); }
+:root[data-theme="arcade"] .field { border-bottom: 2px solid rgba(120, 140, 255, .12); }
+:root[data-theme="arcade"] .field .l { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; font-weight: 400; line-height: 1.6; color: #fff; }
+:root[data-theme="arcade"] .field .h { font-size: 18px; color: var(--muted); }
+:root[data-theme="arcade"] .input, :root[data-theme="arcade"] .with-unit { border: 3px solid var(--edge); border-radius: 0; background: #0b0f2e; color: var(--text); font-size: 20px; box-shadow: inset 3px 3px 0 rgba(0, 0, 0, .4), 0 0 0 2px #2a3170; }
+:root[data-theme="arcade"] select.input option { background: #0b0f2e; }
+:root[data-theme="arcade"] textarea.input { font-family: var(--body-font); font-size: 19px; }
+:root[data-theme="arcade"] .with-unit input { font-size: 20px; height: 32px; color: var(--text); }
+:root[data-theme="arcade"] .with-unit span { background: var(--b-blue); color: #fff; border-left: 3px solid var(--edge); font-size: 17px; box-shadow: var(--bevel-sm); }
+:root[data-theme="arcade"] .input:focus, :root[data-theme="arcade"] .with-unit:focus-within, :root[data-theme="arcade"] .btn:focus-visible, :root[data-theme="arcade"] .nav:focus-visible { outline: 3px dashed var(--b-yellow); outline-offset: 2px; }
+:root[data-theme="arcade"] .switch { width: 44px; height: 24px; }
+:root[data-theme="arcade"] .switch i { border-radius: 0; border: 3px solid var(--edge); background: #0b0f2e; box-shadow: 0 0 0 2px #2a3170; }
+:root[data-theme="arcade"] .switch i::after { border-radius: 0; width: 12px; height: 12px; left: 3px; top: 3px; background: var(--faint); box-shadow: none; transition: none; }
+:root[data-theme="arcade"] .switch input:checked + i { background: var(--b-green); }
+:root[data-theme="arcade"] .switch input:checked + i::after { transform: translateX(20px); background: var(--edge); }
+:root[data-theme="arcade"] .seg { border-radius: 0; padding: 3px; background: #0b0f2e; border: 3px solid var(--edge); }
+:root[data-theme="arcade"] .seg button { font-family: var(--px-font); font-size: 9px; text-transform: uppercase; border-radius: 0; color: var(--muted); }
+:root[data-theme="arcade"] .seg button.on { background: var(--b-cyan); color: var(--edge); box-shadow: var(--bevel-sm); }
+:root[data-theme="arcade"] .seg button.on.live { background: var(--b-red); color: #fff; }
+:root[data-theme="arcade"] .label-input { font-size: 20px; border-radius: 0; color: var(--text); }
+:root[data-theme="arcade"] .label-input:focus { background: #0b0f2e; }
+:root[data-theme="arcade"] .savebar { border-radius: 0; background: var(--b-yellow); color: var(--edge); border: 3px solid var(--edge); box-shadow: var(--bevel), 5px 5px 0 var(--edge); font-family: var(--px-font); font-size: 10px; text-transform: uppercase; }
+:root[data-theme="arcade"] .savebar .btn:not(.primary) { --c: var(--panel-2); }
+:root[data-theme="arcade"] .note { border-radius: 0; border: 2px solid var(--edge); font-size: 16px; color: var(--text); background: var(--panel-2); }
+:root[data-theme="arcade"] .note.good { background: var(--b-green); color: var(--edge); } :root[data-theme="arcade"] .note.bad { background: var(--b-yellow); color: var(--edge); }
+:root[data-theme="arcade"] .spinner { border-radius: 0; border: 3px solid var(--edge); background: var(--b-purple); border-top-color: var(--b-yellow); animation: spin 1s steps(4) infinite; }
+:root[data-theme="arcade"] .copy { border-radius: 0; color: var(--faint); }
+:root[data-theme="arcade"] .copy:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+:root[data-theme="arcade"] .steps, :root[data-theme="arcade"] .kv { font-size: 19px; color: var(--muted); }
+:root[data-theme="arcade"] .steps b { color: #fff; }
 
 /* ---- modal + toasts ---- */
-:root[data-theme="enchanted"] .modal-bg { background: rgba(8, 18, 11, .6); }
-:root[data-theme="enchanted"] .modal { background: var(--parch); border-radius: 0; box-shadow: var(--frame); padding: 0; overflow: hidden; }
-:root[data-theme="enchanted"] .modal h3 { font-family: var(--px-font); font-size: 11px; text-transform: uppercase; font-weight: 400; line-height: 1.6; margin: 0; padding: 14px 18px; color: var(--gold); text-shadow: 2px 2px 0 var(--ink); background: var(--wood-1); border-bottom: 3px solid var(--ink); }
-:root[data-theme="enchanted"] .modal > div:not(.row) { padding: 14px 18px 0; font-size: 20px; }
-:root[data-theme="enchanted"] .modal p, :root[data-theme="enchanted"] .modal li { color: var(--text); }
-:root[data-theme="enchanted"] .modal .row { padding: 0 18px 18px; }
-:root[data-theme="enchanted"] .toast { border-radius: 0; background: var(--wood-1); color: var(--parch); font-size: 19px; box-shadow: var(--frame); }
-:root[data-theme="enchanted"] .toast.err { background: var(--rose-lo); }
+:root[data-theme="arcade"] .modal-bg { background: rgba(4, 6, 22, .72); }
+:root[data-theme="arcade"] .modal { background: var(--panel); border: 3px solid var(--edge); border-radius: 0; box-shadow: 8px 8px 0 var(--edge); padding: 0; overflow: hidden; }
+:root[data-theme="arcade"] .modal h3 { font-family: var(--px-font); font-size: 11px; text-transform: uppercase; font-weight: 400; line-height: 1.6; margin: 0; padding: 14px 18px; color: #fff; background: var(--b-purple); border-bottom: 3px solid var(--edge); box-shadow: var(--bevel); }
+:root[data-theme="arcade"] .modal > div:not(.row) { padding: 14px 18px 0; font-size: 20px; }
+:root[data-theme="arcade"] .modal p, :root[data-theme="arcade"] .modal li { color: var(--text); }
+:root[data-theme="arcade"] .modal .row { padding: 0 18px 18px; }
+:root[data-theme="arcade"] .toast { border-radius: 0; background: var(--b-cyan); color: var(--edge); font-size: 19px; border: 3px solid var(--edge); box-shadow: var(--bevel), 5px 5px 0 var(--edge); }
+:root[data-theme="arcade"] .toast.err { background: var(--b-red); color: #fff; }
 
 /* ---- theme picker ---- */
 .theme-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
@@ -415,26 +417,26 @@ td.r { white-space: nowrap; }
 .theme-tile .sw { display: flex; gap: 6px; margin-bottom: 10px; }
 .theme-tile .sw i { width: 26px; height: 26px; border-radius: 6px; display: block; border: 1px solid rgba(0, 0, 0, .15); }
 .theme-tile b { display: block; } .theme-tile span { color: var(--muted); font-size: 13px; }
-:root[data-theme="enchanted"] .theme-tile { border: 3px solid var(--ink); border-radius: 0; background: var(--parch-hi); font-size: 18px; box-shadow: 3px 3px 0 rgba(10, 20, 12, .4); }
-:root[data-theme="enchanted"] .theme-tile.on { background: #d9eec4; box-shadow: inset 0 0 0 3px var(--gold-lo), 3px 3px 0 rgba(10, 20, 12, .4); }
-:root[data-theme="enchanted"] .theme-tile .sw i { border-radius: 0; border: 2px solid var(--ink); }
-:root[data-theme="enchanted"] .theme-tile b { font-family: var(--px-font); font-size: 10px; font-weight: 400; text-transform: uppercase; margin-bottom: 6px; color: var(--wood-1); }
-:root[data-theme="enchanted"] .theme-tile span { font-size: 18px; color: var(--text); }
+:root[data-theme="arcade"] .theme-tile { border: 3px solid var(--edge); border-radius: 0; background: var(--panel-2); font-size: 18px; box-shadow: 4px 4px 0 var(--edge); }
+:root[data-theme="arcade"] .theme-tile.on { box-shadow: inset 0 0 0 4px var(--b-green), 4px 4px 0 var(--edge); }
+:root[data-theme="arcade"] .theme-tile .sw i { border-radius: 0; border: 2px solid var(--edge); box-shadow: var(--bevel-sm); }
+:root[data-theme="arcade"] .theme-tile b { font-family: var(--px-font); font-size: 10px; font-weight: 400; text-transform: uppercase; margin-bottom: 6px; color: #fff; }
+:root[data-theme="arcade"] .theme-tile span { font-size: 18px; color: var(--muted); }
 
-/* ---- text that sits directly on the forest background ---- */
-:root[data-theme="enchanted"] .content > .row, :root[data-theme="enchanted"] .content > .row .muted { color: var(--parch); text-shadow: 2px 2px 0 var(--ink); }
-:root[data-theme="enchanted"] .content > .row .pos { color: var(--leaf); } :root[data-theme="enchanted"] .content > .row .neg { color: #ff8a7a; }
+/* ---- text sitting directly on the background ---- */
+:root[data-theme="arcade"] .content > .row, :root[data-theme="arcade"] .content > .row .muted { color: var(--text); text-shadow: 2px 2px 0 var(--edge); }
 
 /* ---- layout: pixel fonts are wider ---- */
-@media (max-width: 1500px) { :root[data-theme="enchanted"] .two { grid-template-columns: 1fr; } }
-:root[data-theme="enchanted"] td.num { white-space: nowrap; }
-:root[data-theme="enchanted"] [style*="font-size:12"], :root[data-theme="enchanted"] [style*="font-size:13"] { font-size: 18px !important; }
+@media (max-width: 1500px) { :root[data-theme="arcade"] .two { grid-template-columns: 1fr; } }
+:root[data-theme="arcade"] td.num { white-space: nowrap; }
+:root[data-theme="arcade"] [style*="font-size:12"], :root[data-theme="arcade"] [style*="font-size:13"] { font-size: 18px !important; }
 @media (max-width: 760px) {
-  :root[data-theme="enchanted"] .side { border-right: 0; border-bottom: 3px solid var(--ink); box-shadow: none; padding: 10px 12px; gap: 8px; }
-  :root[data-theme="enchanted"] .nav { padding: 10px 10px 10px 28px; }
-  :root[data-theme="enchanted"] .banner { margin-left: 12px; margin-right: 12px; }
+  :root[data-theme="arcade"] .side { border-right: 0; border-bottom: 4px solid var(--edge); box-shadow: none; padding: 10px 12px; gap: 8px; }
+  :root[data-theme="arcade"] .nav { padding: 10px 10px 10px 30px; }
+  :root[data-theme="arcade"] .brand { padding: 0 6px 0 0; }
+  :root[data-theme="arcade"] .brand .word { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { :root[data-theme="enchanted"] * { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { :root[data-theme="arcade"] * { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -467,7 +469,7 @@ td.r { white-space: nowrap; }
 
 <script>
 // ---------------- state ----------------
-const S = { ui: { theme: 'enchanted' }, app: { version: null, update: { state: 'disabled' } }, page: 'dashboard', status: null, config: null, logs: [], trades: [], connection: null, jobs: [], dirty: false, tradeFilter: 'all', busy: false, connTest: null };
+const S = { ui: { theme: 'arcade' }, app: { version: null, update: { state: 'disabled' } }, page: 'dashboard', status: null, config: null, logs: [], trades: [], connection: null, jobs: [], dirty: false, tradeFilter: 'all', busy: false, connTest: null };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const short = (a) => (a ? esc(`${String(a).slice(0, 4)}…${String(a).slice(-4)}`) : '');
@@ -486,7 +488,7 @@ function ago(t) {
 }
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 // ---------------- pixel icons (retro theme) ----------------
-const PX = { K: '#24140a', R: '#e0413f', W: '#fff6dc', Y: '#f4c64e', O: '#b8801c', G: '#7a5a3c', B: '#7fd8ff', E: '#5fae4e', L: '#a8e07a', C: '#f7e9c4', D: '#3f7a3a' };
+const PX = { K: '#070920', R: '#e0413f', W: '#fff6dc', Y: '#f4c64e', O: '#b8801c', G: '#3a4280', B: '#7fd8ff', E: '#5fae4e', L: '#a8e07a', C: '#f7e9c4', D: '#3f7a3a' };
 function pixelSvg(rows, cls = 'ico') {
   let r = '';
   rows.forEach((row, y) => [...row].forEach((c, x) => { if (PX[c]) r += `<rect x="${x}" y="${y}" width="1" height="1" fill="${PX[c]}"/>`; }));
@@ -506,8 +508,33 @@ function hearts(used, max) {
   const n = Math.min(max, 10);
   return `<div class="hearts" title="${used} of ${max} position slots used">${Array.from({ length: n }, (_, i) => (i < used ? ICON.heart : ICON.heartEmpty)).join('')}</div>`;
 }
-document.querySelector('.brand').insertAdjacentHTML('afterbegin', ICON.leaf); // logo for the enchanted theme (hidden in modern)
-function applyTheme(t) { document.documentElement.dataset.theme = t === 'modern' ? 'modern' : 'enchanted'; }
+// ---- beveled falling blocks (arcade theme) ----
+const BLOCK = { I: '#35d6ec', O: '#ffd23f', T: '#a855f7', S: '#4ade5a', Z: '#ff4766', J: '#4f7dff', L: '#ff9533' };
+function blocksSvg(rows, cell = 10) {
+  let r = '';
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    const c = BLOCK[ch]; if (!c) return;
+    const X = x * cell, Y = y * cell, b = Math.max(2, Math.round(cell / 5));
+    r += `<rect x="${X}" y="${Y}" width="${cell}" height="${cell}" fill="#070920"/>`
+      + `<rect x="${X + 1}" y="${Y + 1}" width="${cell - 2}" height="${cell - 2}" fill="${c}"/>`
+      + `<rect x="${X + 1}" y="${Y + 1}" width="${cell - 2}" height="${b}" fill="#fff" opacity=".45"/>`
+      + `<rect x="${X + 1}" y="${Y + 1}" width="${b}" height="${cell - 2}" fill="#fff" opacity=".45"/>`
+      + `<rect x="${X + 1}" y="${Y + cell - 1 - b}" width="${cell - 2}" height="${b}" fill="#000" opacity=".3"/>`
+      + `<rect x="${X + cell - 1 - b}" y="${Y + 1}" width="${b}" height="${cell - 2}" fill="#000" opacity=".3"/>`;
+  }));
+  return `<svg viewBox="0 0 ${rows[0].length * cell} ${rows.length * cell}" aria-hidden="true">${r}</svg>`;
+}
+ICON.fallingT = blocksSvg(['.T.', 'TTT'], 16);
+// Logo: pixel leaf + one block color per letter (styles only apply in the arcade theme).
+(() => {
+  const brand = document.querySelector('.brand'), word = brand.querySelector('span');
+  word.className = 'word';
+  word.innerHTML = [...word.textContent].map((ch, i) => `<span class="c${i + 1}">${esc(ch)}</span>`).join('');
+  brand.insertAdjacentHTML('afterbegin', ICON.leaf);
+  // a little stack of fallen blocks above the sidebar status box
+  document.querySelector('.side-foot').insertAdjacentHTML('beforebegin', `<div class="blocks-deco">${blocksSvg(['....T.....', '...TTT....', 'I.....SS..', 'I.OO.SS..L', 'I.OOZZ.JJL', 'IJJJ.ZZJLL'])}</div>`);
+})();
+function applyTheme(t) { document.documentElement.dataset.theme = t === 'modern' ? 'modern' : 'arcade'; }
 
 const copyBtn = (v) => `<button class="copy" title="Copy" data-copy="${esc(v)}">${ICON_COPY}</button>`;
 const tokenLink = (m) => `<span class="addr"><a class="mono" href="https://dexscreener.com/solana/${esc(m)}" target="_blank" rel="noopener">${short(m)}</a>${copyBtn(m)}</span>`;
@@ -682,7 +709,7 @@ function renderDashboard(el) {
         <td class="r muted num">${ago(p.openedAt)}</td>
         <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button></td>
       </tr>`).join('')}</tbody></table></div>`
-    : `<div class="empty"><div class="deco">${ICON.mushroom}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn primary" onclick="go('wallets')">Add wallets</button>`}</div>`;
+    : `<div class="empty"><div class="deco">${ICON.fallingT}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn primary" onclick="go('wallets')">Add wallets</button>`}</div>`;
 
   el.innerHTML = `${banners()}
     <div class="grid stats">
@@ -926,7 +953,7 @@ function renderSettings(el) {
     <div class="stack">
       <div class="card"><div class="card-h"><div><h2>Look</h2><div class="muted" style="font-size:12.5px">Changes apply instantly and don't affect the bot.</div></div></div>
         <div class="card-b theme-pick">
-          ${[['enchanted', 'Enchanted forest', 'Pixel fairytale: wood and gold frames, parchment panels, hearts and coins.', ['#23472f', '#5a3219', '#f4c64e', '#f7e9c4']],
+          ${[['arcade', 'Block arcade', 'Colorful falling-block game look: beveled blocks, pixel fonts, hearts and coins.', ['#35d6ec', '#ffd23f', '#a855f7', '#4ade5a', '#ff4766']],
              ['modern', 'Modern', 'Clean and minimal. Follows your light/dark setting.', ['#5b5bd6', '#f5f6f8', '#138a52', '#15181d']]]
             .map(([id, name, desc, sw]) => `<button class="theme-tile ${S.ui.theme === id ? 'on' : ''}" data-theme-pick="${id}" aria-pressed="${S.ui.theme === id}"><div class="sw">${sw.map((c) => `<i style="background:${c}"></i>`).join('')}</div><b>${name}</b><span>${desc}</span></button>`).join('')}
         </div></div>
