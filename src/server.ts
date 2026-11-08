@@ -20,7 +20,8 @@ import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
 import * as markets from './markets';
 import { getSolUsd } from './market';
-import { marketSkipReason } from './rules';
+import { marketSkipReason, walletRecords } from './rules';
+import * as ai from './ai';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -95,6 +96,7 @@ function broadcast(type: string, data: unknown) {
 let statusTimer: NodeJS.Timeout | null = null;
 engine.on('log', (e) => broadcast('log', e));
 engine.on('trade', (t) => broadcast('trade', t));
+ai.onDecision((d) => broadcast('ai', d));
 engine.on('status', () => {
   if (statusTimer) return; // coalesce bursts
   statusTimer = setTimeout(() => {
@@ -183,8 +185,97 @@ function connectionInfo() {
     walletAddress: engine.kp?.publicKey.toBase58() ?? null,
     hasDexcheckKey: hasSecret('DEXCHECK_API_KEY'),
     dexcheckEncrypted: secretIsEncrypted('DEXCHECK_API_KEY'),
+    hasAnthropicKey: hasSecret('ANTHROPIC_API_KEY'),
+    anthropicEncrypted: secretIsEncrypted('ANTHROPIC_API_KEY'),
   };
 }
+
+// ---------- autopilot: wallet reviews ----------
+const WALLET_REVIEW_FILE = 'data/ai-wallet-review.json';
+let lastWalletReview = (() => {
+  try {
+    return Number(JSON.parse(fs.readFileSync(WALLET_REVIEW_FILE, 'utf8')).at) || 0;
+  } catch {
+    return 0;
+  }
+})();
+let walletReviewBusy = false;
+
+/** Wallets the AI may add: the ones the user analyzed or discovered in this session. */
+function aiCandidates(): ai.CandidateView[] {
+  const out = new Map<string, ai.CandidateView>();
+  for (const j of jobs) {
+    if (j.status !== 'done') continue;
+    if (j.kind === 'analyze') {
+      for (const r of j.result as any[]) {
+        if (r.swaps > 0) out.set(r.wallet, { address: r.wallet, source: 'analyzed', stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, notes: r.notes } });
+      }
+    } else {
+      for (const c of (j.result as any).candidates ?? []) {
+        if (!out.has(c.wallet)) out.set(c.wallet, { address: c.wallet, source: 'early buyer', stats: { earlyOnTokens: c.mints.length, solSpentEarly: c.sol } });
+      }
+    }
+  }
+  const mine = new Set(engine.cfg.wallets.map((w) => w.address));
+  return [...out.values()].filter((c) => !mine.has(c.address));
+}
+
+async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary: string }> {
+  if (walletReviewBusy) throw new HttpError(409, 'Claude is already reviewing your wallets.');
+  const cfg = engine.cfg;
+  if (!cfg.wallets.length && !aiCandidates().length) throw new HttpError(400, 'Add some wallets, or analyze a few candidates on the Find wallets page first.');
+  walletReviewBusy = true;
+  lastWalletReview = Date.now();
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(WALLET_REVIEW_FILE, JSON.stringify({ at: lastWalletReview }));
+  try {
+    const recs = walletRecords(engine.readTrades(), cfg.mode);
+    const view: ai.WalletView[] = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
+    engine.log('Claude is reviewing your wallets…', 'ai');
+    const r = await ai.reviewWallets(cfg, view, aiCandidates());
+    if (!r) throw new HttpError(502, ai.aiStatus(cfg).lastError ?? 'Claude did not answer.');
+    if (!r.changes.length) {
+      engine.log(`Claude: no wallet changes. ${r.summary}`, 'ai');
+      return r;
+    }
+    // Apply to the latest config, never going over the active-wallet limit.
+    const next = structuredClone(engine.cfg);
+    const applied: ai.WalletChange[] = [];
+    const active = () => next.wallets.filter((w) => w.enabled).length;
+    for (const ch of r.changes) {
+      const w = next.wallets.find((x) => x.address === ch.address);
+      if (ch.action === 'add') {
+        if (w || active() >= cfg.ai.maxWallets || next.wallets.length >= 100) continue;
+        next.wallets.push({ address: ch.address, label: `ai-${ch.address.slice(0, 4)}`, enabled: true, sizeMultiplier: ch.sizeMultiplier, maxExposureSol: ch.budgetSol });
+      } else if (!w) continue;
+      else if (ch.action === 'pause') w.enabled = false;
+      else if (ch.action === 'resume') {
+        if (w.enabled || active() >= cfg.ai.maxWallets) continue;
+        w.enabled = true;
+      } else {
+        w.sizeMultiplier = ch.sizeMultiplier;
+        w.maxExposureSol = ch.budgetSol;
+      }
+      applied.push(ch);
+    }
+    if (applied.length) {
+      const clean = sanitizeConfig(next, false);
+      await applyChange(() => saveConfig(clean));
+      for (const ch of applied) engine.log(`Claude: ${ch.action} ${ch.address.slice(0, 4)}…${ch.address.slice(-4)}${ch.action === 'pause' ? '' : ` (size ×${ch.sizeMultiplier}${ch.budgetSol ? `, budget ${ch.budgetSol} SOL` : ''})`}: ${ch.reason}`, 'ai');
+    }
+    return { changes: applied, summary: r.summary };
+  } finally {
+    walletReviewBusy = false;
+  }
+}
+
+// Automatic wallet reviews while the bot is running.
+setInterval(() => {
+  const a = engine.cfg.ai;
+  if (!engine.running || !a.enabled || !a.manageWallets || walletReviewBusy) return;
+  if (Date.now() - lastWalletReview < a.walletReviewHours * 3_600_000) return;
+  runWalletReview().catch((e) => engine.log(`Claude wallet review: ${(e as Error).message}`, 'warn'));
+}, 10 * 60_000).unref();
 
 // ---------- watchlist ----------
 const WATCHLIST = 'data/watchlist.json';
@@ -314,7 +405,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/connection') {
     const b = await readBody(req);
-    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey']) {
+    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey']) {
       if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
     }
     const env: Record<string, string> = {};
@@ -338,6 +429,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       // Data-source keys don't affect trading, so saving one never restarts the bot.
       if (typeof b.dexcheckKey === 'string') saveSecret('DEXCHECK_API_KEY', b.dexcheckKey);
+      if (typeof b.anthropicKey === 'string') {
+        if (b.anthropicKey.trim() && !/^sk-ant-[\w-]{20,}$/.test(b.anthropicKey.trim())) throw new Error('That doesn’t look like an Anthropic API key (it starts with sk-ant-).');
+        saveSecret('ANTHROPIC_API_KEY', b.anthropicKey);
+      }
       if (Object.keys(env).length || newKey !== null) {
         await applyChange(() => {
           if (Object.keys(env).length) updateEnv(env);
@@ -466,6 +561,27 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       throw new HttpError(400, (e as Error).message);
     }
     return send(res, 200, { ok: true });
+  }
+
+  if (route === 'GET /api/ai') {
+    return send(res, 200, { ...ai.aiStatus(engine.cfg), lastWalletReview, walletReviewBusy, reviewBusy: engine.aiBusy, candidates: aiCandidates().length });
+  }
+
+  if (route === 'POST /api/ai/test') {
+    return send(res, 200, await ai.testAi(engine.cfg));
+  }
+
+  if (route === 'POST /api/ai/review-positions') {
+    try {
+      await engine.reviewPositionsNow();
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    return send(res, 200, { ok: true });
+  }
+
+  if (route === 'POST /api/ai/review-wallets') {
+    return send(res, 200, await runWalletReview());
   }
 
   if (route === 'POST /api/guard/resume') {

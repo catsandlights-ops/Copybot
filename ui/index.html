@@ -147,6 +147,24 @@ td.r, th.r { text-align: right; }
 .lv-buy .dot { background: var(--green); } .lv-sell .dot { background: var(--red); } .lv-signal .dot { background: var(--accent); }
 .lv-error .dot { background: var(--red); } .lv-warn .dot { background: var(--amber); } .lv-system .dot { background: var(--muted); }
 .lv-error { color: var(--red); }
+.lv-ai .dot { background: var(--r-violet); }
+.ai-hero { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 20px 22px; }
+.ai-hero .orb { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: var(--rainbow); color: #fff; flex: none; }
+.ai-hero .orb svg { width: 28px; height: 28px; }
+.ai-hero h2 { margin: 0 0 4px; font-size: 18px; }
+.ai-list { list-style: none; margin: 0; padding: 0; }
+.ai-item { display: grid; grid-template-columns: 74px 1fr auto; gap: 4px 14px; padding: 12px 18px; border-top: 1px solid var(--border); align-items: start; }
+.ai-item:first-child { border-top: 0; }
+.ai-item .t { color: var(--faint); font-size: 12px; padding-top: 2px; }
+.ai-item .what { font-weight: 600; }
+.ai-item .why { color: var(--muted); font-size: 13px; margin-top: 2px; grid-column: 2 / 4; }
+.ai-item .why li { margin: 2px 0; }
+.ai-item .meta { color: var(--faint); font-size: 12px; text-align: right; white-space: nowrap; }
+.tag.ai { background: var(--panel-2); color: var(--accent); }
+.tag.skip { background: var(--amber-bg); color: var(--amber); }
+#ai-settings { scroll-margin-top: 110px; }
+.ai-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 640px) { .ai-item { grid-template-columns: 1fr; } .ai-item .why { grid-column: 1; } .ai-item .meta { text-align: left; } }
 
 /* exit-plan chips */
 .plan { white-space: normal; min-width: 170px; max-width: 300px; line-height: 1.9; }
@@ -407,6 +425,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
     <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
     <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
+    <button class="nav" data-page="autopilot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Autopilot<span class="count" id="nav-ai"></span></button>
     <button class="nav" data-page="learn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>Learn</button>
     <button class="nav" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Settings</button>
     <div class="side-foot" id="side-foot"></div>
@@ -555,6 +574,7 @@ function renderChrome() {
   b.disabled = S.busy;
   const enabled = cfg.wallets.filter((w) => w.enabled !== false).length;
   $('#nav-wallets').textContent = cfg.wallets.length ? `${enabled}` : '';
+  $('#nav-ai').textContent = cfg.ai.enabled ? 'on' : '';
   document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('on', n.dataset.page === S.page));
   const c = S.connection || {};
   $('#side-foot').innerHTML = `
@@ -563,6 +583,7 @@ function renderChrome() {
     ${S.app.version ? `<div class="row" style="gap:6px"><span class="dot ${S.app.update.state === 'ready' ? 'warn' : ''}"></span>v${esc(S.app.version)}${updateShort()}</div>` : ''}`;
 }
 
+const ICON_SPARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>';
 const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
 $('#mode-btn').onclick = () => setAppearance(isDark() ? 'light' : 'dark');
@@ -591,13 +612,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', trades: 'Trade history', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
     el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-05">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
@@ -1118,6 +1139,91 @@ document.addEventListener('click', (e) => {
   if (S.page !== 'learn') go('learn'); else { render(); window.scrollTo(0, 0); }
 });
 
+// ----- autopilot -----
+async function loadAi() {
+  try { S.ai = await api('GET', '/api/ai'); } catch (e) { S.aiErr = e.message; }
+  if (S.page === 'autopilot') renderAutopilot($('#content'), true);
+}
+const usd = (v) => (v < 0.01 && v > 0 ? '<$0.01' : '$' + v.toFixed(2));
+function aiItem(d) {
+  const kind = { buy: d.verdict === 'skip' ? ['skip', 'Skipped buy'] : ['buy', 'Bought'], review: ['ai', 'Position review'], wallets: ['ai', 'Wallet review'], test: ['ai', 'Test'] }[d.kind] || ['ai', d.kind];
+  const token = d.mint ? ` ${tokenLink(d.mint)}${d.symbol ? ` <span class="muted">${esc(d.symbol)}</span>` : ''}` : '';
+  let outcome = '';
+  if (d.kind === 'buy' && d.verdict === 'skip') {
+    outcome = d.outcomePct === undefined ? '<div>1h result: waiting…</div>'
+      : d.outcomePct === null ? '<div>1h result: no price</div>'
+      : `<div>1h later: <b class="${d.outcomePct < 0 ? 'pos' : 'neg'}">${d.outcomePct > 0 ? '+' : ''}${d.outcomePct.toFixed(0)}%</b> ${d.outcomePct < 0 ? '(good skip)' : '(missed gain)'}</div>`;
+  }
+  const applied = d.applied?.length ? `<ul style="margin:6px 0 0;padding-left:18px">${d.applied.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : '';
+  return `<li class="ai-item"><span class="t">${time(d.t)}</span>
+    <div><span class="tag ${kind[0]}">${kind[1]}</span>${token} <span class="what">${d.kind === 'buy' ? '' : esc(d.verdict)}</span></div>
+    <div class="meta">${usd(d.costUsd)}${outcome}</div>
+    <div class="why">${esc(d.reason)}${applied}</div></li>`;
+}
+function renderAutopilot(el, fresh) {
+  if (!fresh) { loadAi(); if (!S.ai) { el.innerHTML = '<div class="card"><div class="empty"><span class="spinner"></span></div></div>'; return; } }
+  const a = S.ai, cfg = S.config, on = cfg.ai.enabled;
+  if (!a) { el.innerHTML = `<div class="card"><div class="empty">${esc(S.aiErr || 'Loading…')}</div></div>`; return; }
+  const spentPct = Math.min(100, (a.today.costUsd / a.today.budgetUsd) * 100);
+  const todayStart = new Date().setHours(0, 0, 0, 0);
+  const todays = a.decisions.filter((d) => d.t >= todayStart && d.kind !== 'test');
+  const buys = todays.filter((d) => d.kind === 'buy');
+  const keyBox = a.hasKey && !a.keyError ? '' : `
+    <div class="card"><div class="card-h"><div><h2>Connect Claude</h2><div class="muted" style="font-size:12.5px">The autopilot uses your own Anthropic API key. Create one at <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys, and add a little credit (Billing).</div></div></div>
+      <div class="card-b stack">${a.keyError ? `<div class="banner danger" style="margin:0"><div>${esc(a.keyError)}</div></div>` : ''}
+        <div class="row"><input class="input mono" id="ai-key" type="password" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:220px"><button class="btn primary" id="ai-key-save">Save key</button></div>
+        <div class="muted" style="font-size:12.5px">${S.connection.canEncrypt ? 'Stored encrypted by your operating system.' : 'Stored in the .env file on this computer.'}</div></div></div>`;
+  el.innerHTML = `
+    <div class="card ai-hero"><div class="orb">${ICON_SPARK}</div>
+      <div style="flex:1;min-width:240px"><h2>Claude ${on ? 'is trading for you' : 'autopilot is off'}</h2>
+        <div class="muted">${on ? `Using Claude Opus 5.5. It ${[cfg.ai.decideBuys && 'decides buys', cfg.ai.reviewPositions && `reviews positions every ${cfg.ai.reviewEveryMin} min`, cfg.ai.manageWallets && `manages wallets every ${cfg.ai.walletReviewHours} h`].filter(Boolean).join(', ') || 'has nothing switched on in its settings'}. Your limits always apply.` : 'Turn it on to let Claude decide buys, review positions and manage wallets, always inside your limits.'}
+        <a href="#" data-guide="autopilot">How it works →</a></div></div>
+      <div class="row"><label class="switch" title="Autopilot on/off"><input type="checkbox" id="ai-on" ${on ? 'checked' : ''} ${a.hasKey ? '' : 'disabled'}><i></i></label><button class="btn ghost" id="ai-settings">Settings</button></div>
+    </div>
+    ${a.lastError && on ? `<div class="banner warn"><div><b>Claude:</b> ${esc(a.lastError)}</div></div>` : ''}
+    ${keyBox}
+    <div class="grid stats">
+      <div class="card stat" style="--c:var(--accent)"><div class="k">${ICON.coin}AI cost today</div><div class="v num">${usd(a.today.costUsd)} <small style="font-size:13px" class="muted">of $${a.today.budgetUsd}</small></div><div class="s">${a.today.calls} call${a.today.calls === 1 ? '' : 's'} to Claude${a.overBudget ? ' · budget used up' : ''}</div><div class="bar"><i style="width:${spentPct}%"></i></div></div>
+      <div class="card stat"><div class="k">${ICON.star}Buy decisions today</div><div class="v num">${buys.length}</div><div class="s">${buys.filter((d) => d.verdict === 'buy').length} bought · ${buys.filter((d) => d.verdict === 'skip').length} skipped</div></div>
+      <div class="card stat"><div class="k">${pixelSvg(HEART)}Were the skips right?</div><div class="v num">${a.skips.checked ? `${a.skips.fell} <small style="font-size:13px" class="muted">of ${a.skips.checked}</small>` : '–'}</div><div class="s">${a.skips.checked ? `skipped tokens fell within 1h · avg ${a.skips.avgPct > 0 ? '+' : ''}${a.skips.avgPct.toFixed(0)}%` : 'checked 1 hour after each skip'}</div></div>
+    </div>
+    <div class="card"><div class="card-h"><h2>Ask Claude now</h2></div><div class="card-b ai-actions">
+      <button class="btn" id="ai-test" ${a.hasKey ? '' : 'disabled'}>Test connection</button>
+      <button class="btn" id="ai-rev-pos" ${a.hasKey && S.status.positions.length && !a.reviewBusy ? '' : 'disabled'}>${a.reviewBusy ? 'Reviewing…' : `Review open positions (${S.status.positions.length})`}</button>
+      <button class="btn" id="ai-rev-w" ${a.hasKey && !a.walletReviewBusy ? '' : 'disabled'}>${a.walletReviewBusy ? 'Reviewing wallets…' : `Review wallets${a.candidates ? ` + ${a.candidates} candidate${a.candidates === 1 ? '' : 's'}` : ''}`}</button>
+      <span class="muted" id="ai-msg" style="font-size:13px;align-self:center">${a.lastWalletReview ? `Last wallet review ${ago(a.lastWalletReview)} ago.` : ''}${a.candidates ? '' : ' Analyze wallets on <a href="#" onclick="go(\'research\');return false">Find wallets</a> to give Claude candidates.'}</span>
+    </div></div>
+    <div class="card"><div class="card-h"><h2>Claude's decisions</h2><span class="spacer"></span><span class="muted" style="font-size:12px">newest first</span></div>
+      ${a.decisions.length ? `<ul class="ai-list">${a.decisions.map(aiItem).join('')}</ul>` : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No decisions yet</h3>${on ? 'Claude will decide on the next copy signal.' : 'Turn the autopilot on, then start the bot.'}</div>`}
+    </div>`;
+  $('#ai-settings').onclick = () => { go('settings').then(() => $('#ai-settings')?.scrollIntoView({ block: 'start' })); };
+  $('#ai-on').onchange = async (e) => {
+    if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
+    const enabled = e.target.checked;
+    if (enabled && !(await confirmModal({ title: 'Turn on the AI autopilot?', confirm: 'Turn on',
+      body: `<p>Claude will decide which copy signals to buy, can sell positions early${cfg.ai.manageWallets ? ', and can change which wallets you copy' : ''}. It can never go past your limits or skip a safety check.</p><p>Each decision costs a few cents from your Anthropic account, up to <b>$${cfg.ai.dailyBudgetUsd} a day</b>.${cfg.mode === 'live' ? ' <b>You are in live mode: these are real trades.</b>' : ''}</p>` }))) { e.target.checked = false; return; }
+    const r = await act(() => api('PUT', '/api/config', { ...cfg, ai: { ...cfg.ai, enabled } }), enabled ? 'Autopilot on' : 'Autopilot off');
+    if (r) { S.config = r.config; renderChrome(); renderAutopilot(el, true); } else e.target.checked = !enabled;
+  };
+  const ks = $('#ai-key-save');
+  if (ks) ks.onclick = async () => {
+    const r = await act(() => api('PUT', '/api/connection', { anthropicKey: $('#ai-key').value }), 'Anthropic key saved');
+    if (r) { S.connection = r; loadAi(); }
+  };
+  $('#ai-test').onclick = async () => {
+    $('#ai-msg').innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Asking Claude…';
+    const r = await act(() => api('POST', '/api/ai/test'));
+    $('#ai-msg').innerHTML = r ? (r.ok ? `<span class="pos">✓ ${esc(r.message)}</span> <span class="muted">(${usd(r.costUsd || 0)})</span>` : `<span class="neg">✕ ${esc(r.message)}</span>`) : '';
+  };
+  $('#ai-rev-pos').onclick = async () => { const b = $('#ai-rev-pos'); b.disabled = true; b.textContent = 'Reviewing…'; await act(() => api('POST', '/api/ai/review-positions')); loadAi(); };
+  $('#ai-rev-w').onclick = async () => {
+    const b = $('#ai-rev-w'); b.disabled = true; b.textContent = 'Reviewing wallets…';
+    const r = await act(() => api('POST', '/api/ai/review-wallets'));
+    if (r) toast(r.changes.length ? `Claude made ${r.changes.length} wallet change${r.changes.length === 1 ? '' : 's'}` : 'Claude: no wallet changes');
+    loadAi();
+  };
+}
+
 // ----- settings -----
 const FIELDS = [
   { title: 'Buying', desc: 'How much to spend when a wallet you copy buys a token.', fields: [
@@ -1167,6 +1273,17 @@ const FIELDS = [
     { k: 'safety.rejectToken2022', label: 'Skip Token-2022 tokens', type: 'toggle', help: 'Newer token standard that can carry transfer taxes.' },
     { k: 'safety.blacklist', label: 'Never buy these tokens', type: 'list', help: 'One token address per line.' },
   ]},
+  { title: 'Autopilot (Claude)', id: 'ai-settings', desc: 'What Claude may decide. It always stays inside every limit above. Turn it on and add your key on the Autopilot page.', fields: [
+    { k: 'ai.enabled', label: 'Autopilot on', type: 'toggle' },
+    { k: 'ai.decideBuys', label: 'Claude decides buys', type: 'toggle', help: 'Buy or skip each copy signal that passed the safety checks, and how big (¼× to 2× your normal size).' },
+    { k: 'ai.reviewPositions', label: 'Claude reviews open positions', type: 'toggle', help: 'Can sell early. Stop-loss and take-profits still run on their own.' },
+    { k: 'ai.reviewEveryMin', label: 'Review positions every', unit: 'min', step: 1 },
+    { k: 'ai.manageWallets', label: 'Claude manages wallets', type: 'toggle', help: 'Pause losing wallets, change sizes and budgets, and add wallets from your Find wallets results.' },
+    { k: 'ai.walletReviewHours', label: 'Review wallets every', unit: 'hours', step: 1 },
+    { k: 'ai.maxWallets', label: 'Max wallets copied at once', unit: 'wallets', step: 1 },
+    { k: 'ai.dailyBudgetUsd', label: 'Daily AI budget', unit: 'USD', help: 'What Claude may cost per day. When it runs out, Copybot uses its normal rules until tomorrow.' },
+    { k: 'ai.guidance', label: 'Your instructions for Claude', type: 'text', help: 'Optional. For example: "Be picky. Avoid tokens younger than 10 minutes."' },
+  ]},
   { title: 'Speed', desc: 'Faster fills cost a little more in fees.', fields: [
     { k: 'execution.priorityLevel', label: 'Transaction priority', type: 'select', options: [['medium', 'Normal'], ['high', 'High'], ['veryHigh', 'Very high']] },
     { k: 'execution.priorityFeeMaxLamports', label: 'Max priority fee per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9) },
@@ -1180,10 +1297,11 @@ const setP = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); ks.r
 function fieldHtml(f) {
   let v = getP(S.config, f.k);
   if (f.toView) v = f.toView(v);
-  const id = 'f-' + f.k.replace('.', '-');
+  const id = 'f-' + f.k.replace(/\./g, '-');
   let ctl;
   if (f.type === 'toggle') ctl = `<label class="switch"><input type="checkbox" id="${id}" data-k="${f.k}" ${v ? 'checked' : ''}><i></i></label>`;
   else if (f.type === 'select') ctl = `<select class="input" id="${id}" data-k="${f.k}">${f.options.map(([val, l]) => `<option value="${val}" ${val === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  else if (f.type === 'text') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" maxlength="1000" placeholder="none">${esc(v || '')}</textarea>`;
   else if (f.type === 'list') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" placeholder="none">${esc((v || []).join('\n'))}</textarea>`;
   else ctl = `<div class="with-unit"><input type="number" inputmode="decimal" id="${id}" data-k="${f.k}" value="${esc(+Number(v).toFixed(9))}" step="${f.step || 'any'}" min="0"><span>${f.unit}</span></div>`;
   return `<div class="field"><div><label class="l" for="${id}">${f.label}</label>${f.help ? `<div class="h">${f.help}</div>` : ''}</div>${ctl}</div>`;
@@ -1208,7 +1326,7 @@ function renderSettings(el) {
         <div class="seg" id="mode-seg"><button data-m="paper" class="${!live ? 'on' : ''}">Paper</button><button data-m="live" class="${live ? 'on live' : ''}">Live</button></div>
       </div></div>
 
-      ${FIELDS.map((s) => `<div class="card"><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.fields.map(fieldHtml).join('')}</div>`).join('')}
+      ${FIELDS.map((s) => `<div class="card"${s.id ? ` id="${s.id}"` : ''}><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.fields.map(fieldHtml).join('')}</div>`).join('')}
 
       <div class="card" id="conn"><div class="card-h"><div><h2>Connection</h2><div class="muted" style="font-size:12.5px">Stored in the <span class="mono">.env</span> file on this computer only.</div></div></div>
         <div class="field"><div><label class="l" for="c-rpc">Solana RPC URL</label><div class="h">Get a free key at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>, then paste <span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span></div></div>
@@ -1217,6 +1335,8 @@ function renderSettings(el) {
           <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="field"><div><label class="l" for="c-dexkey">DexCheck API key <span class="muted">(optional)</span></label><div class="h">Turns on whale trades and top traders in Markets. Free at <a href="https://dexcheck.ai/" target="_blank" rel="noopener">dexcheck.ai</a> (API dashboard → Settings → API Keys). ${c.hasDexcheckKey ? `<b>A key is saved${c.dexcheckEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
           <input class="input mono" id="c-dexkey" type="password" placeholder="${c.hasDexcheckKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
+        <div class="field"><div><label class="l" for="c-antkey">Anthropic API key <span class="muted">(for the autopilot)</span></label><div class="h">Lets Claude make trading decisions. From <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys. ${c.hasAnthropicKey ? `<b>A key is saved${c.anthropicEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
+          <input class="input mono" id="c-antkey" type="password" placeholder="${c.hasAnthropicKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="card-b row" style="border-top:1px solid var(--border)">
           <button class="btn primary" id="c-save">Save connection</button><button class="btn" id="c-test">Test connection</button>
           <span id="c-test-res" class="muted" style="font-size:13px">${connTestHtml()}</span>
@@ -1247,6 +1367,7 @@ function renderSettings(el) {
     const body = { rpcUrl: $('#c-rpc').value };
     if ($('#c-jupkey').value) body.jupiterKey = $('#c-jupkey').value;
     if ($('#c-dexkey').value) { body.dexcheckKey = $('#c-dexkey').value; S.m.data = {}; }
+    if ($('#c-antkey').value) { body.anthropicKey = $('#c-antkey').value; S.ai = null; }
     const r = await act(() => api('PUT', '/api/connection', body), 'Connection saved');
     if (r) { S.connection = r; S.connTest = null; render(); }
   };
@@ -1281,6 +1402,7 @@ async function saveSettings() {
     let v;
     if (f.type === 'toggle') v = el.checked;
     else if (f.type === 'select') v = el.value;
+    else if (f.type === 'text') v = el.value;
     else if (f.type === 'list') v = el.value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     else {
       v = Number(el.value);
@@ -1340,6 +1462,13 @@ function connectEvents() {
     // Re-render for state changes that add/remove buttons or banners; otherwise just update the text.
     if (['ready', 'rejected', 'installing'].includes(S.app.update.state) || !t) { if (!(S.page === 'settings' && S.dirty)) render(); }
     else t.innerHTML = updateText();
+  });
+  es.addEventListener('ai', (e) => {
+    const d = JSON.parse(e.data);
+    if (!S.ai) return;
+    const i = S.ai.decisions.findIndex((x) => x.id === d.id);
+    if (i >= 0) S.ai.decisions[i] = d; else S.ai.decisions.unshift(d);
+    if (S.page === 'autopilot') loadAi();
   });
   es.addEventListener('job', (e) => {
     upsertJob(JSON.parse(e.data));

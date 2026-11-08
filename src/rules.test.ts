@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG, sanitizeConfig } from './config';
-import { buyBlockReason, freshGuard, marketSkipReason, planExit, priceDriftPct, recordSell, walletExposureSol } from './rules';
+import { buyBlockReason, freshGuard, marketSkipReason, planExit, priceDriftPct, recordSell, walletExposureSol, walletRecords } from './rules';
 import { summarizePairs } from './market';
 
 const cfg = structuredClone(DEFAULT_CONFIG); // stop-loss 40, recover at +100, tp1 +300/50%, tp2 +900/50%, trail 30% after +50
@@ -92,11 +92,11 @@ test('market filters: low liquidity, big trade, market cap range, token age, mis
 test('summarizePairs adds up liquidity across pools and keeps the oldest pool time', () => {
   const m = 'MINT';
   const info = summarizePairs(m, [
-    { chainId: 'solana', baseToken: { address: m }, liquidity: { usd: 1000 }, marketCap: 50_000, pairCreatedAt: 2000 },
-    { chainId: 'solana', baseToken: { address: m }, liquidity: { usd: 500 }, fdv: 60_000, pairCreatedAt: 1000 },
+    { chainId: 'solana', baseToken: { address: m, symbol: 'LEAF', name: 'Leaf' }, liquidity: { usd: 1000 }, marketCap: 50_000, pairCreatedAt: 2000, volume: { h24: 300 }, priceChange: { h1: 12 }, txns: { h1: { buys: 40, sells: 10 } } },
+    { chainId: 'solana', baseToken: { address: m }, liquidity: { usd: 500 }, fdv: 60_000, pairCreatedAt: 1000, volume: { h24: 200 } },
     { chainId: 'ethereum', baseToken: { address: m }, liquidity: { usd: 99999 } },
   ])!;
-  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000 });
+  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, buys1h: 40, sells1h: 10 });
   assert.equal(summarizePairs(m, []), null);
 });
 
@@ -147,4 +147,19 @@ test('config: new wallet fields default and validate', () => {
   assert.equal(c.wallets[0].maxExposureSol, 0);
   assert.throws(() => sanitizeConfig({ wallets: [{ address: 'GG5ATPW7bxGm5y4aGa2uWWZV1JvjETiM2Rabc2fT8Y7f', sizeMultiplier: 50 }] }, true), /Size multiplier/);
   assert.throws(() => sanitizeConfig({ exits: { tp1AtPct: 300, tp2AtPct: 200 } }, true), /higher than take-profit 1/);
+});
+
+test('walletRecords: our results per copied wallet, shared sells split', () => {
+  const r = walletRecords(
+    [
+      { mode: 'paper', side: 'buy', source: 'A' },
+      { mode: 'paper', side: 'buy', source: 'B' },
+      { mode: 'paper', side: 'sell', sources: ['A'], pnl: 0.2 },
+      { mode: 'paper', side: 'sell', sources: ['A', 'B'], pnl: -0.1 },
+      { mode: 'live', side: 'sell', sources: ['A'], pnl: 5 },
+    ],
+    'paper',
+  );
+  assert.deepEqual(r.A, { trades: 1, closed: 2, wins: 1, pnlSol: 0.15000000000000002 });
+  assert.deepEqual(r.B, { trades: 1, closed: 1, wins: 0, pnlSol: -0.05 });
 });

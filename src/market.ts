@@ -12,8 +12,11 @@ const TTL = 30_000;
 
 type Pair = {
   chainId?: string;
-  baseToken?: { address?: string };
-  quoteToken?: { address?: string };
+  baseToken?: { address?: string; symbol?: string; name?: string };
+  quoteToken?: { address?: string; symbol?: string; name?: string };
+  volume?: { h24?: number };
+  priceChange?: { h1?: number };
+  txns?: { h1?: { buys?: number; sells?: number } };
   liquidity?: { usd?: number };
   marketCap?: number;
   fdv?: number;
@@ -28,10 +31,20 @@ export function summarizePairs(mint: string, pairs: Pair[]): MarketInfo | null {
   const liquidityUsd = known.length ? known.reduce((a, p) => a + Number(p.liquidity!.usd), 0) : null;
   const caps = mine.filter((p) => p.baseToken?.address === mint).map((p) => Number(p.marketCap ?? p.fdv)).filter((n) => Number.isFinite(n) && n > 0);
   const created = mine.map((p) => Number(p.pairCreatedAt)).filter((n) => Number.isFinite(n) && n > 0);
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const top = [...mine].sort((a, b) => (num(b.liquidity?.usd) ?? -1) - (num(a.liquidity?.usd) ?? -1))[0];
+  const side = top.baseToken?.address === mint ? top.baseToken : top.quoteToken;
+  const vols = mine.map((p) => num(p.volume?.h24)).filter((n): n is number => n !== null);
   return {
     liquidityUsd,
     marketCapUsd: caps.length ? Math.max(...caps) : null,
     createdAt: created.length ? Math.min(...created) : null,
+    symbol: side?.symbol ?? null,
+    name: side?.name ?? null,
+    volume24hUsd: vols.length ? vols.reduce((a, n) => a + n, 0) : null,
+    change1hPct: num(top.priceChange?.h1),
+    buys1h: num(top.txns?.h1?.buys),
+    sells1h: num(top.txns?.h1?.sells),
   };
 }
 

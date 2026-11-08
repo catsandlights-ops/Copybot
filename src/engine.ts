@@ -3,11 +3,13 @@ import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { Config, loadConfig } from './config';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
-import { quoteSell } from './jupiter';
+import { quoteBuy, quoteSell } from './jupiter';
 import { checkToken } from './safety';
 import { exposure, loadState, saveState, State } from './state';
-import { buyBlockReason, ExitStep, freshGuard, GuardState, localDay, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol } from './rules';
+import { buyBlockReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
+import * as ai from './ai';
+import fs from 'node:fs';
 import { Trade, Trader } from './trader';
 import { getTx, short, sleep, withRetry } from './util';
 
@@ -136,6 +138,7 @@ export class BotEngine extends EventEmitter {
     }
     this.exitLoop(gen);
     this.balanceLoop(gen);
+    this.aiLoop(gen);
   }
 
   async stop() {
@@ -220,8 +223,9 @@ export class BotEngine extends EventEmitter {
 
     // Market filters: liquidity, trade size vs pool, market cap, token age.
     const f = cfg.filters;
+    const useAi = cfg.ai.enabled && cfg.ai.decideBuys;
+    let info: MarketInfo | null = null;
     if (f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0) {
-      let info = null;
       try {
         info = await getMarketInfo(s.mint);
       } catch (e) {
@@ -233,16 +237,145 @@ export class BotEngine extends EventEmitter {
       if (why) return skip(why);
     }
 
-    const lamports = BigInt(Math.round(sol * 1e9));
-    const check = await checkToken(this.conn, cfg, s.mint, lamports);
+    let lamports = BigInt(Math.round(sol * 1e9));
+    let check = await checkToken(this.conn, cfg, s.mint, lamports);
     if (!check.ok) return skip(check.reason);
 
     // Don't chase: compare our price with what the copied wallet paid.
-    if (r.maxPriceDriftPct > 0 && s.quote === 'SOL') {
-      const drift = priceDriftPct(s.quoteAmount, s.tokenAmount, lamports, BigInt(check.buyQuote.outAmount));
-      if (drift != null && drift > r.maxPriceDriftPct) return skip(`price is already ${drift.toFixed(0)}% above their entry (max ${r.maxPriceDriftPct}%)`);
+    const driftOf = (q: { outAmount: string }, lam: bigint) => (s.quote === 'SOL' ? priceDriftPct(s.quoteAmount, s.tokenAmount, lam, BigInt(q.outAmount)) : null);
+    const chased = (drift: number | null) => (r.maxPriceDriftPct > 0 && drift != null && drift > r.maxPriceDriftPct ? `price is already ${drift.toFixed(0)}% above their entry (max ${r.maxPriceDriftPct}%)` : null);
+    let drift = driftOf(check.buyQuote, lamports);
+    const chasing = chased(drift);
+    if (chasing) return skip(chasing);
+
+    // Autopilot: Claude decides buy/skip and the size, inside every limit checked above.
+    if (useAi) {
+      if (!info) info = await getMarketInfo(s.mint).catch(() => null);
+      const label = w?.label ?? short(s.wallet);
+      const record = walletRecords(this.readTrades(), cfg.mode)[s.wallet] ?? null;
+      const g = this.guard;
+      this.log(`  asking Claude…`, 'ai');
+      const d = await ai.decideBuy(cfg, {
+        mint: s.mint,
+        symbol: info?.symbol ?? null,
+        name: info?.name ?? null,
+        wallet: { label, theirSol: s.quoteAmount, record },
+        ourSol: sol,
+        driftPct: drift,
+        priceImpactPct: Number(check.buyQuote.priceImpactPct ?? NaN) * 100 || null,
+        market: info && { liquidityUsd: info.liquidityUsd, marketCapUsd: info.marketCapUsd, ageMin: info.createdAt ? Math.round((Date.now() - info.createdAt) / 60_000) : null, volume24hUsd: info.volume24hUsd, change1hPct: info.change1hPct, buys1h: info.buys1h, sells1h: info.sells1h },
+        portfolio: { openPositions: Object.keys(state.positions).length, maxPositions: r.maxOpenPositions, exposureSol: exposure(state), maxExposureSol: r.maxTotalExposureSol, dayPnlSol: g.dayPnlSol },
+        probe: { lamports: lamports.toString(), tokensOut: check.buyQuote.outAmount },
+      });
+      if (!this.running) return;
+      if (!d) {
+        this.log(`  Claude unavailable: ${ai.aiStatus(cfg).lastError ?? 'no answer'} Following the rules: buy.`, 'warn');
+      } else {
+        if (!d.buy) return this.log(`  skipped by Claude: ${d.reason}`, 'skip');
+        this.log(`  Claude says buy${d.size !== 1 ? ` (size ×${d.size})` : ''}: ${d.reason}`, 'ai');
+        // Resize within the limits, then re-check: the price may have moved while Claude thought.
+        const resized = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol * d.size));
+        const cap = Math.min(r.maxTotalExposureSol - exposure(state), w && w.maxExposureSol > 0 ? w.maxExposureSol - walletExposureSol(Object.values(state.positions), w.address) : Infinity);
+        sol = Math.min(resized, cap);
+        if (sol < cfg.buy.minSol) return skip('no room left under your limits');
+        lamports = BigInt(Math.round(sol * 1e9));
+        check = await checkToken(this.conn, cfg, s.mint, lamports);
+        if (!check.ok) return skip(check.reason);
+        drift = driftOf(check.buyQuote, lamports);
+        const late = chased(drift);
+        if (late) return skip(late);
+      }
     }
     await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet);
+  }
+
+  /** Our trade history (for per-wallet results). */
+  readTrades(): ai.TradeRow[] {
+    try {
+      return fs.readFileSync('data/trades.jsonl', 'utf8').trim().split('\n').flatMap((l) => {
+        try {
+          return [JSON.parse(l)];
+        } catch {
+          return [];
+        }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  // ---------- autopilot: position reviews + checking skipped buys ----------
+  private lastReview = 0;
+  aiBusy = false;
+
+  private async aiLoop(gen: number) {
+    while (gen === this.gen) {
+      await sleep(60_000);
+      if (gen !== this.gen) return;
+      const a = this.cfg.ai;
+      if (!a.enabled) continue;
+      await this.checkSkippedOutcomes().catch((e) => this.logError(e));
+      if (a.reviewPositions && Date.now() - this.lastReview >= a.reviewEveryMin * 60_000 && Object.keys(this.state.positions).length) {
+        await this.reviewPositionsNow().catch((e) => this.logError(e));
+      }
+    }
+  }
+
+  /** Ask Claude about every open position; sells it recommends go through the normal sell path. */
+  async reviewPositionsNow() {
+    if (this.aiBusy) throw new Error('Claude is already reviewing.');
+    const list = Object.values(this.state.positions);
+    if (!list.length) throw new Error('No open positions to review.');
+    this.aiBusy = true;
+    this.lastReview = Date.now();
+    try {
+      await this.valuePositions();
+      const view: ai.ReviewPosition[] = [];
+      for (const p of list) {
+        const v = this.values[p.mint];
+        const info = await getMarketInfo(p.mint).catch(() => null);
+        view.push({
+          mint: p.mint,
+          symbol: info?.symbol ?? null,
+          costSol: p.costSol,
+          valueSol: v?.valueSol ?? null,
+          pnlPct: v ? v.pnlPct : null,
+          peakPct: p.peakMultiple ? (p.peakMultiple - 1) * 100 : null,
+          heldMin: Math.round((Date.now() - p.openedAt) / 60_000),
+          stepsTaken: p.steps ?? [],
+          copiedFrom: p.sources.map((x) => this.labels.get(x) ?? short(x)),
+          market: info && { liquidityUsd: info.liquidityUsd, marketCapUsd: info.marketCapUsd, ageMin: info.createdAt ? Math.round((Date.now() - info.createdAt) / 60_000) : null, volume24hUsd: info.volume24hUsd, change1hPct: info.change1hPct, buys1h: info.buys1h, sells1h: info.sells1h },
+        });
+      }
+      this.log(`Claude is reviewing ${view.length} open position(s)…`, 'ai');
+      const actions = await ai.reviewPositions(this.cfg, view);
+      if (!actions) return this.log(`Claude review unavailable: ${ai.aiStatus(this.cfg).lastError ?? 'no answer'}`, 'warn');
+      if (!actions.length) return this.log('Claude: hold everything for now.', 'ai');
+      for (const act of actions) {
+        if (this.exiting.has(act.mint) || !this.state.positions[act.mint]) continue;
+        this.exiting.add(act.mint);
+        this.enqueue(async () => {
+          try {
+            await this.trader.sell(act.mint, act.fraction, `Claude: ${act.reason}`);
+          } finally {
+            this.exiting.delete(act.mint);
+          }
+        });
+      }
+    } finally {
+      this.aiBusy = false;
+    }
+  }
+
+  /** For buys Claude skipped an hour ago: what would the same buy be worth now? */
+  private async checkSkippedOutcomes() {
+    for (const d of ai.pendingOutcomes().slice(0, 10)) {
+      if (!d.probe || !d.mint) continue;
+      const q = await quoteBuy(d.mint, BigInt(d.probe.lamports), this.cfg.safety.slippageBps).catch(() => undefined);
+      if (q === undefined) continue; // network trouble: try again next round
+      // Fewer tokens for the same SOL = the price went up. No route at all usually means the token died.
+      ai.setOutcome(d.id, q ? (Number(d.probe.tokensOut) / Number(q.outAmount) - 1) * 100 : -100);
+    }
   }
 
   private async onTargetSell(s: Swap) {

@@ -67,7 +67,18 @@ export function priceDriftPct(theirSol: number, theirTokenRaw: bigint, ourLampor
 // ---------------------------------------------------------------------------
 
 /** liquidityUsd is null when unknown, e.g. pump.fun bonding-curve tokens (Dexscreener reports no pool liquidity for them). */
-export type MarketInfo = { liquidityUsd: number | null; marketCapUsd: number | null; createdAt: number | null };
+export type MarketInfo = {
+  liquidityUsd: number | null;
+  marketCapUsd: number | null;
+  createdAt: number | null;
+  // extras (biggest pool), shown to the AI
+  symbol?: string | null;
+  name?: string | null;
+  volume24hUsd?: number | null;
+  change1hPct?: number | null;
+  buys1h?: number | null;
+  sells1h?: number | null;
+};
 
 const usd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${n.toFixed(0)}`);
 
@@ -147,4 +158,30 @@ export function recordSell(g: GuardState, pnlSol: number, risk: Config['risk'], 
 /** SOL currently in positions copied from `wallet` (split evenly when several wallets bought the same token). */
 export function walletExposureSol(positions: { costSol: number; sources: string[] }[], wallet: string): number {
   return positions.reduce((a, p) => (p.sources.includes(wallet) ? a + p.costSol / Math.max(1, p.sources.length) : a), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Per-wallet results (our own trades), for the AI and the scoreboard
+// ---------------------------------------------------------------------------
+
+export type TradeLike = { mode?: string; side: string; source?: string; sources?: string[]; pnl?: number };
+export type WalletRecord = { trades: number; closed: number; wins: number; pnlSol: number };
+
+/** What copying each wallet has earned us. A sell from a position copied from several wallets is split evenly. */
+export function walletRecords(trades: TradeLike[], mode?: string): Record<string, WalletRecord> {
+  const out: Record<string, WalletRecord> = {};
+  const rec = (w: string) => (out[w] ??= { trades: 0, closed: 0, wins: 0, pnlSol: 0 });
+  for (const t of trades) {
+    if (mode && t.mode !== mode) continue;
+    if (t.side === 'buy' && t.source) rec(t.source).trades++;
+    if (t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.length) {
+      for (const w of t.sources) {
+        const r = rec(w);
+        r.closed++;
+        if (t.pnl > 0) r.wins++;
+        r.pnlSol += t.pnl / t.sources.length;
+      }
+    }
+  }
+  return out;
 }

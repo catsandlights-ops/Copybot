@@ -51,6 +51,18 @@ export type Config = {
   };
   execution: { priorityLevel: 'medium' | 'high' | 'veryHigh'; priorityFeeMaxLamports: number };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
+  /** Claude autopilot. Off until the user turns it on and adds an Anthropic API key. */
+  ai: {
+    enabled: boolean;
+    decideBuys: boolean;
+    reviewPositions: boolean;
+    reviewEveryMin: number;
+    manageWallets: boolean;
+    walletReviewHours: number;
+    maxWallets: number;
+    dailyBudgetUsd: number;
+    guidance: string; // the user's own instructions for Claude
+  };
 };
 
 export const DEFAULT_CONFIG: Config = {
@@ -83,6 +95,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000 },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
+  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, dailyBudgetUsd: 3, guidance: '' },
 };
 
 /** Allowed range for every numeric setting: [min, max, human name]. */
@@ -119,8 +132,12 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'execution.priorityFeeMaxLamports': [0, 50_000_000, 'Max priority fee', (v) => `${v / 1e9} SOL`],
   'monitor.pollIntervalSec': [1, 300, 'Backup check interval'],
   'monitor.exitCheckIntervalSec': [5, 3_600, 'Stop-loss check interval'],
+  'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],
+  'ai.walletReviewHours': [1, 720, 'Review wallets every'],
+  'ai.maxWallets': [1, 50, 'Max wallets for the AI'],
+  'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
@@ -210,6 +227,12 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       maxExposureSol: num(w.maxExposureSol, 0, 10_000, 0, 'Wallet budget'),
     });
   }
+
+  const g = input?.ai?.guidance;
+  if (typeof g === 'string') {
+    if (g.length > 1000) fail('Your instructions for Claude can be at most 1000 characters');
+    out.ai.guidance = g.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').slice(0, 1000);
+  } else if (g !== undefined) fail('Invalid value for ai.guidance');
 
   const bl = Array.isArray(input?.safety?.blacklist) ? input.safety.blacklist : [];
   for (const m of bl.slice(0, 1000)) {

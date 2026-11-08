@@ -143,6 +143,19 @@ Good copy targets have:
 
 All of these have safe defaults. Set a value to 0 to turn that rule off.
 
+### Markets, Learn and the AI autopilot
+
+- **Markets**: SOL/BTC/ETH prices, trending and new Solana pools (GeckoTerminal), token details with
+  charts (Dexscreener), crypto news and a watchlist. Whale trades and top traders need a free
+  DexCheck API key (Settings → Connection).
+- **Learn**: short guides on setup, finding wallets, exits, risk and going live.
+- **Autopilot** (off by default): Claude (Opus 5.5) decides buy/skip and size for each copy signal
+  that passed every hard check, reviews open positions and can sell early, and manages wallets
+  (pause, resize, or add wallets you analyzed on Find wallets). Its answers are always clamped to your
+  limits and re-checked against a fresh quote. Needs your own Anthropic API key; a **daily AI budget**
+  (default $3) caps the spend, after which the normal rules take over. The Autopilot page logs every
+  decision, and checks what each skipped token did an hour later.
+
 ## 4. Run
 
 ```bash
