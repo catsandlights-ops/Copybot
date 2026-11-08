@@ -91,8 +91,8 @@ export function loadKeypair(): Keypair | null {
 // Each secret is stored encrypted as NAME_ENC when the OS secret box is available,
 // otherwise as plain NAME in .env (readable only by this user).
 
-export type SecretName = 'PRIVATE_KEY' | 'ANTHROPIC_API_KEY' | 'DEXCHECK_API_KEY' | 'SOLSCAN_API_KEY';
-const SECRETS: SecretName[] = ['PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'DEXCHECK_API_KEY', 'SOLSCAN_API_KEY'];
+export type SecretName = 'PRIVATE_KEY' | 'ANTHROPIC_API_KEY' | 'DEXCHECK_API_KEY' | 'SOLSCAN_API_KEY' | 'TELEGRAM_BOT_TOKEN' | 'DISCORD_WEBHOOK_URL';
+const SECRETS: SecretName[] = ['PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'DEXCHECK_API_KEY', 'SOLSCAN_API_KEY', 'TELEGRAM_BOT_TOKEN', 'DISCORD_WEBHOOK_URL'];
 
 /** Store (or with '' remove) a secret, encrypted when possible. */
 export function saveSecret(name: SecretName, value: string) {

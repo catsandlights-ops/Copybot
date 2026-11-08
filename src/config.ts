@@ -53,6 +53,8 @@ export type Config = {
   };
   execution: { priorityLevel: 'medium' | 'high' | 'veryHigh'; priorityFeeMaxLamports: number };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
+  /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
+  alerts: { trades: boolean; errors: boolean; guard: boolean; autopilot: boolean };
   /** Claude autopilot. Off until the user turns it on and adds an Anthropic API key. */
   ai: {
     enabled: boolean;
@@ -99,6 +101,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000 },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
+  alerts: { trades: true, errors: true, guard: true, autopilot: true },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 
@@ -145,7 +148,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],

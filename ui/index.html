@@ -1454,6 +1454,12 @@ const FIELDS = [
     { k: 'safety.rejectToken2022', label: 'Skip Token-2022 tokens', type: 'toggle', help: 'Newer token standard that can carry transfer taxes.' },
     { k: 'safety.blacklist', label: 'Never buy these tokens', type: 'list', help: 'One token address per line.' },
   ]},
+  { title: 'Phone alerts', id: 'alerts-settings', desc: 'Get a message on Telegram or Discord when something happens, so you don\'t have to keep Copybot open.', extra: alertsSetupHtml, fields: [
+    { k: 'alerts.trades', label: 'Trades', type: 'toggle', help: 'Every buy and sell, with profit.' },
+    { k: 'alerts.errors', label: 'Problems', type: 'toggle', help: 'Errors and RPC trouble. The same problem is sent at most once every 10 minutes.' },
+    { k: 'alerts.guard', label: 'Circuit breaker', type: 'toggle', help: 'When the daily loss limit or losing-streak pause stops new buys.' },
+    { k: 'alerts.autopilot', label: 'Autopilot decisions', type: 'toggle', help: 'What Claude decided, and why.' },
+  ]},
   { title: 'Autopilot (Claude)', id: 'ai-settings', desc: 'What Claude may decide. It always stays inside every limit above. Turn it on and add your key on the Autopilot page.', fields: [
     { k: 'ai.enabled', label: 'Autopilot on', type: 'toggle' },
     { k: 'ai.decideBuys', label: 'Claude decides buys', type: 'toggle', help: 'Buy or skip each copy signal that passed the safety checks, and how big (¼× to 2× your normal size).' },
@@ -1509,7 +1515,7 @@ function renderSettings(el) {
         <div class="seg" id="mode-seg"><button data-m="paper" class="${!live ? 'on' : ''}">Paper</button><button data-m="live" class="${live ? 'on live' : ''}">Live</button></div>
       </div></div>
 
-      ${FIELDS.map((s) => `<div class="card"${s.id ? ` id="${s.id}"` : ''}><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.fields.map(fieldHtml).join('')}</div>`).join('')}
+      ${FIELDS.map((s) => `<div class="card"${s.id ? ` id="${s.id}"` : ''}><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.extra ? s.extra() : ''}${s.fields.map(fieldHtml).join('')}</div>`).join('')}
 
       <div class="card" id="conn"><div class="card-h"><div><h2>Connection</h2><div class="muted" style="font-size:12.5px">Stored in the <span class="mono">.env</span> file on this computer only.</div></div></div>
         <div class="field"><div><label class="l" for="c-rpc">Solana RPC URL</label><div class="h">Get a free key at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>, then paste <span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span></div></div>
@@ -1549,6 +1555,7 @@ function renderSettings(el) {
   el.querySelectorAll('[data-mode-pick]').forEach((b) => (b.onclick = () => b.dataset.modePick !== S.ui.mode && setAppearance(b.dataset.modePick)));
   const ui2 = $('#upd-install2'); if (ui2) ui2.onclick = installUpdate;
   $('#s-save').onclick = saveSettings;
+  bindAlerts();
   el.querySelectorAll('#mode-seg button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
   $('#c-save').onclick = async () => {
     const body = { rpcUrl: $('#c-rpc').value, backupRpcUrl: $('#c-rpc2').value };
@@ -1573,6 +1580,54 @@ function renderSettings(el) {
   if (kr) kr.onclick = async () => {
     if (!(await confirmModal({ title: 'Remove trading wallet key?', body: '<p>The key is deleted from this computer. Make sure you have it backed up in your wallet app. Live trading stops working until you add one again.</p>', confirm: 'Remove key', danger: true }))) return;
     const r = await act(() => api('PUT', '/api/connection', { privateKey: '' }), 'Key removed');
+    if (r) { S.connection = r; render(); }
+  };
+}
+function alertsSetupHtml() {
+  const c = S.connection;
+  const on = (c.hasTelegram && c.telegramChatId) || c.hasDiscord;
+  return `<div class="card-b stack" style="border-bottom:1px solid var(--border)">
+    <div class="row" style="gap:8px">${on ? `<span class="tag buy">On</span><span class="muted" style="font-size:13px">Sending to ${[c.hasTelegram && c.telegramChatId && 'Telegram', c.hasDiscord && 'Discord'].filter(Boolean).join(' and ')}.</span>` : '<span class="tag paper">Off</span><span class="muted" style="font-size:13px">Set up one or both below.</span>'}</div>
+    <details ${c.hasTelegram ? '' : 'open'}><summary style="cursor:pointer;font-weight:600">Telegram</summary>
+      <ol class="steps" style="margin:8px 0">
+        <li>In Telegram, open <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, send <span class="mono">/newbot</span> and follow the steps. Copy the token it gives you.</li>
+        <li>Open your new bot and press <b>Start</b>.</li>
+        <li>Paste the token here and press <b>Find my chat ID</b>.</li>
+      </ol>
+      <div class="row"><input class="input mono" id="al-tg" type="password" placeholder="${c.hasTelegram ? '•••••••• (saved)' : 'Bot token, e.g. 123456789:ABC…'}" autocomplete="off" style="flex:2;min-width:220px">
+        <input class="input mono" id="al-chat" value="${esc(c.telegramChatId || '')}" placeholder="Chat ID" style="flex:1;min-width:120px"><button class="btn" id="al-detect">Find my chat ID</button></div>
+    </details>
+    <details ${c.hasDiscord ? '' : ''}><summary style="cursor:pointer;font-weight:600">Discord</summary>
+      <div class="muted" style="font-size:13px;margin:8px 0">In your Discord server: <b>Server Settings → Integrations → Webhooks → New Webhook</b>, pick a channel, then <b>Copy Webhook URL</b>.</div>
+      <input class="input mono" id="al-dc" type="password" placeholder="${c.hasDiscord ? '•••••••• (saved)' : 'https://discord.com/api/webhooks/…'}" autocomplete="off" style="width:100%">
+    </details>
+    <div class="row"><button class="btn primary" id="al-save">Save alerts</button><button class="btn" id="al-test" ${on ? '' : 'disabled'}>Send a test message</button>
+      ${c.hasTelegram || c.hasDiscord ? '<button class="btn ghost danger" id="al-clear">Turn off</button>' : ''}<span class="muted" id="al-msg" style="font-size:13px"></span></div>
+  </div>`;
+}
+function bindAlerts() {
+  const msg = (h) => { $('#al-msg').innerHTML = h; };
+  $('#al-detect').onclick = async () => {
+    msg('<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Looking…');
+    const r = await act(() => api('POST', '/api/alerts/detect-telegram', { telegramToken: $('#al-tg').value }));
+    if (r) { $('#al-chat').value = r.chatId; msg(`<span class="pos">✓ Found ${esc(r.name)}. Press Save alerts.</span>`); } else msg('');
+  };
+  $('#al-save').onclick = async () => {
+    const body = { telegramChatId: $('#al-chat').value };
+    if ($('#al-tg').value) body.telegramToken = $('#al-tg').value;
+    if ($('#al-dc').value) body.discordWebhook = $('#al-dc').value;
+    const r = await act(() => api('PUT', '/api/alerts', body), 'Alerts saved');
+    if (r) { S.connection = r; render(); }
+  };
+  $('#al-test').onclick = async () => {
+    msg('<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Sending…');
+    const r = await act(() => api('POST', '/api/alerts/test'));
+    msg(r ? '<span class="pos">✓ Sent. Check your phone.</span>' : '');
+  };
+  const cl = $('#al-clear');
+  if (cl) cl.onclick = async () => {
+    if (!(await confirmModal({ title: 'Turn off phone alerts?', body: '<p>Your Telegram token and Discord webhook are removed from this computer.</p>', confirm: 'Turn off' }))) return;
+    const r = await act(() => api('PUT', '/api/alerts', { telegramToken: '', telegramChatId: '', discordWebhook: '' }), 'Alerts turned off');
     if (r) { S.connection = r; render(); }
   };
 }

@@ -163,7 +163,10 @@ export class BotEngine extends EventEmitter {
     const { guard, event } = recordSell(this.guard, pnl, this.cfg.risk, Date.now());
     this.state.guard = guard;
     saveState(this.state, this.cfg.mode);
-    if (event) this.log(event, 'warn');
+    if (event) {
+      this.log(event, 'warn');
+      this.emit('guard', event);
+    }
   }
 
   /** Let the bot buy again today despite the daily limit / losing-streak pause. */

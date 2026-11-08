@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
 import { isAddress, sanitizeConfig, saveConfig } from './config';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
+import { readSecret } from './env';
 import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
 import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
@@ -27,6 +28,7 @@ import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
 import { tradesCsv } from './csv';
+import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
 import { passesBasics, pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
 
@@ -103,6 +105,32 @@ function broadcast(type: string, data: unknown) {
 let statusTimer: NodeJS.Timeout | null = null;
 engine.on('log', (e) => broadcast('log', e));
 engine.on('trade', (t) => broadcast('trade', t));
+
+// ---------- phone alerts ----------
+const alertQueue = new alerts.AlertQueue(async (text) => {
+  const errs = await alerts.sendNow(text);
+  if (errs.length) console.log('alert not sent:', errs.join('; '));
+});
+function alert(kind: alerts.AlertKind, text: string) {
+  if (!engine.cfg.alerts[kind] || !alerts.alertsConfigured()) return;
+  alertQueue.push(`${engine.cfg.mode === 'live' ? '' : '[paper] '}${text}`, kind);
+}
+const nameOf = (w: string) => engine.cfg.wallets.find((x) => x.address === w)?.label ?? `${w.slice(0, 4)}…${w.slice(-4)}`;
+const mintShort = (m: string) => `${m.slice(0, 4)}…${m.slice(-4)}`;
+engine.on('trade', (t) => {
+  if (t.side === 'buy') alert('trades', `🟢 BUY ${mintShort(t.mint)} for ${t.sol.toFixed(3)} SOL, copying ${nameOf(t.source ?? '')}${typeof t.gapPct === 'number' ? ` (${t.gapPct.toFixed(1)}% copy gap)` : ''}\nhttps://dexscreener.com/solana/${t.mint}`);
+  else alert('trades', `${(t.pnl ?? 0) >= 0 ? '💰' : '🔻'} SELL ${mintShort(t.mint)} for ${t.sol.toFixed(3)} SOL, ${(t.pnl ?? 0) >= 0 ? '+' : ''}${(t.pnl ?? 0).toFixed(4)} SOL (${t.reason ?? ''})`);
+});
+engine.on('guard', (msg: string) => alert('guard', `⏸ ${msg}`));
+engine.on('log', (e) => {
+  if (e.level === 'error') alert('errors', `⚠️ ${e.msg}`);
+  else if (e.level === 'warn' && /RPC/.test(e.msg)) alert('errors', `⚠️ ${e.msg}`);
+});
+ai.onDecision((d) => {
+  if (d.kind === 'test' || (d.kind === 'buy' && d.outcomePct !== undefined)) return; // outcome updates aren't news
+  const what = d.kind === 'buy' ? `${d.verdict === 'buy' ? 'buy' : 'skip'} ${d.symbol ?? (d.mint ? mintShort(d.mint) : '')}` : d.kind === 'review' ? `positions: ${d.verdict}` : d.kind === 'wallets' ? `wallets: ${d.verdict}` : `wallet scout: ${d.verdict}`;
+  alert('autopilot', `🤖 Claude ${what}\n${d.reason}`);
+});
 ai.onDecision((d) => broadcast('ai', d));
 onRpcSwitch(() => setTimeout(() => broadcast('connection', connectionInfo()), 0));
 engine.on('status', () => {
@@ -210,6 +238,9 @@ function connectionInfo() {
     hasDexcheckKey: hasSecret('DEXCHECK_API_KEY'),
     dexcheckEncrypted: secretIsEncrypted('DEXCHECK_API_KEY'),
     hasSolscanKey: hasSecret('SOLSCAN_API_KEY'),
+    hasTelegram: hasSecret('TELEGRAM_BOT_TOKEN'),
+    telegramChatId: process.env.TELEGRAM_CHAT_ID?.trim() || null,
+    hasDiscord: hasSecret('DISCORD_WEBHOOK_URL'),
     solscanEncrypted: secretIsEncrypted('SOLSCAN_API_KEY'),
     hasAnthropicKey: hasSecret('ANTHROPIC_API_KEY'),
     anthropicEncrypted: secretIsEncrypted('ANTHROPIC_API_KEY'),
@@ -764,6 +795,42 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/ai/review-wallets') {
     return send(res, 200, await runWalletReview());
+  }
+
+  if (route === 'PUT /api/alerts') {
+    const b = await readBody(req);
+    for (const k of ['telegramToken', 'telegramChatId', 'discordWebhook']) {
+      if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
+    }
+    const tok = typeof b.telegramToken === 'string' ? b.telegramToken.trim() : undefined;
+    const chat = typeof b.telegramChatId === 'string' ? b.telegramChatId.trim() : undefined;
+    const hook = typeof b.discordWebhook === 'string' ? b.discordWebhook.trim() : undefined;
+    if (tok && !alerts.isTelegramToken(tok)) throw new HttpError(400, 'That doesn’t look like a Telegram bot token (it looks like 123456789:ABC…, from @BotFather).');
+    if (chat && !alerts.isChatId(chat)) throw new HttpError(400, 'The Telegram chat ID should be a number (press Find my chat ID).');
+    if (hook && !alerts.isDiscordWebhook(hook)) throw new HttpError(400, 'That isn’t a Discord webhook link (it starts with https://discord.com/api/webhooks/).');
+    if (tok !== undefined) saveSecret('TELEGRAM_BOT_TOKEN', tok);
+    if (chat !== undefined) updateEnv({ TELEGRAM_CHAT_ID: chat });
+    if (hook !== undefined) saveSecret('DISCORD_WEBHOOK_URL', hook);
+    return send(res, 200, connectionInfo());
+  }
+
+  if (route === 'POST /api/alerts/detect-telegram') {
+    const b = await readBody(req);
+    let token = typeof b.telegramToken === 'string' && b.telegramToken.trim() ? b.telegramToken.trim() : null;
+    if (!token) token = readSecret('TELEGRAM_BOT_TOKEN', 'Telegram bot token');
+    if (!token || !alerts.isTelegramToken(token)) throw new HttpError(400, 'Paste your Telegram bot token first.');
+    const found = await alerts.detectTelegramChat(token).catch((e) => {
+      throw new HttpError(400, (e as Error).message);
+    });
+    if (!found) throw new HttpError(404, 'No messages yet. Open your bot in Telegram, press Start (or send it any message), then try again.');
+    return send(res, 200, found);
+  }
+
+  if (route === 'POST /api/alerts/test') {
+    if (!alerts.alertsConfigured()) throw new HttpError(400, 'Set up Telegram or Discord first, then save.');
+    const errs = await alerts.sendNow('✅ Copybot alerts are working. You’ll get trades, problems and autopilot actions here.');
+    if (errs.length) throw new HttpError(502, errs.join(' · '));
+    return send(res, 200, { ok: true });
   }
 
   if (route === 'POST /api/guard/resume') {
