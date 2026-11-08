@@ -24,17 +24,17 @@ const HOST = '127.0.0.1';
 const UI_FILE = process.env.COPYBOT_UI || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ui', 'index.html');
 const FONTS = new Set(['press-start-2p.woff2', 'vt323.woff2']); // the only files served besides the page
 
-// ---------- display preferences (theme). Kept apart from config.json so changing them never restarts the bot ----------
-const THEMES = ['arcade', 'modern'] as const;
-type UiPrefs = { theme: (typeof THEMES)[number] };
+// ---------- display preferences (light/dark). Kept apart from config.json so changing them never restarts the bot ----------
+const MODES = ['system', 'light', 'dark'] as const;
+type UiPrefs = { mode: (typeof MODES)[number] };
 function loadUiPrefs(): UiPrefs {
   try {
-    const t = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')).theme;
-    if (THEMES.includes(t)) return { theme: t };
+    const m = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')).mode; // older versions stored a "theme" instead
+    if (MODES.includes(m)) return { mode: m };
   } catch {
     /* defaults */
   }
-  return { theme: 'arcade' };
+  return { mode: 'system' };
 }
 let uiPrefs = loadUiPrefs();
 export const TOKEN = crypto.randomBytes(32).toString('base64url');
@@ -356,8 +356,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/ui') {
     const b = await readBody(req);
-    if (!THEMES.includes(b.theme)) throw new HttpError(400, 'Unknown theme');
-    uiPrefs = { theme: b.theme };
+    if (!MODES.includes(b.mode)) throw new HttpError(400, 'Unknown appearance');
+    uiPrefs = { mode: b.mode };
     fs.mkdirSync('data', { recursive: true });
     fs.writeFileSync('data/ui.json', JSON.stringify(uiPrefs));
     broadcast('ui', uiPrefs);
