@@ -57,7 +57,7 @@ function addCost(usd: number) {
 export type Decision = {
   id: string;
   t: number;
-  kind: 'buy' | 'review' | 'wallets' | 'test';
+  kind: 'buy' | 'review' | 'wallets' | 'scout' | 'test';
   verdict: string; // "buy", "skip", "sell 50%", "hold", "2 changes"…
   reason: string;
   mint?: string;
@@ -367,6 +367,40 @@ export async function reviewWallets(cfg: Config, wallets: WalletView[], candidat
   const summary = plain(r.out.summary, 600);
   record({ id: id(), t: Date.now(), kind: 'wallets', verdict: changes.length ? `${changes.length} change${changes.length > 1 ? 's' : ''}` : 'no changes', reason: summary, costUsd: r.costUsd, applied: changes.map((c) => `${c.action} ${c.address.slice(0, 4)}…${c.address.slice(-4)}: ${c.reason}`) });
   return { changes, summary };
+}
+
+// ---------- wallet scouting: pick the best new wallets to copy ----------
+const ScoutSchema = z.object({
+  picks: z.array(z.object({ address: z.string(), sizeMultiplier: z.number().describe('0.25 to 3. 1 = normal size.'), budgetSol: z.number().describe('Max SOL in this wallet’s open positions. 0 = no budget.'), reason: z.string() })),
+  summary: z.string(),
+});
+
+/**
+ * Choose up to `max` wallets to start copying from analyzed candidates. Picks outside the
+ * candidate list are dropped; sizes and budgets are clamped.
+ */
+export async function pickWallets(cfg: Config, current: WalletView[], candidates: CandidateView[], max: number): Promise<{ picks: { address: string; sizeMultiplier: number; budgetSol: number; reason: string }[]; summary: string } | null> {
+  if (max <= 0 || !candidates.length) return { picks: [], summary: 'No free slots or no candidates.' };
+  const prompt = `Copybot scanned tokens that pumped recently, found the wallets that bought them early (or were top traders on them), and analyzed each wallet's real on-chain record. Pick at most ${max} wallet(s) that are most suitable for US to copy, or none if none are good enough.
+A suitable wallet: a real profit over a meaningful number of closed trades (10+), a decent win rate, holds long enough that a copier a few seconds behind can follow (minutes to hours, not seconds), not a high-frequency bot, buys of a size we can mirror. Being early on several pumped tokens is a strong sign; one lucky hit is not. Avoid wallets similar to ones we copy that are losing us money.
+Our limits: max ${cfg.risk.maxTotalExposureSol} SOL in open positions in total; budgets per wallet should fit within that.
+<data>${json({ weCopyNow: current.map((w) => ({ ...w, label: clean(w.label) })), candidates: candidates.slice(0, 20) })}</data>`;
+  const r = await ask({ kind: 'scout', schema: ScoutSchema, prompt, effort: 'high', maxTokens: 16000, timeoutMs: 180_000, cfg });
+  if (!r) return null;
+  const allowed = new Set(candidates.map((c) => c.address));
+  const seen = new Set<string>();
+  const picks = r.out.picks
+    .filter((p) => allowed.has(p.address) && !seen.has(p.address) && seen.add(p.address))
+    .slice(0, max)
+    .map((p) => ({
+      address: p.address,
+      sizeMultiplier: Math.min(3, Math.max(0.25, Number.isFinite(p.sizeMultiplier) ? p.sizeMultiplier : 1)),
+      budgetSol: Math.min(cfg.risk.maxTotalExposureSol, Math.max(0, Number.isFinite(p.budgetSol) ? p.budgetSol : 0)),
+      reason: plain(p.reason, 300),
+    }));
+  const summary = plain(r.out.summary, 600);
+  record({ id: id(), t: Date.now(), kind: 'scout', verdict: picks.length ? `picked ${picks.length} wallet${picks.length > 1 ? 's' : ''}` : 'no picks', reason: summary, costUsd: r.costUsd, applied: picks.map((p) => `${p.address.slice(0, 4)}…${p.address.slice(-4)}: ${p.reason}`) });
+  return { picks, summary };
 }
 
 // ---------- connection test ----------

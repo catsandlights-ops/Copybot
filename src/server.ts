@@ -22,6 +22,7 @@ import * as markets from './markets';
 import { getSolUsd } from './market';
 import { marketSkipReason, walletRecords } from './rules';
 import * as ai from './ai';
+import { pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -108,7 +109,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover';
+  kind: 'analyze' | 'discover' | 'scout';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -201,11 +202,19 @@ let lastWalletReview = (() => {
 })();
 let walletReviewBusy = false;
 
-/** Wallets the AI may add: the ones the user analyzed or discovered in this session. */
+const scoutView = (r: ScoutReport): ai.CandidateView => ({
+  address: r.wallet,
+  source: 'scout',
+  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, topTraderOn: r.topTraderOn, notes: r.notes },
+});
+
+/** Wallets the AI may add: the ones the user analyzed or discovered, plus the latest scout results. */
 function aiCandidates(): ai.CandidateView[] {
   const out = new Map<string, ai.CandidateView>();
+  for (const r of lastScout?.reports ?? []) if (r.swaps > 0) out.set(r.wallet, scoutView(r));
   for (const j of jobs) {
     if (j.status !== 'done') continue;
+    if (j.kind === 'scout') continue; // covered by lastScout
     if (j.kind === 'analyze') {
       for (const r of j.result as any[]) {
         if (r.swaps > 0) out.set(r.wallet, { address: r.wallet, source: 'analyzed', stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, notes: r.notes } });
@@ -268,6 +277,124 @@ async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary:
     walletReviewBusy = false;
   }
 }
+
+// ---------- wallet scout ----------
+const SCOUT_FILE = 'data/scout.json';
+let lastScout: ScoutResult | null = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(SCOUT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+let scoutRunning = false;
+
+function startScout(auto: boolean) {
+  if (scoutRunning || jobs.some((j) => j.kind === 'scout' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'The wallet scout is already running.');
+  scoutRunning = true;
+  return addJob('scout', { auto }, async (progress) => {
+    try {
+      return await runScout(progress);
+    } finally {
+      scoutRunning = false;
+    }
+  });
+}
+
+async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
+  const notes: string[] = [];
+  const at = Date.now();
+  progress('Looking for tokens that pumped recently…');
+  const rows = [...(await markets.pools('trending').catch(() => [])), ...(await markets.pools('new').catch(() => []))];
+  const tokens = pickTokens(rows, at, 5);
+  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 24h with real liquidity, 3h to 7 days old). Try again later.');
+  const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
+
+  const conn = makeConnection();
+  const perMint = new Map<string, Map<string, number>>();
+  for (const [i, t] of tokens.entries()) {
+    progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding early buyers…`);
+    perMint.set(
+      t.mint,
+      await earlyBuyers(conn, t.mint, 120, 25, (w) => notes.push(`${t.symbol}: ${w.replace(/^⚠\s*/, '').replace(/ Use --pages to go deeper\./, '')}`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
+    );
+  }
+  const top = new Map<string, string[]>();
+  if (hasSecret('DEXCHECK_API_KEY')) {
+    progress('Adding DexCheck top traders…');
+    for (const t of tokens) {
+      const traders = await markets.topTraders(t.pool, '7d').catch(() => []);
+      for (const tr of traders.filter((x: any) => (x.profitUsd ?? 0) > 0).slice(0, 10)) top.set(tr.wallet, [...(top.get(tr.wallet) ?? []), t.symbol]);
+    }
+  }
+  const mine = new Set(engine.cfg.wallets.map((w) => w.address));
+  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 12);
+  if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
+
+  const reports: ScoutReport[] = [];
+  for (const [i, c] of cands.entries()) {
+    const swaps = await fetchSwaps(conn, c.wallet, 300, (n, t) => {
+      if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
+    }).catch(() => null);
+    if (swaps) reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn });
+  }
+  reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
+
+  // Let Claude choose; fall back to the rule-based ranking.
+  const cfg = engine.cfg;
+  const autoAdd = cfg.ai.enabled && cfg.ai.manageWallets;
+  const free = Math.max(0, cfg.ai.maxWallets - cfg.wallets.filter((w) => w.enabled).length);
+  const max = autoAdd ? Math.min(cfg.ai.scoutMaxPicks, free) : cfg.ai.scoutMaxPicks;
+  if (autoAdd && !free) notes.push(`You already copy ${cfg.ai.maxWallets} wallets (the autopilot's maximum), so nothing new was added.`);
+  let picks = rulePicks(reports, max);
+  let pickedBy: ScoutResult['pickedBy'] = 'rules';
+  let summary = picks.length ? 'Ranked by win rate, return and number of trades.' : 'None of the wallets passed the basic checks (10+ closed trades, profitable, not a bot, not too fast).';
+  if (max > 0 && hasSecret('ANTHROPIC_API_KEY')) {
+    progress('Claude is choosing…');
+    const recs = walletRecords(engine.readTrades(), cfg.mode);
+    const current = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
+    const r = await ai.pickWallets(cfg, current, reports.filter((x) => x.swaps > 0).map(scoutView), max);
+    if (r) {
+      picks = r.picks;
+      pickedBy = 'claude';
+      summary = r.summary;
+    } else notes.push(`Claude wasn't available (${ai.aiStatus(cfg).lastError ?? 'no answer'}), so the picks are rule-based.`);
+  }
+
+  const added: string[] = [];
+  if (autoAdd && picks.length) {
+    const next = structuredClone(engine.cfg);
+    for (const p of picks) {
+      if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= cfg.ai.maxWallets) continue;
+      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol });
+      added.push(p.address);
+    }
+    if (added.length) {
+      const clean = sanitizeConfig(next, false);
+      await applyChange(() => saveConfig(clean));
+      for (const a of added) engine.log(`Wallet scout: now copying ${a.slice(0, 4)}…${a.slice(-4)}: ${picks.find((p) => p.address === a)!.reason}`, 'ai');
+    }
+  }
+  const result: ScoutResult = { at, tokens, reports, picks, pickedBy, summary, added, notes };
+  lastScout = result;
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(SCOUT_FILE, JSON.stringify(result));
+  broadcast('scout', result);
+  return result;
+}
+
+// Automatic scouting while the bot is running with the autopilot managing wallets.
+setInterval(() => {
+  const a = engine.cfg.ai;
+  if (!engine.running || !a.enabled || !a.manageWallets || !a.scoutEveryHours || scoutRunning) return;
+  if (Date.now() - (lastScout?.at ?? 0) < a.scoutEveryHours * 3_600_000) return;
+  try {
+    startScout(true);
+    engine.log('Wallet scout: searching for new wallets to copy…', 'ai');
+  } catch {
+    /* already running */
+  }
+}, 10 * 60_000).unref();
 
 // Automatic wallet reviews while the bot is running.
 setInterval(() => {
@@ -375,6 +502,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       trades: readTrades(),
       connection: connectionInfo(),
       jobs,
+      scout: lastScout,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
       ui: uiPrefs,
     });
@@ -610,6 +738,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       return reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
     });
     return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/jobs/scout') {
+    return send(res, 200, startScout(false));
   }
 
   if (route === 'POST /api/jobs/discover') {

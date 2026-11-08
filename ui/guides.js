@@ -10,6 +10,23 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'whats-new-06', cat: 'news', mins: 2, title: "What's new in Copybot 0.6",
+    teaser: 'The wallet scout: Copybot finds wallets worth copying, and Claude picks the best ones.',
+    body: `
+<p>Finding good wallets was the hardest part of copy trading. Now Copybot can do it for you.</p>
+<h3>The wallet scout</h3>
+<ol>
+<li>It picks Solana tokens that <b>pumped recently</b> (up 30%+ in a day, a few hours to a week old, with real liquidity).</li>
+<li>It finds the wallets that <b>bought them early</b>, and with a DexCheck key, their top traders too.</li>
+<li>It checks each wallet's <b>real on-chain record</b>: win rate, profit, how long it holds, and whether it's a bot.</li>
+<li><b>Claude picks the most suitable ones</b> and explains why. Without Claude, the rules rank them.</li>
+</ol>
+<p>Try it on <b>Find wallets → Find wallets for me</b>. It takes 5–15 minutes.</p>
+<h3>With the autopilot</h3>
+<p>If the autopilot manages your wallets, the scout runs by itself once a day while the bot is running and <b>adds its picks to your copy list</b> (2 per search, never more than your maximum). Change this in Settings → Autopilot.</p>
+<p class="tip">Most wallets that catch one pump don't keep winning, so some searches find nothing good. That's the scout doing its job.</p>`,
+  },
+  {
     id: 'whats-new-05', cat: 'news', mins: 3, title: "What's new in Copybot 0.5",
     teaser: 'Smart exits, token filters, a circuit breaker, a wallet scoreboard, the Markets hub, the AI autopilot and a new look.',
     body: `
@@ -67,6 +84,7 @@ window.GUIDES = [
 <p>Copy trading is only as good as the wallets you copy. A wallet that looks amazing for one week is often just lucky, or is a bot you can't keep up with.</p>
 <h3>Where to look</h3>
 <ul>
+<li><b>Find wallets → Find wallets for me:</b> the easiest way. Copybot picks tokens that pumped recently, finds their early buyers, checks each wallet's record, and Claude (or the rules) picks the best ones.</li>
 <li><b>Find wallets → Discover early buyers:</b> paste 3–5 tokens that pumped recently. Wallets that were early on <i>several</i> of them rank highest.</li>
 <li><b>Markets → Top traders</b> for a token (needs a free DexCheck key), with a <b>Copy</b> button.</li>
 </ul>
@@ -165,13 +183,14 @@ window.GUIDES = [
 <ul>
 <li><b>Buys:</b> for each copy signal that passes the safety checks, Claude decides <i>buy or skip</i> and how much, and explains why.</li>
 <li><b>Open positions:</b> every few minutes it reviews them and can sell early or hold.</li>
-<li><b>Wallets:</b> it reviews your copied wallets and candidates, and can pause wallets, add new ones from the candidate list, and adjust sizes and budgets.</li>
+<li><b>Wallets:</b> it reviews your copied wallets and can pause them or adjust sizes and budgets.</li>
+<li><b>Finding new wallets:</b> once a day (Settings → Autopilot) the <b>wallet scout</b> scans tokens that pumped recently, finds who bought them early, checks those wallets' real records, and Claude adds the most suitable ones to your list, up to your maximum.</li>
 </ul>
 <h3>What it can never do</h3>
 <ul>
 <li>Go past your limits: trade size, total SOL, budgets, daily loss limit, stop-loss.</li>
 <li>Skip any safety check, or send money anywhere except through normal buys and sells.</li>
-<li>Copy a wallet that isn't on a candidate list it was given.</li>
+<li>Copy a wallet whose track record wasn't checked first.</li>
 </ul>
 <h3>Cost</h3>
 <p>You use your own Anthropic API key (from console.anthropic.com) and pay Anthropic per decision, roughly <b>$0.02–0.04</b> each with Claude Opus 5.5. A <b>daily AI budget</b> (Settings → Autopilot) caps the spend. When it's used up, Copybot falls back to its normal rules.</p>

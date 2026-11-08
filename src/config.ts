@@ -60,6 +60,8 @@ export type Config = {
     manageWallets: boolean;
     walletReviewHours: number;
     maxWallets: number;
+    scoutEveryHours: number; // wallet scout: search for new wallets this often (0 = only when asked)
+    scoutMaxPicks: number; // most new wallets added per scout run
     dailyBudgetUsd: number;
     guidance: string; // the user's own instructions for Claude
   };
@@ -95,7 +97,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000 },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
-  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, dailyBudgetUsd: 3, guidance: '' },
+  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 
 /** Allowed range for every numeric setting: [min, max, human name]. */
@@ -135,6 +137,8 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],
   'ai.walletReviewHours': [1, 720, 'Review wallets every'],
   'ai.maxWallets': [1, 50, 'Max wallets for the AI'],
+  'ai.scoutEveryHours': [0, 720, 'Search for new wallets every'],
+  'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
 const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
