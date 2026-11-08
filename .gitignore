@@ -1,0 +1,9 @@
+*.pem.bak
+*.zip
+.env
+config.json
+data/
+dist
+node_modules
+release
+signing/

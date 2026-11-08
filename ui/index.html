@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copybot</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b5bd6'/><path d='M9 20l5-5 4 4 6-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+:root {
+  --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f0f2f5; --border: #e2e5ea; --border-strong: #cfd4dc;
+  --text: #15181d; --muted: #646c79; --faint: #8c93a0;
+  --accent: #5b5bd6; --accent-hover: #4b4bc4; --accent-bg: #ececfb; --on-accent: #ffffff;
+  --green: #138a52; --green-bg: #e3f5ec; --red: #cf3a43; --red-bg: #fbe7e8; --amber: #a86a0c; --amber-bg: #fdf1dc;
+  --shadow: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
+  --radius: 12px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1014; --panel: #161920; --panel-2: #1d2129; --border: #262b35; --border-strong: #353b47;
+    --text: #e7e9ee; --muted: #9aa1ad; --faint: #6d7481;
+    --accent: #8484f2; --accent-hover: #9696f6; --accent-bg: #23234a; --on-accent: #0e1014;
+    --green: #3ecf8e; --green-bg: #12291f; --red: #f26d75; --red-bg: #321719; --amber: #e8b44c; --amber-bg: #2f2512;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--muted); }
+.pos { color: var(--green); } .neg { color: var(--red); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* layout */
+.app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.side { min-width: 0; border-right: 1px solid var(--border); background: var(--panel); padding: 20px 12px; display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; padding: 0 10px 18px; }
+.brand svg { flex: none; }
+.nav { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--muted); cursor: pointer; border: 0; background: none; text-align: left; width: 100%; }
+.nav:hover { background: var(--panel-2); color: var(--text); }
+.nav.on { background: var(--accent-bg); color: var(--accent); font-weight: 560; }
+.nav svg { width: 18px; height: 18px; flex: none; }
+.nav .count { margin-left: auto; font-size: 12px; background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 0 7px; }
+.side-foot { margin-top: auto; padding: 10px; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--faint); flex: none; }
+.dot.ok { background: var(--green); } .dot.bad { background: var(--red); } .dot.warn { background: var(--amber); }
+
+main { min-width: 0; }
+.top { display: flex; align-items: center; gap: 12px; padding: 18px 28px; border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+.top h1 { font-size: 18px; margin: 0; font-weight: 650; }
+.top .spacer { flex: 1; }
+.content { padding: 24px 28px 60px; max-width: 1240px; }
+
+/* components */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--panel); cursor: pointer; font-weight: 520; white-space: nowrap; }
+.btn:hover { background: var(--panel-2); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.go { background: var(--green); border-color: var(--green); color: #fff; }
+.btn.stop { background: var(--red); border-color: var(--red); color: #fff; }
+.btn.danger { color: var(--red); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 13px; }
+.btn.ghost { border-color: transparent; background: none; }
+.btn.ghost:hover { background: var(--panel-2); }
+.btn svg { width: 15px; height: 15px; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; font-weight: 560; background: var(--panel-2); color: var(--muted); white-space: nowrap; }
+.pill.run { background: var(--green-bg); color: var(--green); }
+.pill.paper { background: var(--accent-bg); color: var(--accent); }
+.pill.live { background: var(--red-bg); color: var(--red); }
+.pill.run .dot { background: var(--green); animation: pulse 1.6s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.tag { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 5px; text-transform: uppercase; letter-spacing: .02em; }
+.tag.buy { background: var(--green-bg); color: var(--green); }
+.tag.sell { background: var(--red-bg); color: var(--red); }
+.tag.paper { background: var(--panel-2); color: var(--muted); }
+.tag.live { background: var(--amber-bg); color: var(--amber); }
+
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card-h { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.card-h h2 { font-size: 14.5px; margin: 0; font-weight: 620; }
+.card-h .spacer { flex: 1; }
+.card-b { padding: 18px; }
+.grid { display: grid; gap: 16px; }
+.grid > * { min-width: 0; }
+.stats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 16px; }
+.stat { padding: 16px 18px; }
+.stat .k { color: var(--muted); font-size: 12.5px; }
+.stat .v { font-size: 22px; font-weight: 650; margin-top: 4px; letter-spacing: -.01em; }
+.stat .s { color: var(--faint); font-size: 12px; margin-top: 2px; }
+.bar { height: 4px; background: var(--panel-2); border-radius: 4px; margin-top: 10px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.two { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); align-items: start; }
+
+.banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 13.5px; border: 1px solid transparent; }
+.banner.info { background: var(--accent-bg); color: var(--text); }
+.banner.warn { background: var(--amber-bg); }
+.banner.danger { background: var(--red-bg); }
+.banner b { font-weight: 620; }
+.banner .btn { margin-left: auto; }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 560; color: var(--muted); padding: 10px 18px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 11px 18px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+.tbl-wrap { overflow-x: auto; }
+.empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+.empty h3 { color: var(--text); margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.empty .btn { margin-top: 14px; }
+
+.feed { max-height: 560px; overflow-y: auto; }
+.feed-item { display: flex; gap: 10px; padding: 9px 18px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.feed-item:last-child { border-bottom: 0; }
+.feed-item .t { color: var(--faint); font-family: var(--mono); font-size: 11.5px; padding-top: 2px; flex: none; }
+.feed-item .dot { margin-top: 6px; }
+.feed-item.skip { color: var(--muted); }
+.feed-item > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.lv-buy .dot { background: var(--green); } .lv-sell .dot { background: var(--red); } .lv-signal .dot { background: var(--accent); }
+.lv-error .dot { background: var(--red); } .lv-warn .dot { background: var(--amber); } .lv-system .dot { background: var(--muted); }
+.lv-error { color: var(--red); }
+
+/* forms */
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.field:last-child { border-bottom: 0; }
+.field .l { font-weight: 540; }
+.field .h { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.input { height: 34px; padding: 0 10px; border: 1px solid var(--border-strong); background: var(--panel); border-radius: 8px; width: 100%; min-width: 0; }
+textarea.input { height: auto; padding: 8px 10px; resize: vertical; font-family: var(--mono); font-size: 12.5px; }
+.input:focus, .btn:focus-visible, .nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.with-unit { display: flex; align-items: center; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.with-unit:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.with-unit input { border: 0; height: 32px; padding: 0 10px; background: none; width: 100%; min-width: 0; outline: none; text-align: right; }
+.with-unit span { padding: 0 10px; color: var(--muted); font-size: 12.5px; background: var(--panel-2); align-self: stretch; display: flex; align-items: center; border-left: 1px solid var(--border); white-space: nowrap; }
+.switch { display: inline-block; position: relative; width: 38px; height: 22px; flex: none; justify-self: end; }
+.switch input { opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; position: absolute; z-index: 1; }
+.switch i { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; transition: .15s; }
+.switch i::after { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.switch input:checked + i { background: var(--accent); }
+.switch input:checked + i::after { transform: translateX(16px); }
+.switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: inline-flex; background: var(--panel-2); border-radius: 9px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; height: 30px; padding: 0 16px; border-radius: 7px; cursor: pointer; color: var(--muted); font-weight: 540; }
+.seg button.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow); }
+.seg button.on.live { color: var(--red); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.savebar { position: sticky; bottom: 16px; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--text); color: var(--bg); border-radius: 12px; margin-top: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.savebar .spacer { flex: 1; }
+.savebar .btn:not(.primary) { background: transparent; color: var(--bg); border-color: rgba(127,127,127,.5); }
+
+.wallet-row td:first-child { width: 52px; }
+.addr { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.copy { border: 0; background: none; padding: 2px; cursor: pointer; color: var(--faint); border-radius: 4px; display: inline-flex; }
+.copy:hover { color: var(--text); background: var(--panel-2); }
+.copy svg { width: 13px; height: 13px; }
+.label-input { border: 1px solid transparent; background: none; padding: 3px 6px; margin-left: -7px; border-radius: 6px; font-weight: 560; width: 100%; max-width: 220px; }
+.label-input:hover { border-color: var(--border); }
+.label-input:focus { border-color: var(--accent); outline: none; background: var(--panel); }
+
+.job { border-top: 1px solid var(--border); }
+.job:first-child { border-top: 0; }
+.job-h { display: flex; align-items: center; gap: 10px; padding: 12px 18px; }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.notes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.note { font-size: 11.5px; padding: 1px 7px; border-radius: 5px; background: var(--panel-2); color: var(--muted); }
+.note.good { background: var(--green-bg); color: var(--green); }
+.note.bad { background: var(--amber-bg); color: var(--amber); }
+.steps { margin: 0; padding-left: 18px; color: var(--muted); }
+.steps li { margin: 4px 0; }
+.steps b { color: var(--text); font-weight: 560; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 13px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+
+/* modal + toast */
+.modal-bg { position: fixed; inset: 0; background: rgba(10,12,16,.5); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+.modal { background: var(--panel); border-radius: 14px; max-width: 460px; width: 100%; padding: 22px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+.modal h3 { margin: 0 0 8px; font-size: 17px; }
+.modal p, .modal li { color: var(--muted); }
+.modal .row { justify-content: flex-end; margin-top: 18px; }
+.toasts { position: fixed; bottom: 18px; right: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 60; }
+.toast { background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 10px; max-width: 360px; box-shadow: 0 8px 24px rgba(0,0,0,.2); font-size: 13.5px; animation: up .2s ease-out; }
+.toast.err { background: var(--red); color: #fff; }
+@keyframes up { from { transform: translateY(8px); opacity: 0; } }
+
+@media (max-width: 1180px) {
+  .two { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; }
+  .side { position: static; height: auto; flex-direction: row; overflow-x: auto; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--border); gap: 2px; }
+  .brand { padding: 0 8px 0 0; } .brand span { display: none; }
+  .nav { width: auto; white-space: nowrap; } .nav .count, .side-foot { display: none; }
+  .top { padding: 12px 16px; position: static; flex-wrap: wrap; }
+  .content { padding: 16px 16px 60px; }
+  .field { grid-template-columns: 1fr; gap: 8px; }
+  .switch { justify-self: start; }
+  th, td { padding: 9px 12px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M9 20l5-5 4 4 6-8" stroke="var(--on-accent)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Copybot</span>
+    </div>
+    <button class="nav" data-page="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</button>
+    <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
+    <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
+    <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
+    <button class="nav" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Settings</button>
+    <div class="side-foot" id="side-foot"></div>
+  </aside>
+  <main>
+    <div class="top">
+      <h1 id="page-title">Dashboard</h1>
+      <span class="spacer"></span>
+      <span id="mode-pill"></span>
+      <span id="run-pill"></span>
+      <button class="btn" id="run-btn"></button>
+    </div>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+<div class="toasts" id="toasts"></div>
+<div id="modal-root"></div>
+
+<script>
+// ---------------- state ----------------
+const S = { app: { version: null, update: { state: 'disabled' } }, page: 'dashboard', status: null, config: null, logs: [], trades: [], connection: null, jobs: [], dirty: false, tradeFilter: 'all', busy: false, connTest: null };
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const short = (a) => (a ? esc(`${String(a).slice(0, 4)}…${String(a).slice(-4)}`) : '');
+const sol = (n, d = 4) => (n == null || isNaN(n) ? '—' : `${Number(n).toFixed(d)}`);
+const signed = (n, d = 4) => (n == null || isNaN(n) ? '—' : `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(d)}`);
+const cls = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
+const pct = (n) => (n == null || isNaN(n) ? '—' : `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`);
+const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const dateTime = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function ago(t) {
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 60) return `${Math.floor(s)}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  return `${Math.floor(s / 86400)}d`;
+}
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const copyBtn = (v) => `<button class="copy" title="Copy" data-copy="${esc(v)}">${ICON_COPY}</button>`;
+const tokenLink = (m) => `<span class="addr"><a class="mono" href="https://dexscreener.com/solana/${esc(m)}" target="_blank" rel="noopener">${short(m)}</a>${copyBtn(m)}</span>`;
+const walletLink = (w) => `<span class="addr"><a class="mono" href="https://solscan.io/account/${esc(w)}" target="_blank" rel="noopener">${short(w)}</a>${copyBtn(w)}</span>`;
+
+// ---------------- api ----------------
+// The app opens this page as /?t=<session token>. Keep the token for this tab only and
+// remove it from the address bar.
+let TOKEN = null;
+try {
+  const u = new URL(location.href);
+  TOKEN = u.searchParams.get('t');
+  if (TOKEN) { sessionStorage.setItem('copybot-token', TOKEN); history.replaceState(null, '', u.pathname + u.hash); }
+  else TOKEN = sessionStorage.getItem('copybot-token');
+} catch { /* storage blocked: token stays in memory only */ }
+
+function showLocked() {
+  document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div class="card" style="max-width:440px;padding:28px;text-align:center"><h2 style="margin:0 0 8px;font-size:18px">Session expired</h2>
+    <p class="muted" style="margin:0">For security, Copybot only accepts the window it opened itself. Close this tab and start Copybot again${location.port === '4777' ? ', or use the link shown in the Copybot terminal window' : ''}.</p></div></div>`;
+}
+
+async function api(method, path, data) {
+  const r = await fetch(path, { method, headers: { 'content-type': 'application/json', 'x-copybot-token': TOKEN || '' }, body: data ? JSON.stringify(data) : undefined });
+  if (r.status === 401) { showLocked(); throw new Error('Session expired'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Request failed (${r.status})`);
+  return j;
+}
+function toast(msg, err = false) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (err ? ' err' : '');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), err ? 6000 : 3000);
+}
+async function act(fn, ok) {
+  try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message, true); }
+}
+function confirmModal({ title, body, confirm = 'Confirm', danger = false }) {
+  return new Promise((resolve) => {
+    $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true"><h3>${title}</h3><div>${body}</div>
+      <div class="row"><button class="btn" data-a="no">Cancel</button><button class="btn ${danger ? 'stop' : 'primary'}" data-a="yes">${confirm}</button></div></div></div>`;
+    const done = (v) => { $('#modal-root').innerHTML = ''; resolve(v); };
+    $('#modal-root [data-a=yes]').onclick = () => done(true);
+    $('#modal-root [data-a=no]').onclick = () => done(false);
+    $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) done(false); };
+    $('#modal-root [data-a=yes]').focus();
+  });
+}
+
+// ---------------- header / chrome ----------------
+function renderChrome() {
+  const st = S.status, cfg = S.config;
+  if (!st || !cfg) return;
+  $('#mode-pill').innerHTML = cfg.mode === 'live' ? '<span class="pill live">● LIVE — real money</span>' : '<span class="pill paper">Paper trading</span>';
+  $('#run-pill').innerHTML = st.running ? `<span class="pill run"><span class="dot"></span>Running · ${ago(st.startedAt)}</span>` : '<span class="pill"><span class="dot"></span>Stopped</span>';
+  const b = $('#run-btn');
+  b.className = 'btn ' + (st.running ? 'stop' : 'go');
+  b.innerHTML = st.running
+    ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop bot'
+    : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Start bot';
+  b.disabled = S.busy;
+  const enabled = cfg.wallets.filter((w) => w.enabled !== false).length;
+  $('#nav-wallets').textContent = cfg.wallets.length ? `${enabled}` : '';
+  document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('on', n.dataset.page === S.page));
+  const c = S.connection || {};
+  $('#side-foot').innerHTML = `
+    <div class="row" style="gap:6px"><span class="dot ${c.usingPublicRpc ? 'warn' : 'ok'}"></span>${c.usingPublicRpc ? 'Public RPC (slow)' : 'Private RPC'}</div>
+    <div class="row" style="gap:6px"><span class="dot ${c.hasPrivateKey ? 'ok' : ''}"></span>${c.hasPrivateKey ? 'Trading wallet set' : 'No trading wallet'}</div>
+    ${S.app.version ? `<div class="row" style="gap:6px"><span class="dot ${S.app.update.state === 'ready' ? 'warn' : ''}"></span>v${esc(S.app.version)}${updateShort()}</div>` : ''}`;
+}
+
+$('#run-btn').onclick = async () => {
+  if (S.busy) return;
+  if (!S.status.running && S.config.mode === 'live') {
+    const ok = await confirmModal({ title: 'Start in LIVE mode?', body: '<p>The bot will spend real SOL from your trading wallet automatically.</p>', confirm: 'Start live trading', danger: true });
+    if (!ok) return;
+  }
+  S.busy = true; renderChrome();
+  await act(() => api('POST', S.status.running ? '/api/stop' : '/api/start'));
+  S.busy = false; renderChrome();
+};
+document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => go(n.dataset.page)));
+async function go(page) {
+  if (S.page === 'settings' && page !== 'settings' && S.dirty) {
+    if (!(await confirmModal({ title: 'Discard unsaved settings?', body: '<p>You have changes that are not saved yet.</p>', confirm: 'Discard' }))) return;
+    S.dirty = false;
+  }
+  S.page = page; location.hash = page; render(); window.scrollTo(0, 0);
+}
+document.addEventListener('click', (e) => {
+  const c = e.target.closest('[data-copy]');
+  if (c) { navigator.clipboard.writeText(c.dataset.copy).then(() => toast('Copied')); }
+});
+
+// ---------------- pages ----------------
+const TITLES = { dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', trades: 'Trade history', settings: 'Settings' };
+function render() {
+  if (!S.config) return;
+  renderChrome();
+  $('#page-title').textContent = TITLES[S.page];
+  const el = $('#content');
+  ({ dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, settings: renderSettings })[S.page](el);
+  const u = S.app.update;
+  if (u.state === 'ready' || u.state === 'rejected' || u.state === 'installing') {
+    el.insertAdjacentHTML('afterbegin', u.state === 'rejected'
+      ? `<div class="banner danger"><div><b>Update blocked.</b> ${esc(u.message)}</div></div>`
+      : `<div class="banner info"><div><b>Copybot ${esc(u.version)} is ready.</b> ${u.state === 'installing' ? 'Installing… Copybot will reopen in a moment.' : 'Restart to install it. It takes about a minute.'}</div>${u.state === 'ready' ? '<button class="btn sm primary" id="upd-install">Restart &amp; update</button>' : '<span class="spinner"></span>'}</div>`);
+    const b = $('#upd-install'); if (b) b.onclick = installUpdate;
+  }
+}
+
+// ---------------- app updates ----------------
+function updateShort() {
+  const u = S.app.update;
+  return ({ checking: ' · checking…', downloading: ` · downloading ${u.percent ?? 0}%`, verifying: ' · verifying…', ready: ' · update ready', installing: ' · installing…' })[u.state] || '';
+}
+function updateText() {
+  const u = S.app.update;
+  switch (u.state) {
+    case 'disabled': return u.message || 'Updates are only available in the installed desktop app.';
+    case 'checking': return 'Checking for updates…';
+    case 'up-to-date': return `You're on the latest version${u.checkedAt ? ` (checked ${time(u.checkedAt)})` : ''}.`;
+    case 'downloading': return `Downloading version ${esc(u.version)}… ${u.percent ?? 0}%`;
+    case 'verifying': return `Checking the security signature of version ${esc(u.version)}…`;
+    case 'ready': return `Version ${esc(u.version)} is downloaded and verified. Restart to install.`;
+    case 'installing': return 'Installing…';
+    case 'rejected': return esc(u.message);
+    case 'error': return esc(u.message);
+    default: return 'Copybot checks for updates automatically.';
+  }
+}
+async function installUpdate() {
+  const running = S.status?.running;
+  const ok = await confirmModal({ title: `Install Copybot ${esc(S.app.update.version)}?`, confirm: 'Restart & update',
+    body: `<p>Copybot will close, update and reopen in about a minute.${running ? ' The bot stops during the update and <b>starts again automatically</b> afterwards.' : ''} Your settings, wallets and trade history are kept.</p>` });
+  if (ok) act(() => api('POST', '/api/update/install'));
+}
+
+function banners() {
+  const out = [];
+  const c = S.connection, cfg = S.config;
+  if (cfg.mode === 'paper') out.push(`<div class="banner info"><div><b>Paper trading.</b> The bot simulates every trade with real prices but never spends money. Run it like this for a few days before going live.</div></div>`);
+  else if (!c.hasPrivateKey) out.push(`<div class="banner danger"><div><b>Live mode needs a trading wallet.</b> Add one in Settings → Connection.</div><button class="btn sm" onclick="go('settings')">Open settings</button></div>`);
+  if (c.usingPublicRpc) out.push(`<div class="banner warn"><div><b>You're on the free public RPC.</b> It's rate-limited and will miss trades. Add a free Helius key for reliable copying.</div><button class="btn sm" onclick="go('settings')">Add RPC</button></div>`);
+  return out.join('');
+}
+
+function renderDashboard(el) {
+  const st = S.status, cfg = S.config;
+  const n = st.positions.length;
+  const enabled = cfg.wallets.filter((w) => w.enabled !== false);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todays = S.trades.filter((t) => t.t >= today.getTime() && t.mode === cfg.mode);
+  const pnlToday = todays.reduce((a, t) => a + (t.pnl || 0), 0);
+  const expPct = Math.min(100, (st.exposureSol / cfg.risk.maxTotalExposureSol) * 100 || 0);
+
+  const positions = n ? `<div class="tbl-wrap"><table>
+      <thead><tr><th>Token</th><th>Copied from</th><th class="r">Cost</th><th class="r">Value</th><th class="r">PnL</th><th class="r">Held</th><th></th></tr></thead>
+      <tbody>${st.positions.map((p) => `<tr>
+        <td>${tokenLink(p.mint)}</td>
+        <td class="muted">${esc(p.label.join(', '))}</td>
+        <td class="r num">${sol(p.costSol)}</td>
+        <td class="r num">${p.valueSol != null ? sol(p.valueSol) : '<span class="muted">…</span>'}</td>
+        <td class="r num ${cls(p.pnlPct)}">${pct(p.pnlPct)}</td>
+        <td class="r muted num">${ago(p.openedAt)}</td>
+        <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button></td>
+      </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty"><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.') : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn primary" onclick="go('wallets')">Add wallets</button>`}</div>`;
+
+  el.innerHTML = `${banners()}
+    <div class="grid stats">
+      <div class="card stat"><div class="k">Realized profit</div><div class="v num ${cls(st.realizedPnlSol)}">${signed(st.realizedPnlSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${todays.filter((t) => t.side === 'sell').length ? `${signed(pnlToday, 3)} SOL today` : 'from closed trades'}</div></div>
+      <div class="card stat"><div class="k">Open profit</div><div class="v num ${cls(st.unrealizedPnlSol)}">${signed(st.unrealizedPnlSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">if sold right now</div></div>
+      <div class="card stat"><div class="k">Open positions</div><div class="v num">${n} <small style="font-size:13px" class="muted">/ ${cfg.risk.maxOpenPositions}</small></div><div class="s">${sol(st.exposureSol, 3)} of ${cfg.risk.maxTotalExposureSol} SOL in use</div><div class="bar"><i style="width:${expPct}%"></i></div></div>
+      ${st.wallet && cfg.mode === 'live'
+        ? `<div class="card stat"><div class="k">Trading wallet</div><div class="v num">${st.wallet.balance != null ? sol(st.wallet.balance, 3) : '…'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${walletLink(st.wallet.address)}</div></div>`
+        : `<div class="card stat"><div class="k">Copying</div><div class="v num">${enabled.length} <small style="font-size:13px" class="muted">wallet${enabled.length === 1 ? '' : 's'}</small></div><div class="s">${todays.length} trade${todays.length === 1 ? '' : 's'} today</div></div>`}
+    </div>
+    <div class="grid two">
+      <div class="card"><div class="card-h"><h2>Open positions</h2><span class="spacer"></span>${n ? '<button class="btn sm ghost" id="refresh-pos">Refresh prices</button>' : ''}</div>${positions}</div>
+      <div class="card"><div class="card-h"><h2>Live activity</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${st.running ? 'watching…' : ''}</span></div>
+        <div class="feed" id="feed">${feedHtml()}</div></div>
+    </div>`;
+  el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
+  const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
+}
+function feedItem(l) {
+  return `<div class="feed-item lv-${esc(l.level)} ${l.level === 'skip' ? 'skip' : ''}"><span class="t">${time(l.t)}</span><span class="dot"></span><span>${esc(l.msg.trim())}</span></div>`;
+}
+function feedHtml() {
+  if (!S.logs.length) return '<div class="empty">Nothing yet. Activity shows up here when the bot is running.</div>';
+  return S.logs.slice(-150).reverse().map(feedItem).join('');
+}
+async function sellPosition(mint, fraction) {
+  const live = S.config.mode === 'live';
+  const ok = await confirmModal({ title: `Sell ${fraction >= 1 ? 'all' : Math.round(fraction * 100) + '%'} of ${short(mint)}?`, body: `<p>${live ? 'This sends a real sell transaction now.' : 'Simulated sell at the current price.'}</p>`, confirm: 'Sell', danger: live });
+  if (ok) act(() => api('POST', '/api/sell', { mint, fraction }), 'Sell submitted');
+}
+
+// ----- wallets -----
+function renderWallets(el) {
+  const ws = S.config.wallets;
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-b">
+      <form class="row" id="add-wallet">
+        <input class="input mono" style="flex:3;min-width:220px" name="address" placeholder="Wallet address to copy" autocomplete="off" required>
+        <input class="input" style="flex:1;min-width:140px" name="label" placeholder="Nickname (optional)" autocomplete="off">
+        <button class="btn primary">Add wallet</button>
+      </form>
+      <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a></div>
+    </div></div>
+    <div class="card">
+      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
+      ${ws.length ? `<div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Positions</th><th></th></tr></thead><tbody>
+        ${ws.map((w, i) => {
+          const held = S.status.positions.filter((p) => p.sources.includes(w.address)).length;
+          return `<tr class="wallet-row">
+            <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
+            <td><input class="label-input" data-label="${i}" value="${esc(w.label || '')}" placeholder="Add a nickname"></td>
+            <td>${walletLink(w.address)}</td>
+            <td class="r num muted">${held || '—'}</td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
+          </tr>`; }).join('')}
+      </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
+    </div>`;
+  $('#add-wallet').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const address = f.get('address').trim();
+    if (ws.some((w) => w.address === address)) return toast('That wallet is already in the list', true);
+    if (await saveWallets([...ws, { address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], 'Wallet added')) e.target.reset();
+  };
+  el.querySelectorAll('[data-toggle]').forEach((c) => (c.onchange = () => saveWallets(ws.map((w, i) => (i == c.dataset.toggle ? { ...w, enabled: c.checked } : w)))));
+  el.querySelectorAll('[data-label]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.label ? { ...w, label: inp.value.trim() } : w)), 'Saved')));
+  el.querySelectorAll('[data-remove]').forEach((b) => (b.onclick = async () => {
+    const w = ws[b.dataset.remove];
+    if (await confirmModal({ title: `Stop copying ${esc(w.label || short(w.address))}?`, body: '<p>Open positions from this wallet stay open, but its sells will no longer be copied.</p>', confirm: 'Remove' }))
+      saveWallets(ws.filter((_, i) => i != b.dataset.remove), 'Wallet removed');
+  }));
+  el.querySelectorAll('[data-analyze]').forEach((b) => (b.onclick = () => startAnalyze([b.dataset.analyze])));
+  const aa = $('#analyze-all'); if (aa) aa.onclick = () => startAnalyze(ws.map((w) => w.address));
+}
+async function saveWallets(wallets, msg) {
+  const r = await act(() => api('PUT', '/api/config', { ...S.config, wallets }), msg);
+  if (r) { S.config = r.config; if (r.restarted) toast('Bot restarted with the new list'); render(); }
+  return r;
+}
+
+// ----- research -----
+async function startAnalyze(wallets, txs = 300) {
+  const j = await act(() => api('POST', '/api/jobs/analyze', { wallets, txs }));
+  if (j) { upsertJob(j); go('research'); }
+}
+function renderResearch(el) {
+  el.innerHTML = `
+    <div class="grid two" style="margin-bottom:16px">
+      <div class="card"><div class="card-h"><h2>1 · Discover early buyers</h2></div><div class="card-b stack">
+        <ol class="steps">
+          <li>Find 3–5 tokens that <b>pumped recently</b> on <a href="https://dexscreener.com/solana" target="_blank" rel="noopener">Dexscreener</a>.</li>
+          <li>Copy each token's address (the long code on its page) and paste one per line.</li>
+          <li>Wallets that bought <b>several</b> of them early rank highest.</li>
+        </ol>
+        <textarea class="input" id="disc-mints" rows="4" placeholder="Token addresses, one per line"></textarea>
+        <div class="row"><button class="btn primary" id="disc-go">Find early buyers</button><span class="muted" style="font-size:12.5px">Takes a few minutes</span></div>
+      </div></div>
+      <div class="card"><div class="card-h"><h2>2 · Check a wallet's track record</h2></div><div class="card-b stack">
+        <div class="muted">Reads a wallet's recent swaps and works out its real win rate and profit. Also flags bots that trade too fast to copy.</div>
+        <textarea class="input" id="an-wallets" rows="4" placeholder="Wallet addresses, one per line"></textarea>
+        <div class="row">
+          <button class="btn primary" id="an-go">Analyze</button>
+          <label class="row muted" style="gap:6px;font-size:12.5px">Look at last <select class="input" id="an-txs" style="width:auto;height:30px"><option>150</option><option selected>300</option><option>600</option><option>1000</option></select> transactions</label>
+        </div>
+      </div></div>
+    </div>
+    <div class="card"><div class="card-h"><h2>Results</h2></div><div id="jobs">${jobsHtml()}</div></div>`;
+  const lines = (id) => $(id).value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+  $('#disc-go').onclick = async () => { const j = await act(() => api('POST', '/api/jobs/discover', { mints: lines('#disc-mints') })); if (j) { upsertJob(j); renderJobs(); } };
+  $('#an-go').onclick = async () => { const j = await act(() => api('POST', '/api/jobs/analyze', { wallets: lines('#an-wallets'), txs: Number($('#an-txs').value) })); if (j) { upsertJob(j); renderJobs(); } };
+  bindJobs();
+}
+function upsertJob(j) {
+  const i = S.jobs.findIndex((x) => x.id === j.id);
+  if (i >= 0) S.jobs[i] = j; else S.jobs.unshift(j);
+}
+function renderJobs() { const el = $('#jobs'); if (el) { el.innerHTML = jobsHtml(); bindJobs(); } }
+function jobsHtml() {
+  if (!S.jobs.length) return '<div class="empty">Results from discovery and analysis show up here.</div>';
+  return S.jobs.map((j) => {
+    const title = j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
+    const head = `<div class="job-h">${j.status === 'running' || j.status === 'queued' ? '<span class="spinner"></span>' : j.status === 'error' ? '<span class="dot bad"></span>' : '<span class="dot ok"></span>'}
+      <b style="font-weight:600">${title}</b><span class="muted" style="font-size:12.5px">${esc(j.status === 'error' ? j.error : j.progress)}</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:12px">${time(j.createdAt)}</span></div>`;
+    if (j.status !== 'done') return `<div class="job">${head}</div>`;
+    return `<div class="job">${head}${j.kind === 'analyze' ? analyzeTable(j.result) : discoverTable(j.result)}</div>`;
+  }).join('');
+}
+const inList = (w) => S.config.wallets.some((x) => x.address === w);
+function analyzeTable(rs) {
+  return `<div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th class="r">Win rate</th><th class="r">Profit</th><th class="r">ROI</th><th class="r">Trades/day</th><th class="r">Typical buy</th><th class="r">Typical hold</th><th></th></tr></thead><tbody>
+    ${rs.map((r) => `<tr>
+      <td>${walletLink(r.wallet)}<div class="notes">${r.notes.map((n) => `<span class="note ${n.startsWith('✅') ? 'good' : /bot|slow|too few/.test(n) ? 'bad' : ''}">${esc(n.replace('✅ ', ''))}</span>`).join('')}</div></td>
+      <td class="r num">${r.closedTokens ? Math.round(r.winRate * 100) + '%' : '—'} <span class="muted" style="font-size:12px">(${r.closedTokens})</span></td>
+      <td class="r num ${cls(r.realizedPnlSol)}">${signed(r.realizedPnlSol, 2)}</td>
+      <td class="r num ${cls(r.roiPct)}">${r.spentOnClosedSol ? pct(r.roiPct) : '—'}</td>
+      <td class="r num">${Math.round(r.tradesPerDay)}</td>
+      <td class="r num">${sol(r.medianBuySol, 2)}</td>
+      <td class="r num">${r.closedTokens ? (r.medianHoldMin < 60 ? r.medianHoldMin.toFixed(1) + 'm' : (r.medianHoldMin / 60).toFixed(1) + 'h') : '—'}</td>
+      <td class="r">${inList(r.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(r.wallet)}">Copy</button>`}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+function discoverTable(res) {
+  const warn = res.warnings.length ? `<div class="banner warn" style="margin:0 18px 12px">${res.warnings.map(esc).join('<br>')}</div>` : '';
+  if (!res.candidates.length) return warn + '<div class="empty">No early buyers found. Try other tokens.</div>';
+  const multi = res.candidates.filter((c) => c.mints.length > 1).map((c) => c.wallet).slice(0, 10);
+  return `${warn}<div class="row" style="padding:0 18px 12px">${multi.length ? `<button class="btn sm primary" data-analyze-list="${esc(multi.join(','))}">Analyze top ${multi.length}</button><span class="muted" style="font-size:12.5px">wallets early on more than one token</span>` : '<span class="muted" style="font-size:12.5px">No wallet was early on more than one of these tokens. Try more tokens from the same week.</span>'}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th class="r">Early on</th><th class="r">SOL spent</th><th></th></tr></thead><tbody>
+    ${res.candidates.slice(0, 25).map((c) => `<tr><td>${walletLink(c.wallet)}</td><td class="r num">${c.mints.length} / ${res.tokens}</td><td class="r num">${sol(c.sol, 2)}</td>
+      <td class="r" style="white-space:nowrap"><button class="btn sm" data-analyze-list="${esc(c.wallet)}">Analyze</button></td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+function bindJobs() {
+  document.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.add, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list')));
+  document.querySelectorAll('[data-analyze-list]').forEach((b) => (b.onclick = () => startAnalyze(b.dataset.analyzeList.split(','))));
+}
+
+// ----- trades -----
+function renderTrades(el) {
+  const f = S.tradeFilter;
+  const ts = S.trades.filter((t) => f === 'all' || t.mode === f);
+  const sells = ts.filter((t) => t.side === 'sell');
+  const total = sells.reduce((a, t) => a + (t.pnl || 0), 0);
+  const wins = sells.filter((t) => t.pnl > 0).length;
+  el.innerHTML = `
+    <div class="row" style="margin-bottom:16px">
+      <div class="seg" id="tf">${['all', 'paper', 'live'].map((m) => `<button class="${f === m ? 'on' : ''}" data-f="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted">${ts.length} trades · ${sells.length ? `${Math.round((wins / sells.length) * 100)}% profitable sells · ` : ''}<span class="${cls(total)}">${signed(total, 3)} SOL</span></span>
+    </div>
+    <div class="card">${ts.length ? `<div class="tbl-wrap"><table>
+      <thead><tr><th>Time</th><th>Side</th><th>Token</th><th class="r">SOL</th><th class="r">Profit</th><th>Why</th><th>Mode</th><th></th></tr></thead>
+      <tbody>${ts.map((t) => `<tr>
+        <td class="muted num" style="white-space:nowrap">${dateTime(t.t)}</td>
+        <td><span class="tag ${t.side === 'buy' ? 'buy' : 'sell'}">${t.side === 'buy' ? 'buy' : 'sell'}</span></td>
+        <td>${tokenLink(t.mint)}</td>
+        <td class="r num">${sol(t.sol)}</td>
+        <td class="r num ${cls(t.pnl)}">${t.side === 'sell' ? signed(t.pnl) : ''}</td>
+        <td class="muted" style="font-size:13px">${t.side === 'buy' ? 'copied ' + esc(labelFor(t.source)) : esc(t.reason || '')}</td>
+        <td><span class="tag ${t.mode === 'live' ? 'live' : 'paper'}">${t.mode === 'live' ? 'live' : 'paper'}</span></td>
+        <td class="r">${t.sig && t.sig !== 'PAPER' ? `<a href="https://solscan.io/tx/${esc(t.sig)}" target="_blank" rel="noopener" style="font-size:12.5px">View tx</a>` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>` : '<div class="empty"><h3>No trades yet</h3>Trades the bot makes appear here.</div>'}</div>`;
+  el.querySelectorAll('#tf button').forEach((b) => (b.onclick = () => { S.tradeFilter = b.dataset.f; render(); }));
+}
+const labelFor = (addr) => { const w = S.config.wallets.find((x) => x.address === addr); return w?.label || short(addr); };
+
+// ----- settings -----
+const FIELDS = [
+  { title: 'Buying', desc: 'How much to spend when a wallet you copy buys a token.', fields: [
+    { k: 'buy.sizing', label: 'Buy size', type: 'select', options: [['fixed', 'Same amount every time'], ['percent', 'Percent of their buy']] },
+    { k: 'buy.fixedSol', label: 'Amount per buy', unit: 'SOL', help: 'Used for "same amount every time".' },
+    { k: 'buy.percentOfTarget', label: 'Percent of their buy', unit: '%', help: 'If they spend 10 SOL and this is 5%, you spend 0.5 SOL.' },
+    { k: 'buy.minSol', label: 'Smallest buy', unit: 'SOL' },
+    { k: 'buy.maxSol', label: 'Largest buy', unit: 'SOL' },
+    { k: 'buy.minTargetBuySol', label: 'Ignore their buys under', unit: 'SOL', help: 'Skips their tiny test buys.' },
+  ]},
+  { title: 'Selling', desc: 'When to get out.', fields: [
+    { k: 'sell.copySells', label: 'Copy their sells', type: 'toggle', help: 'If they sell half their tokens, you sell half of yours.' },
+    { k: 'risk.stopLossPct', label: 'Stop-loss', unit: '% down', help: 'Sell everything if a position falls this much.' },
+    { k: 'risk.takeProfitPct', label: 'Take-profit', unit: '% up', help: 'Sell everything if a position rises this much.' },
+  ]},
+  { title: 'Limits', desc: 'Caps that protect your balance.', fields: [
+    { k: 'risk.maxOpenPositions', label: 'Max tokens held at once', unit: 'tokens', step: 1 },
+    { k: 'risk.maxTotalExposureSol', label: 'Max SOL in open positions', unit: 'SOL' },
+    { k: 'risk.skipIfAlreadyHolding', label: "Don't buy more of a token you hold", type: 'toggle' },
+    { k: 'risk.maxSignalAgeSec', label: 'Ignore trades older than', unit: 'sec', step: 1, help: "If the bot sees a trade late, the price has probably moved." },
+    { k: 'risk.solReserve', label: 'Always keep in wallet', unit: 'SOL', help: 'Left untouched to pay transaction fees.' },
+  ]},
+  { title: 'Safety checks', desc: 'Run before every buy to avoid scams and illiquid tokens.', fields: [
+    { k: 'safety.slippageBps', label: 'Max slippage', unit: '%', toView: (v) => v / 100, fromView: (v) => Math.round(v * 100), help: 'How much worse than the quoted price a trade may fill.' },
+    { k: 'safety.maxRoundTripLossPct', label: 'Max buy-then-sell loss', unit: '%', help: "Skips tokens you couldn't sell back without losing more than this. Catches many scams." },
+    { k: 'safety.rejectFreezeAuthority', label: 'Skip freezable tokens', type: 'toggle', help: "The creator could freeze your tokens so you can't sell. Strongly recommended." },
+    { k: 'safety.rejectMintAuthority', label: 'Skip tokens that can still be minted', type: 'toggle', help: 'The creator could print more supply.' },
+    { k: 'safety.rejectToken2022', label: 'Skip Token-2022 tokens', type: 'toggle', help: 'Newer token standard that can carry transfer taxes.' },
+    { k: 'safety.blacklist', label: 'Never buy these tokens', type: 'list', help: 'One token address per line.' },
+  ]},
+  { title: 'Speed', desc: 'Faster fills cost a little more in fees.', fields: [
+    { k: 'execution.priorityLevel', label: 'Transaction priority', type: 'select', options: [['medium', 'Normal'], ['high', 'High'], ['veryHigh', 'Very high']] },
+    { k: 'execution.priorityFeeMaxLamports', label: 'Max priority fee per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9) },
+    { k: 'monitor.pollIntervalSec', label: 'Backup check every', unit: 'sec', step: 1, help: 'Polling backup in case the live feed drops a trade.' },
+    { k: 'monitor.exitCheckIntervalSec', label: 'Check stop-loss / take-profit every', unit: 'sec', step: 1 },
+  ]},
+];
+const getP = (o, p) => p.split('.').reduce((a, k) => a?.[k], o);
+const setP = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); ks.reduce((a, k) => (a[k] ??= {}), o)[last] = v; };
+
+function fieldHtml(f) {
+  let v = getP(S.config, f.k);
+  if (f.toView) v = f.toView(v);
+  const id = 'f-' + f.k.replace('.', '-');
+  let ctl;
+  if (f.type === 'toggle') ctl = `<label class="switch"><input type="checkbox" id="${id}" data-k="${f.k}" ${v ? 'checked' : ''}><i></i></label>`;
+  else if (f.type === 'select') ctl = `<select class="input" id="${id}" data-k="${f.k}">${f.options.map(([val, l]) => `<option value="${val}" ${val === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  else if (f.type === 'list') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" placeholder="none">${esc((v || []).join('\n'))}</textarea>`;
+  else ctl = `<div class="with-unit"><input type="number" inputmode="decimal" id="${id}" data-k="${f.k}" value="${esc(+Number(v).toFixed(9))}" step="${f.step || 'any'}" min="0"><span>${f.unit}</span></div>`;
+  return `<div class="field"><div><label class="l" for="${id}">${f.label}</label>${f.help ? `<div class="h">${f.help}</div>` : ''}</div>${ctl}</div>`;
+}
+
+function renderSettings(el) {
+  const cfg = S.config, c = S.connection, live = cfg.mode === 'live';
+  el.innerHTML = `
+    <div class="stack">
+      <div class="card"><div class="card-h"><div><h2>App updates</h2><div class="muted" style="font-size:12.5px">Copybot ${S.app.version ? 'v' + esc(S.app.version) : ''}. Updates download automatically and only install when you restart. Each one is checked against Copybot's security signature first.</div></div></div>
+        <div class="card-b row" style="justify-content:space-between"><span id="upd-text">${updateText()}</span>
+          <span class="row">${S.app.update.state === 'ready' ? '<button class="btn primary" id="upd-install2">Restart &amp; update</button>' : ''}<button class="btn" id="upd-check" ${S.app.update.state === 'disabled' ? 'disabled' : ''}>Check for updates</button></span></div></div>
+
+      <div class="card"><div class="card-h"><h2>Trading mode</h2></div><div class="card-b row" style="justify-content:space-between">
+        <div style="max-width:560px" class="muted">${live ? '<b style="color:var(--red)">Live:</b> the bot spends real SOL from your trading wallet.' : '<b style="color:var(--text)">Paper:</b> trades are simulated with real prices. Paper and live positions are tracked separately.'}</div>
+        <div class="seg" id="mode-seg"><button data-m="paper" class="${!live ? 'on' : ''}">Paper</button><button data-m="live" class="${live ? 'on live' : ''}">Live</button></div>
+      </div></div>
+
+      ${FIELDS.map((s) => `<div class="card"><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.fields.map(fieldHtml).join('')}</div>`).join('')}
+
+      <div class="card" id="conn"><div class="card-h"><div><h2>Connection</h2><div class="muted" style="font-size:12.5px">Stored in the <span class="mono">.env</span> file on this computer only.</div></div></div>
+        <div class="field"><div><label class="l" for="c-rpc">Solana RPC URL</label><div class="h">Get a free key at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>, then paste <span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span></div></div>
+          <input class="input mono" id="c-rpc" value="${esc(c.rpcUrl)}" spellcheck="false"></div>
+        <div class="field"><div><label class="l" for="c-jupkey">Jupiter API key <span class="muted">(optional)</span></label><div class="h">Only if you've outgrown the free tier. ${c.hasJupiterKey ? '<b>A key is saved.</b>' : ''}</div></div>
+          <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
+        <div class="card-b row" style="border-top:1px solid var(--border)">
+          <button class="btn primary" id="c-save">Save connection</button><button class="btn" id="c-test">Test connection</button>
+          <span id="c-test-res" class="muted" style="font-size:13px">${connTestHtml()}</span>
+        </div>
+      </div>
+
+      <div class="card"><div class="card-h"><div><h2>Trading wallet</h2><div class="muted" style="font-size:12.5px">Only needed for live mode.</div></div></div>
+        <div class="card-b stack">
+          ${c.keyError ? `<div class="banner danger" style="margin:0"><div>${esc(c.keyError)}</div></div>` : ''}
+          ${c.hasPrivateKey ? `<dl class="kv"><dt>Address</dt><dd>${walletLink(c.walletAddress)}</dd><dt>Balance</dt><dd class="num">${S.status.wallet?.balance != null ? sol(S.status.wallet.balance, 4) + ' SOL' : '…'}</dd>
+            <dt>Key storage</dt><dd>${c.keyEncrypted ? '<span class="pos">Encrypted</span> <span class="muted">by your operating system, readable only by your user account on this computer</span>' : `<span class="muted">Plain text in the .env file${c.desktop ? ' (this computer has no system key storage available)' : ' (use the desktop app for encrypted storage)'}</span>`}</dd></dl>
+            <div class="row"><button class="btn danger" id="k-remove">Remove key</button></div>`
+          : `<div class="banner warn" style="margin:0"><div><b>Use a brand-new wallet just for this bot</b>, funded only with what you can afford to lose. Never paste the key of your main wallet. In Phantom: create a new account → Settings → Show private key.</div></div>
+            <div class="row"><input class="input mono" id="k-input" type="password" placeholder="Private key (base58)" autocomplete="off" style="flex:1;min-width:220px"><button class="btn primary" id="k-save">Save key</button></div>`}
+        </div>
+      </div>
+    </div>
+    <div class="savebar" id="savebar" style="display:${S.dirty ? 'flex' : 'none'}"><span>You have unsaved changes</span><span class="spacer"></span><button class="btn sm" id="s-reset">Discard</button><button class="btn sm primary" id="s-save">Save settings</button></div>`;
+
+  el.querySelectorAll('[data-k]').forEach((i) => (i.oninput = i.onchange = () => { S.dirty = true; $('#savebar').style.display = 'flex'; }));
+  $('#s-reset').onclick = () => { S.dirty = false; render(); };
+  $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));
+  const ui2 = $('#upd-install2'); if (ui2) ui2.onclick = installUpdate;
+  $('#s-save').onclick = saveSettings;
+  el.querySelectorAll('#mode-seg button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
+  $('#c-save').onclick = async () => {
+    const body = { rpcUrl: $('#c-rpc').value };
+    if ($('#c-jupkey').value) body.jupiterKey = $('#c-jupkey').value;
+    const r = await act(() => api('PUT', '/api/connection', body), 'Connection saved');
+    if (r) { S.connection = r; S.connTest = null; render(); }
+  };
+  $('#c-test').onclick = async () => {
+    $('#c-test-res').innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Testing…';
+    S.connTest = await act(() => api('POST', '/api/connection/test'));
+    $('#c-test-res').innerHTML = connTestHtml();
+  };
+  const ks = $('#k-save');
+  if (ks) ks.onclick = async () => {
+    const r = await act(() => api('PUT', '/api/connection', { privateKey: $('#k-input').value }), 'Trading wallet saved');
+    if (r) { S.connection = r; render(); }
+  };
+  const kr = $('#k-remove');
+  if (kr) kr.onclick = async () => {
+    if (!(await confirmModal({ title: 'Remove trading wallet key?', body: '<p>The key is deleted from this computer. Make sure you have it backed up in your wallet app. Live trading stops working until you add one again.</p>', confirm: 'Remove key', danger: true }))) return;
+    const r = await act(() => api('PUT', '/api/connection', { privateKey: '' }), 'Key removed');
+    if (r) { S.connection = r; render(); }
+  };
+}
+function connTestHtml() {
+  const t = S.connTest;
+  if (!t) return '';
+  if (!t.ok) return `<span class="neg">✕ ${esc(t.error)}</span>`;
+  return `<span class="${t.rpcMs < 800 ? 'pos' : ''}">✓ RPC ${t.rpcMs} ms</span> · ${t.jupiterOk ? `<span class="pos">✓ Jupiter ${t.jupMs} ms</span>` : '<span class="neg">✕ Jupiter unreachable</span>'}${t.solPrice ? ` · SOL ≈ $${t.solPrice.toFixed(2)}` : ''}`;
+}
+async function saveSettings() {
+  const cfg = structuredClone(S.config);
+  const all = FIELDS.flatMap((s) => s.fields);
+  for (const f of all) {
+    const el = document.querySelector(`[data-k="${f.k}"]`);
+    let v;
+    if (f.type === 'toggle') v = el.checked;
+    else if (f.type === 'select') v = el.value;
+    else if (f.type === 'list') v = el.value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    else {
+      v = Number(el.value);
+      if (el.value === '' || isNaN(v) || v < 0) return toast(`"${f.label}" needs a positive number`, true);
+      if (f.fromView) v = f.fromView(v);
+    }
+    setP(cfg, f.k, v);
+  }
+  const r = await act(() => api('PUT', '/api/config', cfg), 'Settings saved');
+  if (r) { S.config = r.config; S.dirty = false; if (r.restarted) toast('Bot restarted with new settings'); render(); }
+}
+async function setMode(mode) {
+  if (mode === S.config.mode) return;
+  if (S.dirty) return toast('Save or discard your other changes first', true);
+  if (mode === 'live') {
+    const ok = await confirmModal({ title: 'Switch to live trading?', danger: true, confirm: 'Switch to live',
+      body: `<p>From now on the bot spends <b>real SOL</b>. Before you switch:</p><ul><li>You've run paper mode for a few days and like the results</li><li>You're using a separate wallet with only money you can lose</li><li>You're on a private RPC (Helius), not the public one</li></ul>` });
+    if (!ok) return;
+  }
+  const r = await act(() => api('PUT', '/api/config', { ...S.config, mode }), mode === 'live' ? 'Live mode on' : 'Paper mode on');
+  if (r) { S.config = r.config; render(); }
+}
+
+// ---------------- live updates ----------------
+function connectEvents() {
+  if (!TOKEN) return showLocked();
+  const es = new EventSource('/api/events?token=' + encodeURIComponent(TOKEN));
+  es.addEventListener('log', (e) => {
+    const l = JSON.parse(e.data);
+    S.logs.push(l); if (S.logs.length > 500) S.logs.shift();
+    const feed = $('#feed');
+    if (feed) { if (S.logs.length === 1) feed.innerHTML = ''; feed.insertAdjacentHTML('afterbegin', feedItem(l)); while (feed.children.length > 150) feed.lastChild.remove(); }
+  });
+  es.addEventListener('trade', (e) => {
+    const t = JSON.parse(e.data);
+    S.trades.unshift(t);
+    if (S.page === 'trades') render();
+  });
+  es.addEventListener('status', (e) => {
+    S.status = JSON.parse(e.data);
+    renderChrome();
+    if (S.page === 'dashboard') render();
+  });
+  es.addEventListener('config', (e) => {
+    if (S.page === 'settings' && S.dirty) return;
+    S.config = JSON.parse(e.data);
+    render();
+  });
+  es.addEventListener('update', (e) => {
+    S.app.update = JSON.parse(e.data);
+    renderChrome();
+    const t = $('#upd-text');
+    // Re-render for state changes that add/remove buttons or banners; otherwise just update the text.
+    if (['ready', 'rejected', 'installing'].includes(S.app.update.state) || !t) { if (!(S.page === 'settings' && S.dirty)) render(); }
+    else t.innerHTML = updateText();
+  });
+  es.addEventListener('job', (e) => {
+    upsertJob(JSON.parse(e.data));
+    if (S.page === 'research') renderJobs();
+  });
+  es.onerror = () => { $('#run-pill').innerHTML = '<span class="pill"><span class="dot bad"></span>Disconnected</span>'; };
+  es.onopen = () => load();
+}
+async function load() {
+  try {
+    const d = await api('GET', '/api/state');
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs });
+    render();
+  } catch (e) { toast('Could not reach the bot. Is it still running?', true); }
+}
+const h = location.hash.slice(1);
+if (TITLES[h]) S.page = h;
+connectEvents();
+setInterval(() => { if (S.status?.running) renderChrome(); }, 15000);
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch: # run manually from the Actions tab
+  push:
+    tags: ['v*']
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Copybot-Windows
+          path: release/*.exe
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm run bundle
+      # Build the .app for Apple Silicon and Intel, ad-hoc sign it (no Apple
+      # developer account needed), then wrap each in a .dmg.
+      - run: npx electron-builder --mac dir --arm64 --x64 --publish never -c.mac.identity=null
+      - run: |
+          for d in release/mac-arm64 release/mac; do
+            codesign --force --deep --sign - "$d/Copybot.app"
+            arch=$([ "$d" = release/mac-arm64 ] && echo AppleSilicon || echo Intel)
+            hdiutil create -volname Copybot -srcfolder "$d/Copybot.app" -ov -format UDZO "release/Copybot-$arch.dmg"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Copybot-Mac
+          path: release/*.dmg

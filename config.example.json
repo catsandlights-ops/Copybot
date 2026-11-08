@@ -1,0 +1,47 @@
+{
+  "mode": "paper",
+
+  "wallets": [],
+
+  "buy": {
+    "sizing": "fixed",
+    "fixedSol": 0.05,
+    "percentOfTarget": 5,
+    "minSol": 0.01,
+    "maxSol": 0.2,
+    "minTargetBuySol": 0.2
+  },
+
+  "sell": {
+    "copySells": true
+  },
+
+  "risk": {
+    "maxOpenPositions": 5,
+    "maxTotalExposureSol": 1.0,
+    "stopLossPct": 40,
+    "takeProfitPct": 150,
+    "skipIfAlreadyHolding": true,
+    "maxSignalAgeSec": 30,
+    "solReserve": 0.05
+  },
+
+  "safety": {
+    "slippageBps": 300,
+    "maxRoundTripLossPct": 12,
+    "rejectFreezeAuthority": true,
+    "rejectMintAuthority": false,
+    "rejectToken2022": false,
+    "blacklist": []
+  },
+
+  "execution": {
+    "priorityLevel": "veryHigh",
+    "priorityFeeMaxLamports": 1000000
+  },
+
+  "monitor": {
+    "pollIntervalSec": 4,
+    "exitCheckIntervalSec": 20
+  }
+}

@@ -1,0 +1,41 @@
+name: Release update
+
+# Push a version tag (e.g. `npm version patch && git push --follow-tags`) and this builds the
+# Windows installer, signs it with the Copybot update key and publishes it as a GitHub release.
+# Installed copies of Copybot pick it up automatically within a few hours.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm run bundle
+      # 1. Build and upload as a DRAFT release (installed apps ignore drafts).
+      - run: npx electron-builder --win --publish always
+      # 2. Sign the installer. The private key is the UPDATE_SIGNING_KEY repository secret.
+      - name: Sign update
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          node scripts/sign-update.mjs "release/Copybot-Setup-$VERSION.exe"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+      # 3. Attach the signature, then publish the release so apps can see it.
+      - name: Publish release
+        shell: bash
+        run: |
+          REPO=$(node -p "const p=require('./package.json').build.publish; p.owner+'/'+p.repo")
+          gh release upload "v$VERSION" "release/Copybot-Setup-$VERSION.exe.sig" --repo "$REPO" --clobber
+          gh release edit "v$VERSION" --draft=false --repo "$REPO"

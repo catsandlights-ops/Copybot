@@ -1,0 +1,90 @@
+{
+  "name": "copybot",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/bot.ts",
+    "analyze": "tsx src/analyze.ts",
+    "discover": "tsx src/discover.ts",
+    "typecheck": "tsc --noEmit",
+    "app": "tsx src/server.ts",
+    "bundle": "node scripts/bundle.mjs",
+    "desktop": "npm run bundle && electron .",
+    "dist:win": "npm run bundle && electron-builder --win",
+    "dist:mac": "npm run bundle && electron-builder --mac",
+    "dist:linux": "npm run bundle && electron-builder --linux",
+    "sign-update": "node scripts/sign-update.mjs"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "^1.99.0",
+    "@types/node": "^22.10.2",
+    "bs58": "^6.0.0",
+    "dotenv": "^16.4.7",
+    "electron": "^44.9.3",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.2"
+  },
+  "productName": "Copybot",
+  "description": "Solana copy trading bot",
+  "author": "Copybot",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "app.copybot.desktop",
+    "productName": "Copybot",
+    "asar": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "dist/**",
+      "ui/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Copybot",
+      "artifactName": "Copybot-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.finance",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Finance",
+      "artifactName": "Copybot-${version}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "catsandlights-ops",
+      "repo": "copybot",
+      "releaseType": "draft"
+    }
+  },
+  "overrides": {
+    "jayson": "5.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  }
+}
