@@ -362,6 +362,11 @@ function render() {
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
   ({ dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, settings: renderSettings })[S.page](el);
+  const ju = S.app.justUpdated;
+  if (ju && !S.updateNoticeDismissed) {
+    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept.</div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
+    $('#upd-dismiss').onclick = () => { S.updateNoticeDismissed = true; render(); };
+  }
   const u = S.app.update;
   if (u.state === 'ready' || u.state === 'rejected' || u.state === 'installing') {
     el.insertAdjacentHTML('afterbegin', u.state === 'rejected'

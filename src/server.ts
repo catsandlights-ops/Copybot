@@ -37,6 +37,25 @@ const SECURITY_HEADERS = {
 type Updater = { check: () => unknown; install: () => Promise<void> };
 const updater = (): Updater | null => (globalThis as any).__copybotUpdater ?? null;
 let updateState: unknown = { state: process.env.COPYBOT_DESKTOP ? 'idle' : 'disabled' };
+
+/** Detect that the desktop app was just updated, so the UI can confirm it. */
+function detectVersionChange(): { from: string; to: string } | null {
+  const current = process.env.COPYBOT_VERSION;
+  if (!current) return null;
+  const file = 'data/app.json';
+  let previous: string | null = null;
+  try {
+    previous = JSON.parse(fs.readFileSync(file, 'utf8')).version ?? null;
+  } catch {
+    // Versions before 0.3.1 didn't record themselves; an existing config means this is an update.
+    if (fs.existsSync('config.json')) previous = 'an earlier version';
+  }
+  if (previous === current) return null;
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ version: current }));
+  return previous ? { from: previous, to: current } : null;
+}
+const justUpdated = detectVersionChange();
 export function setUpdateState(s: unknown) {
   updateState = s;
   broadcast('update', s);
@@ -225,7 +244,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       trades: readTrades(),
       connection: connectionInfo(),
       jobs,
-      app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState },
+      app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
     });
   }
 
