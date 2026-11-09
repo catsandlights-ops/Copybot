@@ -11,6 +11,7 @@ export type Position = {
   steps?: ExitStep[]; // staged exits already taken
   peakMultiple?: number; // highest value / cost seen (for the trailing stop)
   peakLiquidityUsd?: number; // highest pool liquidity seen while held (for rug protection)
+  addedOn?: boolean; // already bought more when a second wallet confirmed it
   trail?: [number, number][]; // [time, value / cost] while held, for the live chart (thinned as it grows)
 };
 

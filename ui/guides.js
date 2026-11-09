@@ -27,6 +27,15 @@ window.GUIDES = [
 <p>A new <b>Orders</b> page: buy a coin when it drops to a price, sell when it reaches a target, or buy a little every few hours (DCA). Every buy goes through your limits and safety checks. Use <b>Place an order</b> on any coin in Markets.</p>
 <h3>Live graphs</h3>
 <p>Charts that update by themselves: your <b>wallet value</b> on the Dashboard (last hour, 6 or 24 hours), a trend line next to every open position (click it for a live chart with its stop-loss, targets and your buys and sells), each open <b>order's price against its target</b>, the scanner's results and the coins rising now, a profit line per <b>wallet</b>, a running total on the Trades report, and the same on your phone. Hover any chart to read exact values.</p>
+<h3>Faster, smarter, safer trades</h3>
+<ul>
+<li><b>Faster copies:</b> the safety checks before a buy now run at the same time instead of one after another, and what never changes about a coin is remembered, so the bot gets in closer to the wallet you copy. The activity log shows how long the checks took.</li>
+<li><b>Smart sizing</b> (Settings → Smart sizing): buy 1.5× when 2+ of your wallets buy the same coin within 10 minutes (and buy more once if a second wallet confirms a coin you hold); wallets that make you money get up to 1.5×, losing or hard-to-copy ones less; optionally skip a coin only one wallet bought small.</li>
+<li><b>Market mood:</b> when SOL is dropping or most trending coins are falling, buys from signals are halved or paused until it improves.</li>
+<li><b>Rug memory:</b> after a rug pull, Copybot never buys that coin again, nor coins from the wallet that created it.</li>
+<li><b>Weekly settings check:</b> compares your exits with other setups on the last 7 days and suggests a better one on the Dashboard (nothing changes unless you press Use).</li>
+<li><b>Live mode:</b> smart slippage per trade, and optional front-running protection that sends trades privately through Jito.</li>
+</ul>
 <h3>Panic button</h3>
 <p><b>Sell everything &amp; stop</b> on the Dashboard and on your phone. Optionally set a <b>panic limit</b> (Settings → Limits) so Copybot does it by itself if today's total loss gets too big.</p>
 <h3>Reports and taxes</h3>

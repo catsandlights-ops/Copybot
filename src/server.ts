@@ -960,6 +960,67 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
 }
 
+// ---------- weekly auto-tune: your exits vs other setups on the last 7 days ----------
+type Tune = { at: number; status: 'better' | 'fine' | 'error'; message: string; best?: { name: string; stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits']; totalSol: number }; currentSol?: number; dismissed?: boolean };
+const TUNE_FILE = 'data/autotune.json';
+let lastTune: Tune | null = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(TUNE_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+function saveTune() {
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(TUNE_FILE, JSON.stringify(lastTune));
+  broadcast('autotune', lastTune);
+}
+function runAutoTune(manual = false) {
+  const wallets = engine.cfg.wallets.filter((w) => w.enabled).slice(0, 5).map((w) => w.address);
+  if (!wallets.length) throw new HttpError(400, 'Add wallets to copy first.');
+  if (jobs.some((j) => j.kind === 'optimize' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A settings comparison is already running.');
+  const now = Date.now();
+  const spec = backtestSpec({ wallets, from: now - 7 * 86_400_000, to: now, delayPct: measuredCopyGap() ?? 5 });
+  return addJob('optimize', { ...spec.input, auto: !manual }, async (progress) => {
+    try {
+      const d = await loadBacktestData(spec, progress, true, true);
+      progress('Comparing exit settings…');
+      const o = optimizeExits(d.swaps, d.cfg, d.opts, d.marks, d.prices);
+      const better = o.verdict === 'better';
+      lastTune = {
+        at: Date.now(),
+        status: better ? 'better' : 'fine',
+        message: better
+          ? `On the last 7 days, "${o.best.setup.name}" would have made ${o.best.totalSol >= 0 ? '+' : ''}${o.best.totalSol.toFixed(3)} SOL vs ${o.current.totalSol >= 0 ? '+' : ''}${o.current.totalSol.toFixed(3)} SOL with your exits.`
+          : o.verdict === 'all-lose'
+            ? 'On the last 7 days every exit setup lost money with these wallets: the wallets are the problem, not the exits. Check them on the Wallets page.'
+            : o.verdict === 'few-trades'
+              ? 'Too few trades in the last 7 days to compare exit settings fairly. Checking again next week.'
+              : 'Your exit settings are as good as any on the last 7 days. Nothing to change.',
+        ...(better ? { best: { name: o.best.setup.name, stopLossPct: o.best.setup.stopLossPct, takeProfitPct: o.best.setup.takeProfitPct, exits: o.best.setup.exits, totalSol: o.best.totalSol }, currentSol: o.current.totalSol } : {}),
+      };
+      saveTune();
+      engine.log(`Weekly settings check: ${lastTune.message}`, better ? 'ai' : 'system');
+      if (better) alert('autopilot', `🔧 ${lastTune.message} Open Copybot to use them.`);
+      return o;
+    } catch (e) {
+      lastTune = { at: Date.now(), status: 'error', message: `The weekly settings check couldn't run: ${(e as Error).message}` };
+      saveTune();
+      throw e;
+    }
+  });
+}
+setInterval(() => {
+  if (!engine.cfg.tune.weekly || !engine.running || !engine.cfg.wallets.some((w) => w.enabled)) return;
+  if (Date.now() - (lastTune?.at ?? 0) < 7 * 86_400_000) return;
+  try {
+    runAutoTune();
+    engine.log('Weekly settings check: comparing your exits with other setups on the last 7 days…', 'system');
+  } catch {
+    /* busy: next hour */
+  }
+}, 60 * 60_000).unref();
+
 // ---------- live portfolio value (sampled every 30 s, kept for 24 hours, per mode) ----------
 const SERIES_FILE = (mode: string) => `data/series-${mode}.json`;
 const portfolio = new Map<string, Pt[]>();
@@ -1348,6 +1409,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       jobs,
       scout: lastScout,
       scanner: scannerView(),
+      tune: lastTune,
       strategies: STRATEGIES,
       health: lastHealth,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
@@ -1844,6 +1906,27 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     await applyChange(() => saveConfig(clean));
     engine.log(`Scanner now uses ${ENTRY_NAMES[v.entry].toLowerCase()} with "${v.name}" exits (from the test on the past).`, 'system');
     return send(res, 200, { config: engine.cfg });
+  }
+
+  if (route === 'POST /api/autotune/run') return send(res, 200, runAutoTune(true));
+  if (route === 'POST /api/autotune/apply') {
+    const best = lastTune?.best;
+    if (!best || lastTune?.status !== 'better') throw new HttpError(400, 'There is no suggestion to apply.');
+    const next = structuredClone(engine.cfg);
+    next.risk.stopLossPct = best.stopLossPct;
+    next.risk.takeProfitPct = best.takeProfitPct;
+    next.exits = { ...best.exits };
+    const clean = sanitizeConfig(next, true);
+    await applyChange(() => saveConfig(clean));
+    engine.log(`Exit settings changed to "${best.name}" (weekly settings check).`, 'system');
+    lastTune = { ...lastTune!, status: 'fine', message: `You switched to "${best.name}". The next check is in a week.`, dismissed: true };
+    saveTune();
+    return send(res, 200, { config: engine.cfg, tune: lastTune });
+  }
+  if (route === 'POST /api/autotune/dismiss') {
+    if (lastTune) lastTune.dismissed = true;
+    saveTune();
+    return send(res, 200, { tune: lastTune });
   }
 
   if (route === 'POST /api/jobs/optimize') {

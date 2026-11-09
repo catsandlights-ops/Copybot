@@ -378,6 +378,15 @@ export async function priceHistory(mint: string, fromMs: number, toMs: number): 
   return candles.length ? { step, candles, createdAt } : null;
 }
 
+/** SOL's price change over the last hour and day (main SOL/USDC pool). Cached for 2 minutes. */
+export function solChange(): Promise<{ h1: number | null; h24: number | null }> {
+  return cached('sol-change', 120_000, async () => {
+    const d = await gecko('/networks/solana/pools/58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2');
+    const c = d?.data?.attributes?.price_change_percentage ?? {};
+    return { h1: num(c.h1), h24: num(c.h24) };
+  });
+}
+
 /**
  * SOL's USD price per day (UTC day start -> closing price), from the main SOL/USDC pool on
  * GeckoTerminal. Covers up to 1000 days back. Cached for an hour.

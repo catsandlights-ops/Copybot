@@ -75,6 +75,14 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **DCA:** buy a fixed amount every 15 minutes to a week, a set number of times, optionally only under a price cap.
 - Every buy goes through your limits and safety checks. Orders run while the bot runs; paper and live orders are kept apart.
 
+### Faster, smarter, safer trades
+- **Faster copies:** all pre-buy checks (market data, holders, token safety, rug memory, wallet balance) run in parallel, and unchanging token facts are cached.
+- **Smart sizing:** bigger buys when several of your wallets buy the same coin (with a one-time top-up when a second wallet confirms), sizes by each wallet's record and copy gap, optional skip of lone small buys.
+- **Market mood filter:** halves or pauses buys from signals when SOL is dropping or most trending coins are falling.
+- **Rug memory:** never rebuys a coin that rugged you, nor coins from the same creator.
+- **Weekly settings check:** compares your exits with 15 setups on the last 7 days and suggests a better one.
+- **Live execution:** per-trade dynamic slippage, and optional private (bundle-only) Jito sends against front-running. A busy swap service is reported as busy, never as a honeypot.
+
 ### Live graphs
 - Wallet value over the last hour, 6 or 24 hours (sampled every 30 seconds and kept across restarts), a trend line per open position with a click-through live chart showing its exits and your buys and sells, each order's price against its target, the scanner's results and rising coins, profit per wallet, a running total on the report, and the same on the phone. Hover for exact values.
 

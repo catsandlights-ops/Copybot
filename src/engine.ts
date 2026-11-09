@@ -8,7 +8,8 @@ import { overHeld } from './scanner';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { quoteBuy, quoteSell } from './jupiter';
-import { checkToken } from './safety';
+import { checkToken, tokenCreator } from './safety';
+import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
 import { hasSecret, onRpcSwitch, rpcUrl } from './env';
@@ -162,6 +163,7 @@ export class BotEngine extends EventEmitter {
     }
     this.exitLoop(gen);
     this.orderLoop(gen);
+    this.moodLoop(gen);
     this.balanceLoop(gen);
     this.aiLoop(gen);
     const wsu = this.cfg.execution.fastStream ? heliusWsUrl(rpcUrl()) : null;
@@ -470,37 +472,123 @@ export class BotEngine extends EventEmitter {
   }
 
   /** Market filters, the holder check and the token safety check (route, honeypot, authorities). */
+  /**
+   * Market filters, holder check, rug memory and token safety (route, honeypot, authorities).
+   * All lookups start at the same time (they don't depend on each other), then the answers are
+   * checked in the usual order. This takes about as long as the slowest lookup instead of all of them added up.
+   */
   private async tokenChecks(mint: string, sol: number, wantInfo: boolean, quiet = false): Promise<string | { info: MarketInfo | null; holders: HolderStats | null; check: Extract<Awaited<ReturnType<typeof checkToken>>, { ok: true }> }> {
     const { cfg } = this;
     const f = cfg.filters;
+    const started = Date.now();
+    if (cfg.safety.rugMemory && this.rugs.mints.includes(mint)) return 'this coin rugged you before (rug memory)';
+    const settle = <T>(p: Promise<T>) => p.then((v) => ({ ok: true as const, v }), (e: Error) => ({ ok: false as const, e }));
+    const wantMarket = f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0;
+    const wantHolders = (f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || wantInfo) && hasSecret('SOLSCAN_API_KEY');
+    const wantCreator = cfg.safety.rugMemory && this.rugs.creators.length > 0;
+    const [market, solUsd, hold, check, creator] = await Promise.all([
+      wantMarket ? settle(getMarketInfo(mint)) : null,
+      wantMarket ? getSolUsd().catch(() => null) : null,
+      wantHolders ? settle(this.cachedHolders(mint)) : null,
+      checkToken(this.conn, cfg, mint, BigInt(Math.round(sol * 1e9))).catch((e) => ({ ok: false as const, reason: (e as Error).message })),
+      // Who made this coin? Only waited for briefly, so it never slows a buy by more than 1.5 s.
+      wantCreator ? Promise.race([tokenCreator(this.conn, mint).catch(() => null), sleep(1500).then(() => null)]) : null,
+    ]);
     let info: MarketInfo | null = null;
-    if (f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0) {
-      try {
-        info = await getMarketInfo(mint);
-      } catch (e) {
-        if (f.skipIfNoMarketData) return `couldn't check market data (${(e as Error).message})`;
-        if (!quiet) this.log(`  note: couldn't check market data, continuing (${(e as Error).message})`, 'warn');
-      }
-      const solUsd = await getSolUsd();
+    if (market) {
+      if (market.ok) info = market.v;
+      else if (f.skipIfNoMarketData) return `couldn't check market data (${market.e.message})`;
+      else if (!quiet) this.log(`  note: couldn't check market data, continuing (${market.e.message})`, 'warn');
       const why = marketSkipReason(info, f, solUsd ? sol * solUsd : null, Date.now());
       if (why) return why;
     }
-    // Holder check (Solscan): skip tokens a few wallets control.
     let holders: HolderStats | null = null;
-    if ((f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || wantInfo) && hasSecret('SOLSCAN_API_KEY')) {
-      try {
-        const supply = await this.conn.getTokenSupply(new PublicKey(mint)).then((r) => BigInt(r.value.amount)).catch(() => null);
-        holders = await getHolderStats(mint, supply);
-      } catch (e) {
-        if (f.skipIfNoMarketData) return `couldn't check holders (${(e as Error).message})`;
-        if (!quiet) this.log(`  note: couldn't check holders, continuing (${(e as Error).message})`, 'warn');
-      }
+    if (hold) {
+      if (hold.ok) holders = hold.v;
+      else if (f.skipIfNoMarketData) return `couldn't check holders (${hold.e.message})`;
+      else if (!quiet) this.log(`  note: couldn't check holders, continuing (${hold.e.message})`, 'warn');
       const why = holderSkipReason(holders, f);
       if (why) return why;
     }
-    const check = await checkToken(this.conn, cfg, mint, BigInt(Math.round(sol * 1e9)));
+    if (creator && this.rugs.creators.includes(creator)) return `made by ${short(creator)}, whose coin rugged you before (rug memory)`;
     if (!check.ok) return check.reason;
+    this.lastCheckMs = Date.now() - started;
     return { info, holders, check };
+  }
+  /** How long the last full set of checks took (shown in the log, to see the speed-up). */
+  lastCheckMs = 0;
+
+  private holderCache = new Map<string, { at: number; h: HolderStats | null }>();
+  private async cachedHolders(mint: string): Promise<HolderStats | null> {
+    const hit = this.holderCache.get(mint);
+    if (hit && Date.now() - hit.at < 3 * 60_000) return hit.h;
+    const supply = await this.conn.getTokenSupply(new PublicKey(mint)).then((r) => BigInt(r.value.amount)).catch(() => null);
+    const h = await getHolderStats(mint, supply);
+    this.holderCache.set(mint, { at: Date.now(), h });
+    if (this.holderCache.size > 300) this.holderCache.delete(this.holderCache.keys().next().value!);
+    return h;
+  }
+
+  // ---------- rug memory ----------
+  rugs: { mints: string[]; creators: string[] } = (() => {
+    try {
+      const j = JSON.parse(fs.readFileSync('data/rugs.json', 'utf8'));
+      return { mints: Array.isArray(j.mints) ? j.mints.slice(-2000) : [], creators: Array.isArray(j.creators) ? j.creators.slice(-2000) : [] };
+    } catch {
+      return { mints: [], creators: [] };
+    }
+  })();
+  private saveRugs() {
+    fs.mkdirSync('data', { recursive: true });
+    fs.writeFileSync('data/rugs.json', JSON.stringify(this.rugs));
+  }
+  /** A coin rugged us: never buy it again, nor coins from whoever created it. */
+  private rememberRug(mint: string, why: string) {
+    if (!this.cfg.safety.rugMemory) return;
+    if (!this.rugs.mints.includes(mint)) this.rugs.mints.push(mint);
+    this.saveRugs();
+    tokenCreator(this.conn, mint)
+      .then((c) => {
+        if (c && !this.rugs.creators.includes(c)) {
+          this.rugs.creators.push(c);
+          this.saveRugs();
+          this.log(`Rug memory: won't buy ${short(mint)} again, nor other coins made by ${short(c)} (${why}).`, 'system');
+        } else this.log(`Rug memory: won't buy ${short(mint)} again (${why}).`, 'system');
+      })
+      .catch(() => this.log(`Rug memory: won't buy ${short(mint)} again (${why}).`, 'system'));
+  }
+
+  // ---------- market mood ----------
+  mood: Mood = { level: 'unknown', factor: 1, why: 'not checked yet' };
+  private async moodLoop(gen: number) {
+    while (gen === this.gen) {
+      if (this.cfg.risk.moodFilter) {
+        const [sol, pools] = await Promise.all([markets.solChange().catch(() => null), markets.scoutPools().catch(() => null)]);
+        const next = moodFrom({ solH1Pct: sol?.h1 ?? null, solH24Pct: sol?.h24 ?? null, fallingShare: pools ? fallingShare(pools) : null });
+        if (next.level !== this.mood.level && next.level !== 'unknown' && this.mood.level !== 'unknown') {
+          this.log(next.level === 'bad' ? `Market mood is bad (${next.why}): no new buys from signals until it improves.` : next.level === 'cautious' ? `Market mood is cautious (${next.why}): buying at half size.` : `Market mood is back to normal (${next.why}).`, next.level === 'good' ? 'system' : 'warn');
+        }
+        this.mood = next;
+        this.emit('status');
+      }
+      await sleep(3 * 60_000);
+    }
+  }
+
+  // ---------- who bought what recently (for "wallets agree") ----------
+  private recentBuys: RecentBuy[] = [];
+  private records: { at: number; recs: Record<string, { closed: number; wins: number; pnlSol: number }>; gaps: Record<string, number> } | null = null;
+  /** Each wallet's record with you and median copy gap, refreshed at most once a minute (cheap on every buy). */
+  private walletEdges() {
+    if (this.records && Date.now() - this.records.at < 60_000) return this.records;
+    const trades = this.readTrades();
+    const recs = walletRecords(trades, this.cfg.mode);
+    const per: Record<string, number[]> = {};
+    for (const t of trades as any[]) if (t.mode === this.cfg.mode && t.side === 'buy' && t.source && typeof t.gapPct === 'number') (per[t.source] ??= []).push(t.gapPct);
+    const gaps: Record<string, number> = {};
+    for (const [w, g] of Object.entries(per)) if (g.length >= 3) gaps[w] = [...g].sort((a, b) => a - b)[Math.floor(g.length / 2)];
+    this.records = { at: Date.now(), recs, gaps };
+    return this.records;
   }
 
   private async onTargetBuy(s: Swap) {
@@ -508,20 +596,48 @@ export class BotEngine extends EventEmitter {
     const r = cfg.risk;
     const skip = (why: string) => this.log(`  skipped: ${why}`, 'skip');
 
-    const blocked = buyBlockReason(this.guard, r, Date.now());
+    const now = Date.now();
+    const b = cfg.buy;
+    // Remember every buy we see (even ones we skip), to spot several wallets agreeing.
+    this.recentBuys = [...this.recentBuys.filter((x) => now - x.t < 4 * 3_600_000), { mint: s.mint, wallet: s.wallet, t: now }].slice(-500);
+    const agree = consensusWallets(this.recentBuys, s.mint, now, b.consensusWindowMin);
+
+    const blocked = buyBlockReason(this.guard, r, now);
     if (blocked) return skip(blocked);
     const holding = state.positions[s.mint];
-    if (holding && r.skipIfAlreadyHolding) return skip('already holding');
+    // A second wallet confirming a coin we hold: buy more, once (if turned on).
+    const addOn = !!holding && b.consensusAddOn && b.consensusBoost > 1 && agree.length >= 2 && !holding.addedOn && !holding.sources.includes(s.wallet);
+    if (holding && r.skipIfAlreadyHolding && !addOn) return skip('already holding');
     if (!holding && Object.keys(state.positions).length >= r.maxOpenPositions) return skip('max open positions reached');
     const rules = walletRules(cfg, s.wallet);
     if (s.quote === 'SOL' && s.quoteAmount < rules.minTargetBuySol) return skip(`their buy is below ${rules.minTargetBuySol} SOL`);
+    if (b.soloMinTheirSol > 0 && agree.length < 2 && s.quote === 'SOL' && s.quoteAmount < b.soloMinTheirSol) return skip(`only one wallet bought it, with less than ${b.soloMinTheirSol} SOL`);
+    if (cfg.risk.moodFilter && this.mood.level === 'bad') return skip(`market mood is bad (${this.mood.why})`);
 
-    // Size: base amount × this wallet's multiplier, then the min/max limits.
+    // Size: base amount × this wallet's multiplier × the smart factors, then the min/max limits.
     const w = cfg.wallets.find((x) => x.address === s.wallet);
-    let sol = cfg.buy.sizing === 'percent' && s.quote === 'SOL' ? (s.quoteAmount * cfg.buy.percentOfTarget) / 100 : cfg.buy.fixedSol;
+    let sol = b.sizing === 'percent' && s.quote === 'SOL' ? (s.quoteAmount * b.percentOfTarget) / 100 : b.fixedSol;
     if (w && !w.enabled) return skip(`${w.label} is paused${w.pausedReason ? ` (${w.pausedReason})` : ''}`);
     sol *= (w?.sizeMultiplier ?? 1) * trialFactor(w?.trialStage);
-    sol = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol));
+    const why: string[] = [];
+    if (agree.length >= 2 && b.consensusBoost > 1) {
+      sol *= b.consensusBoost;
+      why.push(`×${b.consensusBoost}: ${agree.length} of your wallets bought it within ${b.consensusWindowMin} min`);
+    }
+    if (b.sizeByRecord) {
+      const e = this.walletEdges();
+      const rf = recordFactor(e.recs[s.wallet], e.gaps[s.wallet] ?? null);
+      if (rf.factor !== 1) {
+        sol *= rf.factor;
+        why.push(`×${rf.factor}: ${rf.why}`);
+      }
+    }
+    if (cfg.risk.moodFilter && this.mood.level === 'cautious') {
+      sol *= this.mood.factor;
+      why.push(`×${this.mood.factor}: market mood cautious (${this.mood.why})`);
+    }
+    sol = Math.min(b.maxSol, Math.max(b.minSol, sol));
+    if (why.length) this.log(`  size ${sol.toFixed(3)} SOL (${why.join('; ')})`, 'info');
     if (exposure(state) + sol > r.maxTotalExposureSol) return skip('max total exposure reached');
     if (cfg.mode === 'paper') {
       const free = paperFreeSol(cfg.paper.startSol, state.realizedPnlSol, exposure(state));
@@ -531,15 +647,15 @@ export class BotEngine extends EventEmitter {
       const used = walletExposureSol(Object.values(state.positions), w.address);
       if (used + sol > w.maxExposureSol) return skip(`${w.label}'s budget is used up (${used.toFixed(3)} of ${w.maxExposureSol} SOL)`);
     }
-    if (this.kp && cfg.mode === 'live') {
-      const bal = (await this.conn.getBalance(this.kp.publicKey)) / 1e9;
-      if (bal - sol < r.solReserve) return skip(`wallet balance ${bal.toFixed(3)} SOL too low`);
-    }
-
-    // Market filters (liquidity, trade size vs pool, market cap, token age), holders, token safety.
+    // Market filters, holders, rug memory and token safety, with the wallet balance check, all at once.
     const useAi = cfg.ai.enabled && cfg.ai.decideBuys;
-    const checked = await this.tokenChecks(s.mint, sol, useAi);
+    const [bal, checked] = await Promise.all([
+      this.kp && cfg.mode === 'live' ? this.conn.getBalance(this.kp.publicKey).then((x) => x / 1e9) : null,
+      this.tokenChecks(s.mint, sol, useAi),
+    ]);
+    if (bal != null && bal - sol < r.solReserve) return skip(`wallet balance ${bal.toFixed(3)} SOL too low`);
     if (typeof checked === 'string') return skip(checked);
+    this.log(`  checks passed in ${(this.lastCheckMs / 1000).toFixed(1)} s`, 'info');
     let { info, check } = checked;
     const { holders } = checked;
     let lamports = BigInt(Math.round(sol * 1e9));
@@ -593,6 +709,11 @@ export class BotEngine extends EventEmitter {
       }
     }
     await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
+    if (addOn && state.positions[s.mint]) {
+      state.positions[s.mint].addedOn = true;
+      saveState(state, cfg.mode);
+      this.log(`  bought more: ${agree.length} of your wallets now hold it`, 'info');
+    }
   }
 
   /**
@@ -614,6 +735,7 @@ export class BotEngine extends EventEmitter {
     if (!this.running || !sc.tradeCoins) return 'the scanner is off';
     this.log(`Market scanner: ${sig.symbol || short(sig.mint)} is ${sig.why}`, 'signal');
     if (this.state.positions[sig.mint]) return 'already holding';
+    if (this.cfg.risk.moodFilter && this.mood.level === 'bad') return `market mood is bad (${this.mood.why})`;
     const positions = Object.values(this.state.positions);
     const mine = positions.filter((p) => p.sources.includes(SCANNER_SOURCE)).length;
     if (mine >= sc.maxPositions) return `the scanner already holds ${mine} coin${mine > 1 ? 's' : ''} (its maximum)`;
@@ -771,6 +893,7 @@ export class BotEngine extends EventEmitter {
           if (why && gen === this.gen && !this.exiting.has(p.mint)) {
             changed = true;
             this.log(`${short(p.mint)}: ${why}. Selling everything.`, 'warn');
+            if (/liquidity fell|value fell/.test(why)) this.rememberRug(p.mint, why);
             this.exiting.add(p.mint);
             this.enqueue(async () => {
               try {
@@ -884,6 +1007,8 @@ export class BotEngine extends EventEmitter {
       paper: this.cfg.mode === 'paper' ? { startSol: this.cfg.paper.startSol, freeSol: paperFreeSol(this.cfg.paper.startSol, this.state.realizedPnlSol, exposure(this.state)) } : null,
       guard: { blocked: buyBlockReason(this.guard, this.cfg.risk, Date.now()), dayPnlSol: this.guard.dayPnlSol, lossStreak: this.guard.lossStreak },
       panicking: this.panicking,
+      mood: this.cfg.risk.moodFilter ? this.mood : null,
+      rugs: { coins: this.rugs.mints.length, creators: this.rugs.creators.length },
       orders: [...this.orders.filter((o) => o.status === 'active'), ...this.orders.filter((o) => o.status !== 'active').slice(-15).reverse()],
       wallet: this.kp ? { address: this.kp.publicKey.toBase58(), balance: this.walletBalance } : null,
     };

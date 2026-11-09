@@ -856,9 +856,17 @@ function banners() {
   if (g?.blocked) out.push(`<div class="banner danger"><div><b>New buys are paused.</b> ${esc(g.blocked)} Sells, stop-losses and take-profits keep running.</div><button class="btn sm" onclick="resumeBuying()">Resume buying</button></div>`);
   if (cfg.mode === 'paper') out.push(`<div class="banner info"><div><b>Paper trading.</b> The bot simulates every trade with real prices but never spends money. Run it like this for a few days before going live.</div></div>`);
   else if (!c.hasPrivateKey) out.push(`<div class="banner danger"><div><b>Live mode needs a trading wallet.</b> Add one in Settings → Connection.</div><button class="btn sm" onclick="go('settings')">Open settings</button></div>`);
+  const m = S.status?.mood;
+  if (m && S.status.running && (m.level === 'bad' || m.level === 'cautious')) out.push(`<div class="banner ${m.level === 'bad' ? 'danger' : 'warn'}"><div><b>Market mood: ${m.level === 'bad' ? 'bad, so no new buys from signals' : 'cautious, so buying at half size'}.</b> ${esc(m.why)}. Sells, exits and your own orders keep running. Turn this off in Settings → Limits.</div></div>`);
+  const t = S.tune;
+  if (t && t.status === 'better' && !t.dismissed) out.push(`<div class="banner info"><div><b>Weekly settings check: better exit settings found.</b> ${esc(t.message)} Past results can be luck; you can always switch back in Settings.</div><button class="btn sm primary" onclick="applyTune()">Use these</button><button class="btn sm" onclick="dismissTune()">Dismiss</button></div>`);
   if (c.usingPublicRpc) out.push(`<div class="banner warn"><div><b>You're on the free public RPC.</b> It's rate-limited and will miss trades. Add a free Helius key for reliable copying.</div><button class="btn sm" onclick="go('settings')">Add RPC</button></div>`);
   return out.join('');
 }
+
+async function runTuneNow() { const j = await act(() => api('POST', '/api/autotune/run'), 'Comparing your exits on the last 7 days…'); if (j) upsertJob(j); }
+async function applyTune() { const r = await act(() => api('POST', '/api/autotune/apply'), 'Exit settings updated'); if (r) { S.config = r.config; S.tune = r.tune; render(); } }
+async function dismissTune() { const r = await act(() => api('POST', '/api/autotune/dismiss')); if (r) { S.tune = r.tune; render(); } }
 
 function renderDashboard(el) {
   const st = S.status, cfg = S.config;
@@ -2280,6 +2288,13 @@ const FIELDS = [
     { k: 'buy.minTargetBuySol', label: 'Ignore their buys under', unit: 'SOL', help: 'Skips their tiny test buys.' },
     { k: 'risk.maxPriceDriftPct', label: "Don't chase", unit: '% above', help: 'Skip the buy if the price is already this much higher than what they paid. 0 = off.' },
   ]},
+  { title: 'Smart sizing', desc: 'Buy more when the signal is stronger and less when it\'s weaker. Always inside your smallest/largest buy and every limit; the reason for any change is shown in the activity log.', fields: [
+    { k: 'buy.consensusBoost', label: 'When wallets agree, buy', unit: '× size', help: 'If 2 or more of your wallets buy the same coin within the window below, that\'s a stronger signal: buy this much bigger. 1 = off.' },
+    { k: 'buy.consensusWindowMin', label: 'Agreement window', unit: 'min', step: 1 },
+    { k: 'buy.consensusAddOn', label: 'Buy more when a second wallet confirms', type: 'toggle', help: 'If you already hold a coin and another of your wallets buys it, buy more (once), even with "Don\'t buy more of a token you hold" on.' },
+    { k: 'buy.soloMinTheirSol', label: 'Skip lone small buys under', unit: 'SOL', help: 'When only one wallet bought a coin and spent less than this, skip it. 0 = off.' },
+    { k: 'buy.sizeByRecord', label: 'Size wallets by their record', type: 'toggle', help: 'After 5+ closed trades: wallets that make you money get up to 1.5× size, losing ones 0.6×, and wallets you copy at much worse prices (big copy gap) get less.' },
+  ]},
   { title: 'Selling', desc: 'Take profits in steps, and protect gains with a trailing stop. Percentages are gains over your entry price (+100% = 2x).', fields: [
     { k: 'sell.copySells', label: 'Copy their sells', type: 'toggle', help: 'If they sell half their tokens, you sell half of yours.' },
     { k: 'risk.stopLossPct', label: 'Stop-loss', unit: '% down', help: 'Sell everything if a position falls this much.' },
@@ -2291,6 +2306,7 @@ const FIELDS = [
     { k: 'exits.trailingAfterPct', label: 'Start trailing stop after', unit: '% up', help: 'Once a position has been up this much, the trailing stop watches it.' },
     { k: 'exits.trailingStopPct', label: 'Trailing stop', unit: '% drop', help: 'Then sell everything if it falls this much from its highest point. 0 = off.' },
     { k: 'risk.takeProfitPct', label: 'Sell everything at', unit: '% up', help: 'Optional: close the whole position at this gain. 0 = off (use the steps above).' },
+    { k: 'tune.weekly', label: 'Weekly settings check', type: 'toggle', help: () => `Once a week, while the bot runs, compare these exits with 15 other setups on your wallets' last 7 days. If one clearly did better, the Dashboard suggests it; nothing changes unless you press Use. ${S.tune ? `<b>Last check ${ago(S.tune.at)} ago:</b> ${esc(S.tune.message)}` : ''} <a href="#" onclick="runTuneNow();return false">Check now</a>` },
   ]},
   { title: 'Rug protection', desc: 'While you hold a token, sell everything at once if it looks like a rug pull or a dump. Checked with the stop-loss. 0 turns a check off.', fields: [
     { k: 'protect.liquidityDropPct', label: 'Sell if liquidity drains by', unit: '% from high', help: 'The pool emptying out is the classic rug pull. Compared with the highest liquidity seen since you bought. Pump.fun tokens still on their bonding curve have no pool figure, so this waits until they graduate.' },
@@ -2316,6 +2332,7 @@ const FIELDS = [
     { k: 'risk.maxSignalAgeSec', label: 'Ignore trades older than', unit: 'sec', step: 1, help: "If the bot sees a trade late, the price has probably moved." },
     { k: 'risk.solReserve', label: 'Always keep in wallet', unit: 'SOL', help: 'Left untouched to pay transaction fees.' },
     { k: 'risk.panicLossSol', label: 'Panic limit', unit: 'SOL', help: "Sell everything and stop the bot if today's result (closed trades plus what open positions are worth now) reaches minus this much. Stronger than the daily loss limit, which only stops new buys. 0 = off." },
+    { k: 'risk.moodFilter', label: 'Market mood filter', type: 'toggle', help: 'Checks every 3 minutes. When SOL drops 2%+ in an hour (or 6%+ in a day) or most trending coins are falling, buys from signals are halved; at 4%+ an hour (12%+ a day) or 80% falling, they stop until it improves. Your own orders aren\'t affected.' },
     { k: 'risk.dailyLossLimitSol', label: 'Daily loss limit', unit: 'SOL', help: 'Stop new buys for the rest of the day after losing this much. Sells and exits keep running. 0 = off.' },
     { k: 'risk.pauseAfterLosses', label: 'Pause after losses in a row', unit: 'trades', step: 1, help: 'A cool-down after a losing streak. 0 = off.' },
     { k: 'risk.pauseMinutes', label: 'Pause length', unit: 'min', step: 1 },
@@ -2331,6 +2348,7 @@ const FIELDS = [
     { k: 'safety.rejectFreezeAuthority', label: 'Skip freezable tokens', type: 'toggle', help: "The creator could freeze your tokens so you can't sell. Strongly recommended." },
     { k: 'safety.rejectMintAuthority', label: 'Skip tokens that can still be minted', type: 'toggle', help: 'The creator could print more supply.' },
     { k: 'safety.rejectToken2022', label: 'Skip Token-2022 tokens', type: 'toggle', help: 'Newer token standard that can carry transfer taxes.' },
+    { k: 'safety.rugMemory', label: 'Rug memory', type: 'toggle', help: () => `When a coin rugs you (its pool drains, or it crashes within minutes), never buy it again, nor other coins from the wallet that created it.${S.status?.rugs ? ` <b>Remembered: ${S.status.rugs.coins} coin${S.status.rugs.coins === 1 ? '' : 's'}, ${S.status.rugs.creators} creator${S.status.rugs.creators === 1 ? '' : 's'}.</b>` : ''}` },
     { k: 'safety.blacklist', label: 'Never buy these tokens', type: 'list', help: 'One token address per line.' },
   ]},
   { title: 'Phone alerts', id: 'alerts-settings', desc: 'Get a message on Telegram or Discord when something happens, so you don\'t have to keep Copybot open.', extra: alertsSetupHtml, fields: [
@@ -2375,6 +2393,8 @@ const FIELDS = [
     { k: 'execution.priorityLevel', label: 'Transaction priority', type: 'select', options: [['medium', 'Normal'], ['high', 'High'], ['veryHigh', 'Very high']] },
     { k: 'execution.priorityFeeMaxLamports', label: 'Max priority fee per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9) },
     { k: 'execution.jitoTipLamports', label: 'Jito tip per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9), help: 'Live mode: pay validators running Jito a tip (instead of the priority fee) so your trade lands sooner. 0.0005–0.002 SOL is typical when it\'s busy. 0 = off. Tips only ever go to Jito\'s official tip accounts, capped at this amount.' },
+    { k: 'execution.dynamicSlippage', label: 'Smart slippage', type: 'toggle', help: 'Live mode: Jupiter works out the slippage each trade needs (never above your Max slippage), so calm coins get tight fills and fast ones still go through.' },
+    { k: 'execution.mevProtect', label: 'Front-running protection (Jito)', type: 'toggle', help: () => `Live mode: send trades privately through Jito so bots can't see them and buy just before you. Needs a Jito tip above.${S.config.execution.jitoTipLamports > 0 ? '' : ' <b>Set a Jito tip to use this.</b>'} If Jito doesn't take a trade, it goes the normal way.` },
     { k: 'execution.fastStream', label: 'Fast trade detection (Helius)', type: 'toggle', help: () => `Gets the copied wallet\'s full transaction the moment it happens, instead of being told and then fetching it. Needs a Helius RPC with Enhanced WebSockets on your plan; otherwise Copybot uses the normal method automatically.${S.status?.stream ? ` <b>Status: ${esc(S.status.stream)}</b>` : ''}` },
     { k: 'monitor.pollIntervalSec', label: 'Backup check every', unit: 'sec', step: 1, help: 'Polling backup in case the live feed drops a trade.' },
     { k: 'monitor.exitCheckIntervalSec', label: 'Check stop-loss / take-profit every', unit: 'sec', step: 1 },
@@ -2689,6 +2709,7 @@ function connectEvents() {
     const pts = S.series.points; if (!pts.length || p[0] > pts[pts.length - 1][0]) pts.push(p);
     const c = $('#pf-chart'); if (c && S.page === 'dashboard') { c.outerHTML = portfolioCard(); bindPortfolio(); }
   });
+  es.addEventListener('autotune', (e) => { S.tune = JSON.parse(e.data); if (S.page === 'dashboard' || S.page === 'settings') render(); });
   es.addEventListener('scanner', (e) => { S.scanner = JSON.parse(e.data); renderChrome(); if (S.page === 'scanner' && !S.dirty) render(); });
   es.addEventListener('trades-reset', () => load());
   es.addEventListener('health', (e) => { S.health = JSON.parse(e.data); if (S.page === 'wallets') render(); });
@@ -2717,7 +2738,7 @@ async function load() {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
     const firstLoad = !S.loadedOnce; S.loadedOnce = true;
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, strategies: d.strategies || [], health: d.health || null });
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, tune: d.tune || null, strategies: d.strategies || [], health: d.health || null });
     render();
     if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }

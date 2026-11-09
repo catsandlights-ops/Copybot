@@ -89,7 +89,19 @@ export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'> & 
 export type Config = {
   mode: 'paper' | 'live';
   wallets: WalletCfg[];
-  buy: { sizing: 'fixed' | 'percent'; fixedSol: number; percentOfTarget: number; minSol: number; maxSol: number; minTargetBuySol: number };
+  buy: {
+    sizing: 'fixed' | 'percent';
+    fixedSol: number;
+    percentOfTarget: number;
+    minSol: number;
+    maxSol: number;
+    minTargetBuySol: number;
+    consensusBoost: number; // size × when 2+ copied wallets buy the same coin (1 = off)
+    consensusWindowMin: number;
+    consensusAddOn: boolean; // buy more of a coin you hold when a second wallet confirms it (once)
+    soloMinTheirSol: number; // skip a coin only one wallet bought, if they spent less than this (0 = off)
+    sizeByRecord: boolean; // bigger buys for wallets that make you money, smaller for losers / late copies
+  };
   sell: { copySells: boolean };
   risk: {
     maxOpenPositions: number;
@@ -100,7 +112,8 @@ export type Config = {
     maxSignalAgeSec: number;
     solReserve: number;
     maxPriceDriftPct: number; // don't chase: skip if our price is this much above the copied wallet's entry (0 = off)
-    panicLossSol: number; // sell everything and stop when today's closed + open result reaches −this (0 = off)
+    panicLossSol: number;
+    moodFilter: boolean; // buy less (or nothing) from signals when SOL is dropping or most coins are falling // sell everything and stop when today's closed + open result reaches −this (0 = off)
     dailyLossLimitSol: number; // stop new buys for the day after losing this much (0 = off)
     pauseAfterLosses: number; // pause new buys after this many losing sells in a row (0 = off)
     pauseMinutes: number;
@@ -140,13 +153,18 @@ export type Config = {
     rejectMintAuthority: boolean;
     rejectToken2022: boolean;
     blacklist: string[];
+    rugMemory: boolean; // after a rug pull, never buy that coin again, nor coins from the same creator
   };
   execution: {
     priorityLevel: 'medium' | 'high' | 'veryHigh';
     priorityFeeMaxLamports: number;
     jitoTipLamports: number; // 0 = off; otherwise pay this Jito tip instead of a priority fee
     fastStream: boolean; // Helius enhanced websocket for faster signals (needs a Helius RPC)
+    dynamicSlippage: boolean; // live: let Jupiter set the slippage per trade (never above your max)
+    mevProtect: boolean; // live, with a Jito tip: send privately through Jito only (no front-running)
   };
+  /** Weekly check of your exit settings against the last 7 days; suggests better ones. */
+  tune: { weekly: boolean };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
   /** New wallets start small and grow as they prove themselves; any wallet pauses after a losing streak. */
   trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number };
@@ -199,7 +217,7 @@ export type Config = {
 export const DEFAULT_CONFIG: Config = {
   mode: 'paper',
   wallets: [],
-  buy: { sizing: 'fixed', fixedSol: 0.05, percentOfTarget: 5, minSol: 0.01, maxSol: 0.2, minTargetBuySol: 0.2 },
+  buy: { sizing: 'fixed', fixedSol: 0.05, percentOfTarget: 5, minSol: 0.01, maxSol: 0.2, minTargetBuySol: 0.2, consensusBoost: 1.5, consensusWindowMin: 10, consensusAddOn: true, soloMinTheirSol: 0, sizeByRecord: true },
   sell: { copySells: true },
   risk: {
     maxOpenPositions: 5,
@@ -212,6 +230,7 @@ export const DEFAULT_CONFIG: Config = {
     maxPriceDriftPct: 15,
     dailyLossLimitSol: 0.3,
     panicLossSol: 0,
+    moodFilter: true,
     pauseAfterLosses: 4,
     pauseMinutes: 60,
   },
@@ -225,8 +244,10 @@ export const DEFAULT_CONFIG: Config = {
     rejectMintAuthority: false,
     rejectToken2022: false,
     blacklist: [],
+    rugMemory: true,
   },
-  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true },
+  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true, dynamicSlippage: true, mevProtect: false },
+  tune: { weekly: true },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
   trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
   strategy: '',
@@ -243,6 +264,9 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'buy.minSol': [0.001, 100, 'Smallest buy'],
   'buy.maxSol': [0.001, 100, 'Largest buy'],
   'buy.minTargetBuySol': [0, 10_000, 'Ignore their buys under'],
+  'buy.consensusBoost': [1, 3, 'Size when wallets agree'],
+  'buy.consensusWindowMin': [1, 240, 'Agreement window'],
+  'buy.soloMinTheirSol': [0, 10_000, 'Single-wallet minimum'],
   'risk.maxOpenPositions': [1, 100, 'Max tokens held at once'],
   'risk.maxTotalExposureSol': [0.001, 10_000, 'Max SOL in open positions'],
   'risk.stopLossPct': [1, 100, 'Stop-loss'],
@@ -299,7 +323,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],

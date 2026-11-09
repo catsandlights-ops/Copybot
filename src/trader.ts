@@ -50,7 +50,8 @@ export class Trader {
     const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: Number(toToken ? q.inAmount : q.outAmount) / 1e9 };
     if (!this.live) return { sig: 'PAPER', ...quoted };
     const kp = this.kp!;
-    const sig = await executeSwap(this.conn, kp, q, this.cfg.execution.priorityLevel, this.cfg.execution.priorityFeeMaxLamports, this.cfg.execution.jitoTipLamports);
+    const x = this.cfg.execution;
+    const sig = await executeSwap(this.conn, kp, q, x.priorityLevel, x.priorityFeeMaxLamports, x.jitoTipLamports, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn') });
     const tx = await getTx(sig);
     const s = tx && decodeSwap(tx, kp.publicKey.toBase58());
     return s ? { sig, tokenRaw: s.tokenAmount, sol: s.quoteAmount } : { sig, ...quoted };
