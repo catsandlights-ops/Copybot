@@ -1878,7 +1878,8 @@ function renderScanner(el) {
       <div class="card stat"><div class="k">${ICON.star}Win rate</div><div class="v num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '–'}</div><div class="s">${r.wins} of ${r.closed} sells in profit · ${r.trades} buy${r.trades === 1 ? '' : 's'}</div></div>
       <div class="card stat"><div class="k">${pixelSvg(HEART)}Holding now</div><div class="v num">${mine.length} <small style="font-size:13px" class="muted">of ${sc.maxPositions}</small></div><div class="s">${sol(used, 3)} of ${sol(sc.budgetSol, 2)} SOL budget</div><div class="bar"><i style="width:${Math.min(100, (used / sc.budgetSol) * 100)}%"></i></div></div>
     </div>
-    <div class="card"><div class="card-h"><h2>Coins rising right now</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${x.at ? `checked ${ago(x.at)} ago` : sc.tradeCoins ? (running ? 'first check within a minute' : 'starts with the bot') : 'turn on Trade coins to scan'}</span></div>
+    ${proofCardHtml(x)}
+    <div class="card"><div class="card-h"><h2>Coins rising right now</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${x.at ? `checked ${ago(x.at)} ago` : sc.tradeCoins || sc.trackSignals ? (running ? 'first check within a minute' : 'starts with the bot') : 'turn on Trade coins or Track every signal'}</span></div>
       ${x.error ? `<div class="banner warn" style="margin:0 16px 12px"><div>${esc(x.error)}</div></div>` : ''}
       ${x.signals.length ? `<div class="tbl-wrap"><table><thead><tr><th>Coin</th><th class="r">Last hour</th><th class="r" title="Buys vs sells in the last hour">Buys vs sells</th><th class="r" title="Last hour's volume vs its usual hourly volume">Volume</th><th class="r">Liquidity</th><th class="r">Age</th></tr></thead><tbody>${x.signals.map(sigRow).join('')}</tbody></table></div>
         <div class="muted" style="font-size:12px;padding:10px 16px 14px">Best first. A coin shows here when it's up over the last hour but hasn't already run, has more buyers than sellers, more volume than usual, and isn't falling right now. The scanner tries the best one each round (if it has room), and skips coins it tried in the last 6 hours or that fail a safety check.</div>`
@@ -1896,8 +1897,54 @@ function renderScanner(el) {
     const res = await act(() => api('PUT', '/api/config', { ...cfg, scanner: { ...cfg.scanner, [key]: v } }), v ? on : off);
     if (res) { S.config = res.config; renderChrome(); renderScanner(el); } else e.target.checked = !v;
   };
+  const tb = $('#sc-test'); if (tb) tb.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scannertest', { days: Number($('#sc-days').value) })); if (j) { upsertJob(j); renderScanner(el); } };
+  el.querySelectorAll('[data-use-test]').forEach((b) => (b.onclick = async () => {
+    const [entry, exitId] = b.dataset.useTest.split('|');
+    const row = x.test.rows.find((r) => r.entry === entry && r.exitId === exitId);
+    if (!(await confirmModal({ title: 'Use these scanner settings?', confirm: 'Use them', body: `<p><b>${esc(row.entryName)}</b> with <b>${esc(row.name)}</b>${row.exits.maxHoldHours ? `, sell after ${row.exits.maxHoldHours} h` : ''}.</p><p class="muted">On the past ${x.test.days} day${x.test.days > 1 ? 's' : ''} this made ${signed(row.stats.totalSol, 3)} SOL over ${row.stats.signals} trades. Past results don't guarantee future ones; watch the live track record after switching.</p>` }))) return;
+    const r = await act(() => api('POST', '/api/scanner/use-test', { entry, exitId }), 'Scanner settings updated');
+    if (r) { S.config = r.config; renderScanner(el); }
+  }));
   $('#sc-traders').onchange = (e) => toggle(e, 'findTraders', 'Finding traders is on', 'Finding traders is off');
   $('#sc-coins').onchange = (e) => toggle(e, 'tradeCoins', 'Coin trading is on', 'Coin trading is off');
+}
+
+function proofCardHtml(x) {
+  const p = x.proof, t = x.test, sc = S.config.scanner;
+  const job = S.jobs.find((j) => j.kind === 'scannertest' && (j.status === 'queued' || j.status === 'running'));
+  const failed = S.jobs.find((j) => j.kind === 'scannertest' && j.status === 'error' && (!t || j.createdAt > t.at));
+  const line = (st) => st.signals ? `<b class="${cls(st.totalSol)}">${signed(st.totalSol, 3)} SOL</b> · ${Math.round((st.wins / st.signals) * 100)}% won · avg ${pct(st.avgPnlPct)} per trade · ${st.signals} trade${st.signals === 1 ? '' : 's'}` : '<span class="muted">no finished signals yet</span>';
+  const live = !p || !p.tracked
+    ? `<div class="muted" style="font-size:13px">No signals yet. ${sc.trackSignals ? 'While the bot runs, every coin the scanner flags is written down and checked an hour or more later against the real price: what would its exits have made?' : 'Turn on <b>Track every signal</b> in Scanner settings to build a track record.'}</div>`
+    : `<div class="stack" style="gap:6px;font-size:13.5px">
+        <div><span class="muted">All signals:</span> ${line(p.all)}</div>
+        ${p.bought.signals ? `<div><span class="muted">Ones it bought:</span> ${line(p.bought)}</div>` : ''}
+        <div class="muted" style="font-size:12.5px">New coins: ${p.newCoins.signals ? `${signed(p.newCoins.totalSol, 3)} SOL over ${p.newCoins.signals}` : '–'} · Older coins: ${p.oldCoins.signals ? `${signed(p.oldCoins.totalSol, 3)} SOL over ${p.oldCoins.signals}` : '–'} · ${p.tracked} tracked since ${dateTime(p.since)}${p.waiting ? `, ${p.waiting} still playing out` : ''}. As if you'd put ${sol(sc.buySol, 3)} SOL in each, with 3% for fees and slippage.</div>
+      </div>
+      ${p.recent.length ? `<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>Signal</th><th>When</th><th>Bought?</th><th class="r">Result</th><th>How it ended</th></tr></thead><tbody>${p.recent.map((r) => `<tr><td><a href="#" data-mint="${esc(r.mint)}"><b>${esc(r.symbol || short(r.mint))}</b></a> <span class="chip">${r.kind === 'old' ? 'older' : 'new'}</span></td><td class="muted">${ago(r.at)} ago</td><td>${r.bought ? '<span class="pos">bought</span>' : `<span class="muted" title="${esc(r.skipped || '')}">no${r.skipped ? ': ' + esc(r.skipped.length > 40 ? r.skipped.slice(0, 40) + '…' : r.skipped) : ''}</span>`}</td><td class="r num ${r.outcome ? cls(r.outcome.pnlPct) : ''}">${r.outcome ? pct(r.outcome.pnlPct) : '–'}</td><td class="muted">${r.outcome ? `${esc(r.outcome.reason)}${r.outcome.done ? '' : ' (so far)'} · peak ${pct(r.outcome.peakPct)}` : Date.now() - r.at < 3600000 ? 'checked after 1 hour' : 'checking…'}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+  const verdicts = {
+    few: ['warn', 'Too few signals in this period to judge. Try 3 days, or check again later.'],
+    'all-lose': ['danger', 'Every combination lost money on this period. The market may not suit momentum trading right now: keep Trade coins off, or in paper mode.'],
+    'current-loses': ['warn', 'Your current scanner settings lost money on this period, but another combination made money (below). Past results can be luck: try it in paper mode first.'],
+    works: ['info', 'Your current settings made money on this period, and another combination did even better (below).'],
+    'current-best': ['info', 'Your current settings did best on this period.'],
+  };
+  const testHtml = !t ? '' : `
+    <div class="banner ${verdicts[t.verdict][0]}" style="margin:10px 0"><div><b>${t.days}-day test on ${t.coins} coins:</b> ${verdicts[t.verdict][1]}</div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Buying rules</th><th>Exits</th><th class="r">Trades</th><th class="r">Won</th><th class="r">Avg</th><th class="r">Profit (SOL)</th><th></th></tr></thead><tbody>
+      ${t.rows.slice(0, 8).map((r, i) => { const cur = r.entry === sc.rules && JSON.stringify(r.exits) === JSON.stringify({ stopLossPct: sc.stopLossPct, takeProfitPct: sc.takeProfitPct, trailingAfterPct: sc.trailingAfterPct, trailingStopPct: sc.trailingStopPct, maxHoldHours: sc.maxHoldHours }); return `<tr><td>${i === 0 && r.stats.totalSol > 0 ? '🏆 ' : ''}${esc(r.entryName)}</td><td>${esc(r.name)}</td><td class="r num">${r.stats.signals}</td><td class="r num">${r.stats.signals ? Math.round((r.stats.wins / r.stats.signals) * 100) + '%' : '–'}</td><td class="r num ${cls(r.stats.avgPnlPct)}">${pct(r.stats.avgPnlPct)}</td><td class="r num ${cls(r.stats.totalSol)}">${signed(r.stats.totalSol, 3)}</td><td class="r">${cur ? '<span class="chip done">in use</span>' : r.stats.signals && r.stats.totalSol > 0 ? `<button class="btn sm" data-use-test="${r.entry}|${r.exitId}">Use</button>` : ''}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Tested ${ago(t.at)} ago, ${sol(sc.buySol, 3)} SOL per trade, with 3% for fees and slippage. <b>An approximation:</b> past buyer/seller counts aren't available, so only the price and volume rules are replayed, and only on coins that are popular now (which flatters the results). The live track record above is the real test.</div>`;
+  return `<div class="card"><div class="card-h"><div><h2>Is the scanner working?</h2><div class="muted" style="font-size:12.5px">Real results of its signals, and a quick test on recent history.</div></div></div>
+    <div class="card-b stack">
+      <div><div style="font-weight:600;margin-bottom:6px">Live track record</div>${live}</div>
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div class="row" style="justify-content:space-between"><div style="font-weight:600">Test on the past</div>
+          <div class="row"><select class="input" id="sc-days" style="width:auto;height:32px"><option value="1">Last 24 hours</option><option value="2">Last 2 days</option><option value="3" selected>Last 3 days</option></select><button class="btn primary sm" id="sc-test" ${job ? 'disabled' : ''}>${job ? esc(job.progress || 'Testing…') : 'Run test'}</button></div></div>
+        ${failed ? `<div class="banner danger" style="margin:10px 0 0"><div>${esc(failed.error)}</div></div>` : ''}
+        ${testHtml || (job ? '' : '<div class="muted" style="font-size:13px;margin-top:6px">Replays the scanner on the last few days of up to 24 popular coins, with 3 sets of buying rules × 5 exit setups, and shows what each would have made. Takes a minute or two.</div>')}
+      </div>
+    </div></div>`;
 }
 
 // ----- settings -----
@@ -1975,6 +2022,8 @@ const FIELDS = [
     { k: 'scanner.picksPerRun', label: 'New traders per search', unit: 'wallets', step: 1 },
     { k: 'scanner.maxWallets', label: 'Stop adding at', unit: 'wallets', step: 1, help: 'No new traders once you copy this many.' },
     { k: 'scanner.tradeCoins', label: 'Trade coins', type: 'toggle', help: 'Buy coins that are rising on strong buying, on its own (not copying anyone).' },
+    { k: 'scanner.trackSignals', label: 'Track every signal', type: 'toggle', help: 'While the bot runs, note every coin the scanner would flag (even with Trade coins off) and check later how it did. This builds the track record on the Scanner page.' },
+    { k: 'scanner.rules', label: 'Buying rules', type: 'select', options: [['normal', 'Normal'], ['strict', 'Pickier (bigger move, more volume)'], ['loose', 'Looser (smaller moves)']], help: 'Use "Test on the past" on the Scanner page to see which works best right now.' },
     { k: 'scanner.newCoins', label: 'New coins', type: 'toggle', help: '1 hour to 7 days old. Bigger moves, more risk.' },
     { k: 'scanner.oldCoins', label: 'Older coins', type: 'toggle', help: 'Over 7 days old, with deep liquidity. Smaller moves, steadier.' },
     { k: 'scanner.buySol', label: 'Amount per coin', unit: 'SOL' },
@@ -2327,6 +2376,7 @@ function connectEvents() {
     if (S.page === 'research') { if (j.kind === 'scout') render(); else renderJobs(); }
     if (S.page === 'backtest' && (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare')) render();
     if (S.page === 'wallets' && j.kind === 'health') render();
+    if (S.page === 'scanner' && (j.kind === 'scannertest' || j.kind === 'scout') && !S.dirty) render();
     if (S.page === 'autopilot' && j.kind === 'scout') renderAutopilot($('#content'), true);
   });
   es.onerror = () => { $('#run-pill').innerHTML = '<span class="pill"><span class="dot bad"></span>Disconnected</span>'; };

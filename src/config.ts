@@ -164,6 +164,8 @@ export type Config = {
     maxWallets: number; // stop adding once this many wallets are being copied
     picksPerRun: number;
     tradeCoins: boolean;
+    rules: 'normal' | 'strict' | 'loose'; // entry rules: the defaults, pickier, or looser
+    trackSignals: boolean; // while the bot runs, note every coin signal and check later how it did (no buying)
     newCoins: boolean; // 1 hour to 7 days old
     oldCoins: boolean; // over 7 days old
     buySol: number;
@@ -226,7 +228,7 @@ export const DEFAULT_CONFIG: Config = {
   strategy: '',
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
-  scanner: { findTraders: false, traderEveryHours: 6, maxWallets: 8, picksPerRun: 2, tradeCoins: false, newCoins: true, oldCoins: true, buySol: 0.05, budgetSol: 0.3, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
+  scanner: { findTraders: false, traderEveryHours: 6, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, buySol: 0.05, budgetSol: 0.3, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 
@@ -292,11 +294,12 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.newCoins', 'scanner.oldCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
   'execution.priorityLevel': ['medium', 'high', 'veryHigh'],
+  'scanner.rules': ['normal', 'strict', 'loose'],
 };
 
 const get = (o: any, path: string) => path.split('.').reduce((a, k) => a?.[k], o);

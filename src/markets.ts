@@ -350,7 +350,7 @@ export function topTraders(pool: string, duration: (typeof DURATIONS)[number]) {
 }
 
 // ---------------- price history for backtests ----------------
-export type Candle = { t: number; l: number; h: number; c: number }; // t = candle start (ms), USD prices
+export type Candle = { t: number; l: number; h: number; c: number; v?: number }; // t = candle start (ms), USD prices, v = USD volume
 
 /**
  * USD price candles for a token between two times, from its most liquid pool on GeckoTerminal.
@@ -372,7 +372,7 @@ export async function priceHistory(mint: string, fromMs: number, toMs: number): 
   const candles = rows
     .map((r: any) => (Array.isArray(r) ? r.map(num) : []))
     .filter((r) => r.length >= 5 && r.slice(0, 5).every((v) => v !== null && v >= 0))
-    .map(([t, , h, l, c]) => ({ t: t! * 1000, h: h!, l: l!, c: c! }))
+    .map(([t, , h, l, c, v]) => ({ t: t! * 1000, h: h!, l: l!, c: c!, ...(v != null ? { v } : {}) }))
     .filter((k) => k.t + step >= fromMs && k.l > 0)
     .sort((a, b) => a.t - b.t);
   return candles.length ? { step, candles, createdAt } : null;

@@ -100,3 +100,69 @@ test('pickTokens: old-coin slots mix established coins in with new ones', () => 
   // Unused slots go to whichever side has coins.
   assert.deepEqual(pickTokens(rows.slice(4), now, 4, new Set(), 1).map((x) => x.mint), ['O1', 'O2']);
 });
+
+// ---------------- proving the scanner ----------------
+import { entryRulesFor, exitVariants, replayExit, replaySignals, signalStats } from './scanner';
+import type { Candle } from './markets';
+
+const X = { stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 };
+const M = 300_000; // 5-minute candles
+const path = (start: number, prices: [number, number, number][]): Candle[] => prices.map(([l, h, c], i) => ({ t: start + i * M, l, h, c }));
+
+test('replayExit: stop-loss, take-profit, trailing stop, time limit, still open (with costs)', () => {
+  const t0 = 1_000_000_000_000;
+  assert.deepEqual(
+    (({ pnlPct, reason, done }) => ({ pnlPct, reason, done }))(replayExit(1, t0, path(t0, [[0.95, 1.05, 1], [0.75, 1, 0.8]]), X, 0)),
+    { pnlPct: -20, reason: 'stop-loss', done: true },
+  );
+  assert.equal(replayExit(1, t0, path(t0, [[0.98, 1.6, 1.5]]), X, 0).reason, 'take-profit');
+  assert.equal(replayExit(1, t0, path(t0, [[0.98, 1.6, 1.5]]), X, 3).pnlPct, 47); // +50% minus 3% costs
+  // Up 30%, then falls more than 12% from the peak: trailing stop at 1.3 × 0.88.
+  const tr = replayExit(1, t0, path(t0, [[0.99, 1.3, 1.25], [1.1, 1.26, 1.12]]), X, 0);
+  assert.equal(tr.reason, 'trailing stop');
+  assert.equal(tr.pnlPct, 14.4);
+  assert.equal(tr.peakPct, 30);
+  // Drifts sideways past the hold limit.
+  const flat = path(t0, Array.from({ length: 160 }, () => [0.97, 1.03, 1.01] as [number, number, number]));
+  const tl = replayExit(1, t0, flat, X, 0);
+  assert.equal(tl.reason, 'time limit');
+  assert.equal(tl.exitAt, t0 + 144 * M);
+  const open = replayExit(1, t0, flat.slice(0, 10), X, 0);
+  assert.equal(open.done, false);
+  assert.equal(open.reason, 'still open');
+  // The low is checked first: a candle that touches both the stop and the target counts as a loss.
+  assert.equal(replayExit(1, t0, path(t0, [[0.7, 1.6, 1.0]]), X, 0).reason, 'stop-loss');
+  assert.equal(replayExit(1, t0, [], X).done, false);
+});
+
+test('replaySignals: fires on a rising coin with a volume surge, then waits out the trade and 6 hours', () => {
+  const t0 = 1_000_000_000_000;
+  const c: Candle[] = [];
+  // 24 hours flat at 1 with low volume, then a 1-hour climb to 1.2 on heavy volume, then on to 1.6.
+  for (let i = 0; i < 288; i++) c.push({ t: t0 + i * M, l: 0.99, h: 1.01, c: 1, v: 100 });
+  for (let i = 1; i <= 12; i++) c.push({ t: t0 + (287 + i) * M, l: 1 + (i - 1) * 0.0167, h: 1 + i * 0.0167, c: 1 + i * 0.0167, v: 1000 });
+  for (let i = 1; i <= 30; i++) c.push({ t: t0 + (299 + i) * M, l: 1.2 + (i - 1) * 0.015, h: 1.2 + i * 0.015, c: 1.2 + i * 0.015, v: 800 });
+  const sig = replaySignals(c, M, entryRulesFor('new'), X, 0);
+  assert.equal(sig.length, 1); // one trade, then the coin is skipped
+  assert.ok(sig[0].up1hPct >= 8 && sig[0].up1hPct <= 60);
+  assert.ok(sig[0].surge >= 1.3);
+  assert.equal(sig[0].result.reason, 'take-profit');
+  // A flat coin never fires; neither does one rising on no extra volume.
+  assert.equal(replaySignals(c.slice(0, 288), M, entryRulesFor('new'), X).length, 0);
+  const quiet = c.map((k) => ({ ...k, v: 100 }));
+  assert.equal(replaySignals(quiet, M, entryRulesFor('new'), X).length, 0);
+  // Strict rules want a bigger move than this one; loose rules fire earlier.
+  assert.ok(entryRulesFor('new', 'strict').minUp > entryRulesFor('new').minUp);
+  assert.ok(entryRulesFor('new', 'loose').minUp < entryRulesFor('new').minUp);
+});
+
+test('signalStats and exitVariants', () => {
+  const r = (pnlPct: number, done = true) => ({ pnlPct, reason: '', exitAt: 0, done, peakPct: 0, troughPct: 0 });
+  const s = signalStats([r(50), r(-20), r(10, false)], 0.1);
+  assert.deepEqual(s, { signals: 3, closed: 2, wins: 2, avgPnlPct: 13.3, totalSol: 0.04, worstPct: -20, bestPct: 50 });
+  assert.equal(signalStats([], 0.1).avgPnlPct, null);
+  const v = exitVariants(X);
+  assert.equal(v[0].id, 'current');
+  assert.deepEqual(v[0].exits, X);
+  assert.ok(v.length >= 4);
+});
