@@ -2444,6 +2444,9 @@ function renderSettings(el) {
 
       <div class="card" id="netstatus-card">${netStatusHtml()}</div>
 
+      <div class="card"><div class="card-h"><div><h2>Backup and restore</h2><div class="muted" style="font-size:12.5px">One file with your settings, wallets, trade history, positions, orders, scanner records and phone pairings. Use it to keep your history safe, or to move Copybot to another computer. <b>Your private key and API keys are never included</b>: re-enter them after restoring.</div></div></div>
+        <div class="card-b row"><button class="btn primary" id="bk-save">Download backup</button><label class="btn" style="cursor:pointer">Restore from a backup…<input type="file" id="bk-file" accept=".json,application/json" hidden></label><span class="muted" id="bk-msg" style="font-size:13px"></span></div></div>
+
       <div class="card" id="remote-card">${remoteCardHtml()}</div>
 
       <div class="card"><div class="card-h"><h2>Trading mode</h2></div><div class="card-b row" style="justify-content:space-between">
@@ -2489,6 +2492,7 @@ function renderSettings(el) {
 
   bindRemote();
   bindNetStatus();
+  bindBackup();
   el.querySelectorAll('[data-k]').forEach((i) => (i.oninput = i.onchange = () => { S.dirty = true; $('#savebar').style.display = 'flex'; }));
   $('#s-reset').onclick = () => { S.dirty = false; render(); };
   $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));
@@ -2536,6 +2540,30 @@ function netStatusHtml() {
         ${r.fix ? `<div style="font-size:13px;margin-top:2px"><b>Fix:</b> ${esc(r.fix)}</div>` : ''}</div></div>`).join('') : '';
   return `<div class="card-h"><div><h2>Connection status</h2><div class="muted" style="font-size:12.5px">Copybot depends on several outside services. ${st ? `Checked ${ago(st.at)} ago: <b class="${st.summary.level === 'bad' ? 'neg' : st.summary.level === 'warn' ? '' : 'pos'}">${esc(st.summary.text)}</b>.` : 'Check them all at once.'} Checked again every 15 minutes while the bot runs.</div></div><span class="spacer"></span><button class="btn sm" id="ns-check" ${S.nsBusy ? 'disabled' : ''}>${S.nsBusy ? 'Checking…' : 'Check now'}</button></div>
     ${rows ? `<div class="card-b" style="padding-top:0">${rows}</div>` : ''}`;
+}
+function bindBackup() {
+  const save = $('#bk-save'); if (save) save.onclick = async () => {
+    try {
+      const r = await fetch('/api/backup', { headers: { 'x-copybot-token': TOKEN || '' } });
+      if (!r.ok) throw new Error(`Backup failed (${r.status})`);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(await r.blob());
+      link.download = `copybot-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      $('#bk-msg').textContent = 'Saved. Keep the file somewhere safe (it has your trade history).';
+    } catch (e) { toast(e.message, true); }
+  };
+  const file = $('#bk-file'); if (file) file.onchange = async () => {
+    const f = file.files[0]; file.value = '';
+    if (!f) return;
+    let b;
+    try { b = JSON.parse(await f.text()); } catch { return toast("That file isn't a Copybot backup.", true); }
+    if (b?.format !== 'copybot-backup') return toast("That file isn't a Copybot backup.", true);
+    const n = Object.keys(b.files || {}).length;
+    if (!(await confirmModal({ title: 'Restore this backup?', danger: true, confirm: 'Restore', body: `<p>From ${b.createdAt ? new Date(b.createdAt).toLocaleString() : 'an unknown date'}${b.appVersion ? ` (Copybot v${esc(b.appVersion)})` : ''}: ${n} file${n === 1 ? '' : 's'}.</p><p>It <b>replaces</b> your current settings, wallets and history. A copy of what you have now is kept first, so this can be undone.</p>${S.status.running ? '<p class="neg"><b>Stop the bot first.</b></p>' : ''}` }))) return;
+    const r = await act(() => fetch('/api/backup/restore', { method: 'POST', headers: { 'x-copybot-token': TOKEN || '', 'content-type': 'application/json' }, body: JSON.stringify(b) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error || `Error ${x.status}`); return j; }));
+    if (r) await confirmModal({ title: 'Backup restored', confirm: 'OK', body: `<p>${r.files} files restored. <b>Close Copybot and open it again</b> to finish.</p><p class="muted">Re-enter your private key and API keys in Settings → Connection if this is a new computer.</p>` });
+  };
 }
 function paintNetStatus() { const el = $('#netstatus-card'); if (el) { el.innerHTML = netStatusHtml(); bindNetStatus(); } }
 function bindNetStatus() {

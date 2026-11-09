@@ -22,6 +22,7 @@ import QRCode from 'qrcode';
 import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report';
 import { describeOrder, makeOrder } from './orders';
 import { chainOf } from './chains';
+import { buildBackup, checkBackup, restoreBackup } from './backup';
 import { runChecks, summary as statusSummary, type Check, type CheckResult } from './status';
 import { baseRpc } from './chains/base';
 import { getChain as getChainAdapter } from './chains';
@@ -800,11 +801,11 @@ function readWatchlist(): string[] {
   }
 }
 
-async function readBody(req: http.IncomingMessage): Promise<any> {
+async function readBody(req: http.IncomingMessage, limit = 200_000): Promise<any> {
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 200_000) throw new HttpError(413, 'Request too large');
+    if (raw.length > limit) throw new HttpError(413, 'Request too large');
   }
   try {
     return raw ? JSON.parse(raw) : {};
@@ -1476,6 +1477,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   if (route === 'POST /api/status/check') return send(res, 200, await checkStatus());
+
+  // ---------- backup and restore (secrets are never included) ----------
+  if (route === 'GET /api/backup') {
+    const b = buildBackup(process.env.COPYBOT_VERSION ?? null);
+    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/json' });
+    return res.end(JSON.stringify(b));
+  }
+  if (route === 'POST /api/backup/restore') {
+    if (engine.running) throw new HttpError(409, 'Stop the bot first, then restore.');
+    const c = checkBackup(await readBody(req, 64_000_000));
+    if ('error' in c) throw new HttpError(400, c.error);
+    const safety = restoreBackup(c.files, process.env.COPYBOT_VERSION ?? null);
+    engine.reload();
+    engine.log(`Restored a backup (${Object.keys(c.files).length} files). Your data from before is kept in ${safety}.`, 'system');
+    return send(res, 200, { files: Object.keys(c.files).length, safety, restartNeeded: true });
+  }
 
   if (route === 'GET /api/state') {
     return send(res, 200, {
