@@ -2414,6 +2414,7 @@ const FIELDS = [
     { k: 'execution.priorityLevel', label: 'Transaction priority', type: 'select', options: [['medium', 'Normal'], ['high', 'High'], ['veryHigh', 'Very high']] },
     { k: 'execution.priorityFeeMaxLamports', label: 'Max priority fee per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9) },
     { k: 'execution.jitoTipLamports', label: 'Jito tip per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9), help: 'Live mode: pay validators running Jito a tip (instead of the priority fee) so your trade lands sooner. 0.0005–0.002 SOL is typical when it\'s busy. 0 = off. Tips only ever go to Jito\'s official tip accounts, capped at this amount.' },
+    { k: 'execution.baseMaxFeeEth', label: 'Max Base fee per transaction', unit: 'ETH', help: 'Live trading on Base: a transaction whose network fee could go above this is refused before signing. Base fees are usually tiny (well under 0.0005 ETH).' },
     { k: 'execution.dynamicSlippage', label: 'Smart slippage', type: 'toggle', help: 'Live mode: Jupiter works out the slippage each trade needs (never above your Max slippage), so calm coins get tight fills and fast ones still go through.' },
     { k: 'execution.mevProtect', label: 'Front-running protection (Jito)', type: 'toggle', help: () => `Live mode: send trades privately through Jito so bots can't see them and buy just before you. Needs a Jito tip above.${S.config.execution.jitoTipLamports > 0 ? '' : ' <b>Set a Jito tip to use this.</b>'} If Jito doesn't take a trade, it goes the normal way.` },
     { k: 'execution.fastStream', label: 'Fast trade detection (Helius)', type: 'toggle', help: () => `Gets the copied wallet\'s full transaction the moment it happens, instead of being told and then fetching it. Needs a Helius RPC with Enhanced WebSockets on your plan; otherwise Copybot uses the normal method automatically.${S.status?.stream ? ` <b>Status: ${esc(S.status.stream)}</b>` : ''}` },
@@ -2499,6 +2500,12 @@ function renderSettings(el) {
             <div class="row"><button class="btn danger" id="k-remove">Remove key</button></div>`
           : `<div class="banner warn" style="margin:0"><div><b>Use a brand-new wallet just for this bot</b>, funded only with what you can afford to lose. Never paste the key of your main wallet. In Phantom: create a new account → Settings → Show private key.</div></div>
             <div class="row"><input class="input mono" id="k-input" type="password" placeholder="Private key (base58)" autocomplete="off" style="flex:1;min-width:220px"><button class="btn primary" id="k-save">Save key</button></div>`}
+          <div style="border-top:1px solid var(--border);padding-top:12px"><div style="font-weight:600">Base trading wallet <span class="muted" style="font-weight:400;font-size:12.5px">(optional, for live trading on Base)</span></div>
+            ${c.hasBaseKey ? `<dl class="kv" style="margin-top:6px"><dt>Address</dt><dd>${c.baseAddress ? walletLink(c.baseAddress) : '<span class="neg">key saved but unreadable</span>'}</dd><dt>Key storage</dt><dd>${c.baseKeyEncrypted ? '<span class="pos">Encrypted</span>' : '<span class="muted">Plain text in the .env file</span>'}</dd></dl>
+              <div class="row"><label class="row" style="gap:8px"><label class="switch"><input type="checkbox" id="bl-on" ${S.config.execution.baseLive ? 'checked' : ''}><i></i></label><span><b>Live trading on Base</b> <span class="muted" style="font-size:12.5px">off = Base wallets stay in paper mode even in live mode</span></span></label><span class="spacer"></span><button class="btn danger sm" id="bk-remove">Remove Base key</button></div>`
+            : `<div class="muted" style="font-size:12.5px;margin:4px 0 8px">Base uses its own wallet (an Ethereum-style key). Use a <b>new</b> wallet with only the ETH on Base you can afford to lose. Every Base trade is checked before signing: it can only go to KyberSwap's router with exactly the intended amount, approvals are for the exact amount sold, and it's rehearsed on the network first.</div>
+              <div class="row"><input class="input mono" id="bk-input" type="password" placeholder="Base private key (0x… 64 hex characters)" autocomplete="off" style="flex:1;min-width:220px"><button class="btn" id="bk-keysave">Save Base key</button></div>`}
+          </div>
         </div>
       </div>
     </div>
@@ -2508,6 +2515,14 @@ function renderSettings(el) {
   bindNetStatus();
   bindBackup();
   bindReady();
+  const bks = $('#bk-keysave'); if (bks) bks.onclick = async () => { const r = await act(() => api('PUT', '/api/connection', { baseKey: $('#bk-input').value }), 'Base key saved'); if (r) { S.connection = r; render(); } };
+  const bkr = $('#bk-remove'); if (bkr) bkr.onclick = async () => { if (!(await confirmModal({ title: 'Remove the Base key?', danger: true, confirm: 'Remove', body: '<p>Live trading on Base stops. Your ETH stays in that wallet.</p>' }))) return; const r = await act(() => api('PUT', '/api/connection', { baseKey: '' }), 'Base key removed'); if (r) { S.connection = r; render(); } };
+  const blo = $('#bl-on'); if (blo) blo.onchange = async (e) => {
+    const on = e.target.checked;
+    if (on && !(await confirmModal({ title: 'Turn on live trading on Base?', danger: true, confirm: 'Turn on', body: `<p>In live mode, Copybot will spend <b>real ETH</b> from your Base wallet when your Base wallets (or the scanner's Base coins) buy.</p><p>This is new: try it with a small amount first, with a low "Max SOL in open positions". Each transaction's network fee is capped at ${S.config.execution.baseMaxFeeEth} ETH (Settings → Speed).</p>` }))) { e.target.checked = false; return; }
+    const r = await act(() => api('PUT', '/api/config', { ...S.config, execution: { ...S.config.execution, baseLive: on } }), on ? 'Live trading on Base is on' : 'Live trading on Base is off');
+    if (r) { S.config = r.config; render(); } else e.target.checked = !on;
+  };
   el.querySelectorAll('[data-k]').forEach((i) => (i.oninput = i.onchange = () => { S.dirty = true; $('#savebar').style.display = 'flex'; }));
   $('#s-reset').onclick = () => { S.dirty = false; render(); };
   $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));

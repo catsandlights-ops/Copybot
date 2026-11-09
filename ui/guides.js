@@ -13,6 +13,15 @@ window.GUIDES = [
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
+<h3>New in 0.8.2</h3>
+<ul>
+<li><b>Base everywhere:</b> Find wallets, Analyze, backtests and the wallet check-up now work for Base wallets (add a free Alchemy Base URL in <b>Settings → Connection</b>). Markets and the coin scanner have a <b>Solana / Base</b> switch.</li>
+<li><b>Contract-wallet warning:</b> adding a Base address that is a smart contract (which can't be copied reliably) tells you so.</li>
+<li><b>Connection status</b> (Settings): a card that checks every service Copybot uses (Solana, Base, Jupiter, KyberSwap, safety checks, prices) and says in plain words what is down.</li>
+<li><b>Backup and restore</b> (Settings): save your settings, wallets, history and orders to one file and restore them later. Your keys are never included.</li>
+<li><b>Ready for live?</b> (Settings) A report that looks at your paper results (days run, trades closed, profit factor, missed copies) and says whether going live looks sensible, shown again when you switch to Live.</li>
+<li><b>Live trading on Base</b> (off by default): add a Base trading key in <b>Settings → Trading wallet</b> and switch it on. <a href="#" data-guide="base">Read the safety notes first →</a></li>
+</ul>
 <h3>New in 0.8.1: Base</h3>
 <p>Copy wallets on <b>Base</b> (addresses starting with 0x) alongside your Solana wallets, in paper mode for now. Base trades are checked for honeypots and high taxes and converted to SOL in your books. <a href="#" data-guide="base">How it works →</a></p>
 <h3>Phone access</h3>
@@ -55,10 +64,10 @@ window.GUIDES = [
 </ul>`,
   },
   {
-    id: 'base', cat: 'features', mins: 3, title: 'Copying wallets on Base (paper mode)',
+    id: 'base', cat: 'features', mins: 3, title: 'Copying wallets on Base',
     teaser: 'Copy traders on Base, Coinbase\'s fast and cheap Ethereum network, alongside your Solana wallets.',
     body: `
-<p>Copybot can now copy wallets on <b>Base</b> as well as Solana. For now Base runs in <b>paper mode only</b>: it shows you what copying would do, with real prices, without spending anything.</p>
+<p>Copybot can copy wallets on <b>Base</b> as well as Solana. Start in <b>paper mode</b>: it shows you what copying would do, with real prices, without spending anything. Live trading on Base is available but <b>off until you switch it on</b>.</p>
 <h3>Add a Base wallet</h3>
 <p>On the Wallets page, paste an address that starts with <span class="mono">0x</span>. Copybot recognises it as a Base wallet and labels it. Start the bot in paper mode, and Base and Solana wallets are copied side by side.</p>
 <h3>How it works</h3>
@@ -71,10 +80,18 @@ window.GUIDES = [
 <h3>Good to know</h3>
 <ul>
 <li>The free public Base nodes limit how often they can be asked. For reliable copying, add a free Base RPC from Alchemy or QuickNode in <b>Settings → Connection</b>.</li>
-<li>Find wallets, Analyze, backtests and the wallet check-up read Solana history only, for now.</li>
+<li>Find wallets, Analyze, backtests and the wallet check-up read Base history through Alchemy: add your free Alchemy Base URL in <b>Settings → Connection</b>.</li>
 <li>Some Base traders use smart-contract wallets: copy the address that actually holds the tokens (it's the one shown on Basescan as receiving them).</li>
-<li>Live trading on Base will come after it has proven itself in paper mode, with its own transaction checks before anything is signed.</li>
-</ul>`,
+</ul>
+<h3>Live trading on Base</h3>
+<p>Use a <b>new wallet just for Copybot</b> holding only what you're willing to trade, never your main wallet. Paste its private key in <b>Settings → Trading wallet → Base</b> (it's encrypted on your computer), then turn on <b>Live trading on Base</b>. Before anything is signed, Copybot checks every transaction:</p>
+<ul>
+<li>it goes only to the KyberSwap router, and pays out to <b>your</b> wallet;</li>
+<li>it sends exactly the ETH intended, and never more than your maximum network fee (Settings → Execution);</li>
+<li>when selling, it approves exactly the amount being sold, never "unlimited";</li>
+<li>it is rehearsed on Base first, and nothing is sent if the rehearsal fails.</li>
+</ul>
+<p>Start with tiny amounts until you've seen a few real trades go through.</p>`,
   },
   {
     id: 'phone', cat: 'features', mins: 3, title: 'Control Copybot from your phone (Tailscale)',

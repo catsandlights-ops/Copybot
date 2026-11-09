@@ -59,8 +59,12 @@ export interface ChainAdapter {
   solToNativeRaw(sol: number): Promise<bigint>;
   /** Watch wallets for swaps (chains without Solana's log subscriptions poll). */
   watch?(wallets: string[], onSwap: (s: Swap) => void, onError: (e: Error) => void): { stop(): void };
-  /** Can this chain place real trades yet? (false = paper mode only) */
-  liveTrading: boolean;
+  /** Can this chain place real trades right now? (false = paper mode only) */
+  readonly liveTrading: boolean;
+  /** The trading wallet's address on this chain, when it has its own key (not Solana's). */
+  liveOwner?(): string | null;
+  /** After a live swap: what was really bought or sold (from the confirmed transaction). */
+  readFill?(hash: string, owner: string): Promise<{ tokenRaw: bigint; native: number } | null>;
 }
 
 /** Every chain id, for validating stored records (kept here so config can use it without import cycles). */

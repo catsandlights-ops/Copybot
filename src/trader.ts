@@ -56,12 +56,18 @@ export class Trader {
     const native = Number(toToken ? q.inAmount : q.outAmount) / 10 ** chain.meta.native.decimals;
     const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: await chain.nativeToSol(native) };
     if (!this.live) return { sig: 'PAPER', ...quoted };
-    if (!chain.liveTrading) throw new Error(`Live trading on ${chain.meta.name} isn't available yet (paper mode only).`);
+    if (!chain.liveTrading) throw new Error(`Live trading on ${chain.meta.name} is off (paper mode only).`);
     const kp = this.kp!;
     const x = this.cfg.execution;
-    const sig = await this.chain.executeSwap({ conn: this.conn, kp, cfg: this.cfg }, q, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn') });
+    const sig = await chain.executeSwap({ conn: this.conn, kp, cfg: this.cfg }, q, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn') });
+    // What really happened, from the confirmed transaction (falls back to the quote).
+    if (chain.readFill) {
+      const owner = chain.liveOwner?.();
+      const fill = owner ? await chain.readFill(sig, owner).catch(() => null) : null;
+      return fill ? { sig, tokenRaw: fill.tokenRaw, sol: await chain.nativeToSol(fill.native) } : { sig, ...quoted };
+    }
     const tx = await getTx(sig);
-    const s = tx && this.chain.decodeSwap(tx, kp.publicKey.toBase58());
+    const s = tx && chain.decodeSwap(tx, kp.publicKey.toBase58());
     return s ? { sig, tokenRaw: s.tokenAmount, sol: s.quoteAmount } : { sig, ...quoted };
   }
 

@@ -9,6 +9,7 @@ import { loadKeypair, makeConnection } from './env';
 import type { Swap } from './decode';
 import type { CheckResult } from './safety';
 import { chainOf, getChain, type ChainAdapter, type ChainId } from './chains';
+import { setBaseLive } from './chains/base';
 import { skipCategory, type SignalStats } from './readiness';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
@@ -106,6 +107,7 @@ export class BotEngine extends EventEmitter {
       this.log(this.keyError, 'error');
     }
     this.orders = this.loadOrders();
+    setBaseLive(this.cfg.execution.baseLive);
     this.loadSigStats();
     const { state, warning } = loadState(this.cfg.mode);
     this.state = state;
@@ -132,6 +134,13 @@ export class BotEngine extends EventEmitter {
     this.labels = new Map([[SCANNER_SOURCE, 'Market scanner'], [ORDER_SOURCE, 'Your order'], ...this.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
   }
 
+  /** Live: the trading wallet's balance on a chain, in SOL (Base: its ETH, converted). */
+  private async liveBalanceSol(chain: ChainAdapter): Promise<number | null> {
+    if (chain.meta.id === 'solana') return this.kp ? chain.balance(this.ctx(), this.kp.publicKey.toBase58()) : null;
+    const owner = chain.liveOwner?.();
+    return owner ? chain.nativeToSol(await chain.balance(this.ctx(), owner)) : null;
+  }
+
   /** The chain the bot trades on (today: Solana), and what its adapter needs. */
   chain: ChainAdapter = getChain('solana');
   private ctx() {
@@ -156,7 +165,7 @@ export class BotEngine extends EventEmitter {
     const sc = this.cfg.scanner;
     const hasOrders = this.orders.some((o) => o.status === 'active');
     if (!wallets.length && !sc.tradeCoins && !sc.findTraders && !hasOrders) throw new Error('Add at least one wallet to copy first, turn on the Market scanner, or place an order.');
-    if (this.cfg.mode === 'live' && !this.kp) throw new Error(this.keyError ?? 'Live mode needs a trading wallet (Settings → Trading wallet).');
+    if (this.cfg.mode === 'live' && !this.kp && !(wallets.every((w) => chainOf(w) !== 'solana') && wallets.some((w) => getChain(chainOf(w)).liveTrading))) throw new Error(this.keyError ?? 'Live mode needs a trading wallet (Settings → Trading wallet).');
 
     const gen = ++this.gen;
     this.running = true;
@@ -736,7 +745,7 @@ export class BotEngine extends EventEmitter {
     // Market filters, holders, rug memory and token safety, with the wallet balance check, all at once.
     const useAi = cfg.ai.enabled && cfg.ai.decideBuys;
     const [bal, checked] = await Promise.all([
-      this.kp && cfg.mode === 'live' && chain.meta.id === 'solana' ? chain.balance(this.ctx(), this.kp.publicKey.toBase58()) : null,
+      cfg.mode === 'live' ? this.liveBalanceSol(chain) : null,
       this.tokenChecks(s.mint, sol, useAi, false, chain),
     ]);
     if (bal != null && bal - sol < r.solReserve) return skip(`wallet balance ${bal.toFixed(3)} SOL too low`);

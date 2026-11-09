@@ -251,6 +251,9 @@ function connectionInfo() {
     jupiterUrl: jupUrl(),
     hasJupiterKey: !!jupKey(),
     hasPrivateKey: !!engine.kp,
+    hasBaseKey: hasSecret('BASE_PRIVATE_KEY'),
+    baseKeyEncrypted: secretIsEncrypted('BASE_PRIVATE_KEY'),
+    baseAddress: getChainAdapter('base').liveOwner?.() ?? null,
     keyEncrypted: keyIsEncrypted(),
     canEncrypt: canEncryptKey(),
     desktop: !!process.env.COPYBOT_DESKTOP,
@@ -1300,7 +1303,7 @@ async function handleRemote(req: http.IncomingMessage, res: http.ServerResponse)
     const b = await readBody(req);
     if (typeof b.mint !== 'string' || !Object.hasOwn(engine.state.positions, b.mint)) throw new HttpError(400, 'No open position for that token');
     const fraction = b.fraction === 0.5 ? 0.5 : 1;
-    if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
+    if (engine.cfg.mode === 'live' && !engine.kp && chainOf(engine.state.positions[b.mint]) === 'solana') throw new HttpError(400, 'No trading wallet configured');
     from(`sold ${fraction === 1 ? 'all' : 'half'} of ${b.mint.slice(0, 4)}…${b.mint.slice(-4)}`);
     await engine.manualSell(b.mint, fraction);
     return send(res, 200, phoneState());
@@ -1734,7 +1737,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   if (route === 'POST /api/panic') {
-    if (engine.cfg.mode === 'live' && !engine.kp && Object.keys(engine.state.positions).length) throw new HttpError(400, 'No trading wallet configured');
+    if (engine.cfg.mode === 'live' && !engine.kp && Object.values(engine.state.positions).some((p) => chainOf(p) === 'solana')) throw new HttpError(400, 'No trading wallet configured');
     const r = await engine.panic('you pressed Sell everything').catch((e) => {
       throw new HttpError(409, e.message);
     });
@@ -1782,6 +1785,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     }
     if (typeof b.jupiterKey === 'string') env.JUPITER_API_KEY = b.jupiterKey.trim();
     let newKey: string | null = null;
+    let newBaseKey: string | null = null;
+    if (typeof b.baseKey === 'string') {
+      newBaseKey = b.baseKey.trim();
+      if (newBaseKey) {
+        try {
+          const { baseAccount } = await import('./chains/base-live');
+          baseAccount(newBaseKey);
+        } catch (e) {
+          throw new HttpError(400, (e as Error).message);
+        }
+      }
+    }
     if (typeof b.privateKey === 'string') {
       newKey = b.privateKey.trim();
       if (newKey) {
@@ -1800,10 +1815,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         if (b.anthropicKey.trim() && !/^sk-ant-[\w-]{20,}$/.test(b.anthropicKey.trim())) throw new Error('That doesn’t look like an Anthropic API key (it starts with sk-ant-).');
         saveSecret('ANTHROPIC_API_KEY', b.anthropicKey);
       }
-      if (Object.keys(env).length || newKey !== null) {
+      if (Object.keys(env).length || newKey !== null || newBaseKey !== null) {
         await applyChange(() => {
           if (Object.keys(env).length) updateEnv(env);
           if (newKey !== null) savePrivateKey(newKey);
+          if (newBaseKey !== null) saveSecret('BASE_PRIVATE_KEY', newBaseKey);
         });
       }
     } catch (e) {
@@ -1846,7 +1862,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const b = await readBody(req);
     if (typeof b.mint !== 'string' || !Object.hasOwn(engine.state.positions, b.mint)) throw new HttpError(400, 'No open position for that token');
     const fraction = Math.min(1, Math.max(0.01, Number(b.fraction) || 1));
-    if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
+    if (engine.cfg.mode === 'live' && !engine.kp && chainOf(engine.state.positions[b.mint]) === 'solana') throw new HttpError(400, 'No trading wallet configured');
     await engine.manualSell(b.mint, fraction);
     return send(res, 200, engine.snapshot());
   }

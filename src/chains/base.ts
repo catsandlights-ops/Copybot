@@ -9,6 +9,10 @@
  *              charts and reports work unchanged
  */
 import type { Swap } from '../decode';
+import { hasSecret, readSecret } from '../env';
+import { privateKeyToAccount } from 'viem/accounts';
+
+const baseAccountAddress = (k: string) => privateKeyToAccount((k.trim().startsWith('0x') ? k.trim() : `0x${k.trim()}`) as `0x${string}`).address.toLowerCase();
 import type { Quote } from '../jupiter';
 import { getSolUsd } from '../market';
 import { swapsFromTransfers, toSwaps, walletTransfers } from './base-history';
@@ -222,14 +226,42 @@ export async function fetchBaseSwaps(wallet: string, maxTxs: number, opts: { sin
 
 // ---------------- the adapter ----------------
 
+/** Live trading on Base: only when turned on in Settings and a Base trading key is saved. */
+let liveOn = false;
+export const setBaseLive = (on: boolean) => (liveOn = on);
+function baseKey(): string | null {
+  return readSecret('BASE_PRIVATE_KEY', 'Base trading key');
+}
+
 export const base: ChainAdapter = {
   meta: BASE_META,
-  liveTrading: false,
+  get liveTrading() {
+    return liveOn && hasSecret('BASE_PRIVATE_KEY');
+  },
+  liveOwner() {
+    try {
+      const k = baseKey();
+      return k ? baseAccountAddress(k) : null;
+    } catch {
+      return null;
+    }
+  },
+  async readFill(hash, owner) {
+    const tx = await baseRpc.fullTx(hash, new Map());
+    if (!tx) return null;
+    let s = decodeEvmSwap(tx, owner, WETH, STABLES);
+    if (!s) s = decodeEvmSwap(tx, owner, WETH, STABLES, await baseRpc.nativeDelta(owner, tx.blockNumber, tx.fee ?? 0n));
+    return s && s.quote === 'native' ? { tokenRaw: s.tokenRaw, native: Number(s.quoteRaw) / 1e18 } : null;
+  },
   decodeSwap: () => null, // Base swaps come from watch(), which reads receipts instead of Solana transactions
   quoteBuy: (token, wei, slip) => kyberQuote(NATIVE_PLACEHOLDER, token, wei, slip),
   quoteSell: (token, raw, slip) => kyberQuote(token, NATIVE_PLACEHOLDER, raw, slip),
-  executeSwap: async () => {
-    throw new Error("Live trading on Base isn't available yet. Base wallets run in paper mode only.");
+  async executeSwap(ctx, quote) {
+    if (!this.liveTrading) throw new Error('Live trading on Base is off (Settings → Trading wallet).');
+    const key = baseKey();
+    if (!key) throw new Error('No Base trading key saved (Settings → Trading wallet).');
+    const { executeBaseSwap } = await import('./base-live');
+    return executeBaseSwap(key, quote, ctx.cfg.safety.slippageBps, ctx.cfg.execution.baseMaxFeeEth, WETH);
   },
   async checkToken(ctx, token, wei) {
     const s = ctx.cfg.safety;

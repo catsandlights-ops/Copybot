@@ -164,6 +164,8 @@ export type Config = {
     fastStream: boolean; // Helius enhanced websocket for faster signals (needs a Helius RPC)
     dynamicSlippage: boolean; // live: let Jupiter set the slippage per trade (never above your max)
     mevProtect: boolean; // live, with a Jito tip: send privately through Jito only (no front-running)
+    baseLive: boolean; // allow real trades on Base (needs a Base trading key); off = Base stays paper-only
+    baseMaxFeeEth: number; // most a single Base transaction may pay in network fees
   };
   /** Weekly check of your exit settings against the last 7 days; suggests better ones. */
   tune: { weekly: boolean };
@@ -249,7 +251,7 @@ export const DEFAULT_CONFIG: Config = {
     blacklist: [],
     rugMemory: true,
   },
-  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true, dynamicSlippage: true, mevProtect: false },
+  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true, dynamicSlippage: true, mevProtect: false, baseLive: false, baseMaxFeeEth: 0.002 },
   tune: { weekly: true },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
   trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
@@ -268,6 +270,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'buy.maxSol': [0.001, 100, 'Largest buy'],
   'buy.minTargetBuySol': [0, 10_000, 'Ignore their buys under'],
   'buy.consensusBoost': [1, 3, 'Size when wallets agree'],
+  'execution.baseMaxFeeEth': [0.0001, 0.05, 'Max Base fee per transaction'],
   'buy.consensusWindowMin': [1, 240, 'Agreement window'],
   'buy.soloMinTheirSol': [0, 10_000, 'Single-wallet minimum'],
   'risk.maxOpenPositions': [1, 100, 'Max tokens held at once'],
@@ -326,7 +329,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'scanner.baseCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'execution.baseLive', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'scanner.baseCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
