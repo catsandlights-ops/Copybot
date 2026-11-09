@@ -16,7 +16,7 @@ type Pair = {
   quoteToken?: { address?: string; symbol?: string; name?: string };
   volume?: { h24?: number };
   priceChange?: { h1?: number };
-  txns?: { h1?: { buys?: number; sells?: number } };
+  txns?: { h1?: { buys?: number; sells?: number }; m5?: { buys?: number; sells?: number } };
   liquidity?: { usd?: number };
   marketCap?: number;
   fdv?: number;
@@ -45,6 +45,8 @@ export function summarizePairs(mint: string, pairs: Pair[]): MarketInfo | null {
     change1hPct: num(top.priceChange?.h1),
     buys1h: num(top.txns?.h1?.buys),
     sells1h: num(top.txns?.h1?.sells),
+    buys5m: num(top.txns?.m5?.buys),
+    sells5m: num(top.txns?.m5?.sells),
   };
 }
 

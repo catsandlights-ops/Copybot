@@ -44,7 +44,14 @@ export const quoteBuy = (mint: string, lamports: bigint, slip: number) => getQuo
 export const quoteSell = (mint: string, raw: bigint, slip: number) => getQuote(mint, WSOL, raw, slip);
 
 /** Build, verify, sign, send and confirm a swap. Returns the transaction signature. */
-export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, priorityLevel: string, maxPriorityLamports: number): Promise<string> {
+const JITO_SEND = 'https://mainnet.block-engine.jito.wtf/api/v1/transactions';
+
+/**
+ * Build, verify, sign, send and confirm a swap. Returns the transaction signature.
+ * With a Jito tip, the swap pays that tip instead of a priority fee and is sent to Jito's block
+ * engine as well as your RPC (same signature, so it can only land once).
+ */
+export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, priorityLevel: string, maxPriorityLamports: number, jitoTipLamports = 0): Promise<string> {
   const res = await fetch(`${jupUrl()}/swap`, {
     method: 'POST',
     headers: headers(),
@@ -54,7 +61,7 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
       userPublicKey: kp.publicKey.toBase58(),
       wrapAndUnwrapSol: true,
       dynamicComputeUnitLimit: true,
-      prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: maxPriorityLamports, priorityLevel } },
+      prioritizationFeeLamports: jitoTipLamports > 0 ? { jitoTipLamports } : { priorityLevelWithMaxLamports: { maxLamports: maxPriorityLamports, priorityLevel } },
     }),
   });
   if (!res.ok) throw new Error(`Jupiter swap request failed (${res.status})`);
@@ -67,10 +74,20 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
     inputMint: quote.inputMint,
     inAmount: BigInt(quote.inAmount),
     maxPriorityLamports,
+    maxTipLamports: jitoTipLamports,
   });
 
   tx.sign([kp]);
-  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 3 });
+  const raw = tx.serialize();
+  if (jitoTipLamports > 0) {
+    await fetch(JITO_SEND, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [Buffer.from(raw).toString('base64'), { encoding: 'base64' }] }),
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => null); // the RPC send below is the fallback
+  }
+  const sig = await conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 3 });
   try {
     const conf = await conn.confirmTransaction({ signature: sig, blockhash: tx.message.recentBlockhash, lastValidBlockHeight }, 'confirmed');
     if (conf.value.err) throw new Error(`Swap ${sig} failed on-chain: ${JSON.stringify(conf.value.err)}`);

@@ -8,6 +8,7 @@
  * because they don't have the token.
  */
 import http from 'node:http';
+import { Connection } from '@solana/web3.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -15,6 +16,8 @@ import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
 import { isAddress, sanitizeConfig, saveConfig } from './config';
+import { backupRpcUrl, failover, onRpcSwitch } from './env';
+import { readSecret } from './env';
 import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
 import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
@@ -22,6 +25,12 @@ import * as markets from './markets';
 import { getSolUsd } from './market';
 import { marketSkipReason, walletRecords } from './rules';
 import * as ai from './ai';
+import { getHolderStats } from './solscan';
+import { runBacktest } from './backtest';
+import { tradesCsv } from './csv';
+import * as alerts from './alerts';
+import { quoteSell } from './jupiter';
+import { passesBasics, pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -34,15 +43,16 @@ const STATIC: Record<string, [string, string]> = {
 
 // ---------- display preferences (light/dark). Kept apart from config.json so changing them never restarts the bot ----------
 const MODES = ['system', 'light', 'dark'] as const;
-type UiPrefs = { mode: (typeof MODES)[number] };
+type UiPrefs = { mode: (typeof MODES)[number]; setupDone: boolean };
 function loadUiPrefs(): UiPrefs {
+  // Existing installs (a config already there) skip the first-run setup.
+  const setupDefault = fs.existsSync('config.json');
   try {
-    const m = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')).mode; // older versions stored a "theme" instead
-    if (MODES.includes(m)) return { mode: m };
+    const j = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')); // older versions stored a "theme" instead of "mode"
+    return { mode: MODES.includes(j.mode) ? j.mode : 'system', setupDone: typeof j.setupDone === 'boolean' ? j.setupDone : setupDefault };
   } catch {
-    /* defaults */
+    return { mode: 'system', setupDone: setupDefault };
   }
-  return { mode: 'system' };
 }
 let uiPrefs = loadUiPrefs();
 export const TOKEN = crypto.randomBytes(32).toString('base64url');
@@ -96,7 +106,34 @@ function broadcast(type: string, data: unknown) {
 let statusTimer: NodeJS.Timeout | null = null;
 engine.on('log', (e) => broadcast('log', e));
 engine.on('trade', (t) => broadcast('trade', t));
+
+// ---------- phone alerts ----------
+const alertQueue = new alerts.AlertQueue(async (text) => {
+  const errs = await alerts.sendNow(text);
+  if (errs.length) console.log('alert not sent:', errs.join('; '));
+});
+function alert(kind: alerts.AlertKind, text: string) {
+  if (!engine.cfg.alerts[kind] || !alerts.alertsConfigured()) return;
+  alertQueue.push(`${engine.cfg.mode === 'live' ? '' : '[paper] '}${text}`, kind);
+}
+const nameOf = (w: string) => engine.cfg.wallets.find((x) => x.address === w)?.label ?? `${w.slice(0, 4)}…${w.slice(-4)}`;
+const mintShort = (m: string) => `${m.slice(0, 4)}…${m.slice(-4)}`;
+engine.on('trade', (t) => {
+  if (t.side === 'buy') alert('trades', `🟢 BUY ${mintShort(t.mint)} for ${t.sol.toFixed(3)} SOL, copying ${nameOf(t.source ?? '')}${typeof t.gapPct === 'number' ? ` (${t.gapPct.toFixed(1)}% copy gap)` : ''}\nhttps://dexscreener.com/solana/${t.mint}`);
+  else alert('trades', `${(t.pnl ?? 0) >= 0 ? '💰' : '🔻'} SELL ${mintShort(t.mint)} for ${t.sol.toFixed(3)} SOL, ${(t.pnl ?? 0) >= 0 ? '+' : ''}${(t.pnl ?? 0).toFixed(4)} SOL (${t.reason ?? ''})`);
+});
+engine.on('guard', (msg: string) => alert('guard', `⏸ ${msg}`));
+engine.on('log', (e) => {
+  if (e.level === 'error') alert('errors', `⚠️ ${e.msg}`);
+  else if (e.level === 'warn' && /RPC/.test(e.msg)) alert('errors', `⚠️ ${e.msg}`);
+});
+ai.onDecision((d) => {
+  if (d.kind === 'test' || (d.kind === 'buy' && d.outcomePct !== undefined)) return; // outcome updates aren't news
+  const what = d.kind === 'buy' ? `${d.verdict === 'buy' ? 'buy' : 'skip'} ${d.symbol ?? (d.mint ? mintShort(d.mint) : '')}` : d.kind === 'review' ? `positions: ${d.verdict}` : d.kind === 'wallets' ? `wallets: ${d.verdict}` : `wallet scout: ${d.verdict}`;
+  alert('autopilot', `🤖 Claude ${what}\n${d.reason}`);
+});
 ai.onDecision((d) => broadcast('ai', d));
+onRpcSwitch(() => setTimeout(() => broadcast('connection', connectionInfo()), 0));
 engine.on('status', () => {
   if (statusTimer) return; // coalesce bursts
   statusTimer = setTimeout(() => {
@@ -108,7 +145,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover';
+  kind: 'analyze' | 'discover' | 'scout' | 'backtest';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -117,14 +154,27 @@ type Job = {
   createdAt: number;
 };
 const jobs: Job[] = [];
-let jobSeq = 0;
+// Finished backtests are kept across restarts (the other jobs are quick to re-run).
+const BACKTESTS_FILE = 'data/backtests.json';
+try {
+  const saved = JSON.parse(fs.readFileSync(BACKTESTS_FILE, 'utf8'));
+  if (Array.isArray(saved)) jobs.push(...saved.filter((j) => j?.kind === 'backtest' && j.status === 'done').slice(0, 10));
+} catch {
+  /* none yet */
+}
+function saveBacktests() {
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(BACKTESTS_FILE, JSON.stringify(jobs.filter((j) => j.kind === 'backtest' && j.status === 'done').slice(0, 10)));
+}
+let jobSeq = jobs.reduce((a, j) => Math.max(a, j.id), 0);
 let jobChain: Promise<void> = Promise.resolve();
 
 function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) => void) => Promise<unknown>) {
   if (jobs.filter((j) => j.status === 'queued' || j.status === 'running').length >= 5) throw new HttpError(429, 'Too many jobs waiting. Let the current ones finish first.');
   const job: Job = { id: ++jobSeq, kind, status: 'queued', progress: 'Waiting…', input, createdAt: Date.now() };
   jobs.unshift(job);
-  if (jobs.length > 20) jobs.pop();
+  // Keep the list short, but never drop a saved backtest just because other jobs ran.
+  while (jobs.length > 20) jobs.splice(jobs.map((j) => j.kind === 'backtest').lastIndexOf(false), 1);
   const progress = (p: string) => {
     job.progress = p;
     broadcast('job', job);
@@ -136,6 +186,7 @@ function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) =
     try {
       job.result = await run(progress);
       job.status = 'done';
+      if (job.kind === 'backtest') saveBacktests();
       progress('Done');
     } catch (e) {
       job.status = 'error';
@@ -174,6 +225,8 @@ function readTrades(limit = 500) {
 function connectionInfo() {
   return {
     rpcUrl: rpcUrl(),
+    backupRpcUrl: backupRpcUrl(),
+    activeRpc: failover.state.active,
     usingPublicRpc: rpcUrl().includes('api.mainnet-beta.solana.com'),
     jupiterUrl: jupUrl(),
     hasJupiterKey: !!jupKey(),
@@ -185,6 +238,11 @@ function connectionInfo() {
     walletAddress: engine.kp?.publicKey.toBase58() ?? null,
     hasDexcheckKey: hasSecret('DEXCHECK_API_KEY'),
     dexcheckEncrypted: secretIsEncrypted('DEXCHECK_API_KEY'),
+    hasSolscanKey: hasSecret('SOLSCAN_API_KEY'),
+    hasTelegram: hasSecret('TELEGRAM_BOT_TOKEN'),
+    telegramChatId: process.env.TELEGRAM_CHAT_ID?.trim() || null,
+    hasDiscord: hasSecret('DISCORD_WEBHOOK_URL'),
+    solscanEncrypted: secretIsEncrypted('SOLSCAN_API_KEY'),
     hasAnthropicKey: hasSecret('ANTHROPIC_API_KEY'),
     anthropicEncrypted: secretIsEncrypted('ANTHROPIC_API_KEY'),
   };
@@ -201,11 +259,19 @@ let lastWalletReview = (() => {
 })();
 let walletReviewBusy = false;
 
-/** Wallets the AI may add: the ones the user analyzed or discovered in this session. */
+const scoutView = (r: ScoutReport): ai.CandidateView => ({
+  address: r.wallet,
+  source: 'scout',
+  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, topTraderOn: r.topTraderOn, notes: r.notes },
+});
+
+/** Wallets the AI may add: the ones the user analyzed or discovered, plus the latest scout results. */
 function aiCandidates(): ai.CandidateView[] {
   const out = new Map<string, ai.CandidateView>();
+  for (const r of lastScout?.reports ?? []) if (passesBasics(r)) out.set(r.wallet, scoutView(r));
   for (const j of jobs) {
     if (j.status !== 'done') continue;
+    if (j.kind === 'scout') continue; // covered by lastScout
     if (j.kind === 'analyze') {
       for (const r of j.result as any[]) {
         if (r.swaps > 0) out.set(r.wallet, { address: r.wallet, source: 'analyzed', stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, notes: r.notes } });
@@ -268,6 +334,128 @@ async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary:
     walletReviewBusy = false;
   }
 }
+
+// ---------- wallet scout ----------
+const SCOUT_FILE = 'data/scout.json';
+let lastScout: ScoutResult | null = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(SCOUT_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+let scoutRunning = false;
+
+function startScout(auto: boolean) {
+  if (scoutRunning || jobs.some((j) => j.kind === 'scout' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'The wallet scout is already running.');
+  scoutRunning = true;
+  return addJob('scout', { auto }, async (progress) => {
+    try {
+      return await runScout(progress);
+    } finally {
+      scoutRunning = false;
+    }
+  });
+}
+
+async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
+  const notes: string[] = [];
+  const at = Date.now();
+  progress('Looking for tokens that pumped recently…');
+  const rows = [...(await markets.pools('trending').catch(() => [])), ...(await markets.pools('new').catch(() => []))];
+  const tokens = pickTokens(rows, at, 5);
+  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 24h with real liquidity, 3h to 7 days old). Try again later.');
+  const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
+
+  const conn = makeConnection();
+  const perMint = new Map<string, Map<string, number>>();
+  for (const [i, t] of tokens.entries()) {
+    progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding early buyers…`);
+    perMint.set(
+      t.mint,
+      await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol} is a very busy token, so its "early buyers" here are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
+    );
+  }
+  const top = new Map<string, string[]>();
+  if (hasSecret('DEXCHECK_API_KEY')) {
+    progress('Adding DexCheck top traders…');
+    for (const t of tokens) {
+      const traders = await markets.topTraders(t.pool, '7d').catch(() => []);
+      for (const tr of traders.filter((x: any) => (x.profitUsd ?? 0) > 0).slice(0, 10)) top.set(tr.wallet, [...(top.get(tr.wallet) ?? []), t.symbol]);
+    }
+  }
+  const mine = new Set(engine.cfg.wallets.map((w) => w.address));
+  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 12);
+  if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
+
+  const reports: ScoutReport[] = [];
+  for (const [i, c] of cands.entries()) {
+    const swaps = await fetchSwaps(conn, c.wallet, 500, (n, t) => {
+      if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
+    }).catch(() => null);
+    if (swaps) reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn });
+  }
+  reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
+
+  // Let Claude choose; fall back to the rule-based ranking.
+  const cfg = engine.cfg;
+  const autoAdd = cfg.ai.enabled && cfg.ai.manageWallets;
+  const free = Math.max(0, cfg.ai.maxWallets - cfg.wallets.filter((w) => w.enabled).length);
+  const max = autoAdd ? Math.min(cfg.ai.scoutMaxPicks, free) : cfg.ai.scoutMaxPicks;
+  if (autoAdd && !free) notes.push(`You already copy ${cfg.ai.maxWallets} wallets (the autopilot's maximum), so nothing new was added.`);
+  // Only wallets that pass the basic checks can be picked, by Claude or by the rules.
+  const eligible = reports.filter(passesBasics);
+  let picks = rulePicks(eligible, max);
+  let pickedBy: ScoutResult['pickedBy'] = 'rules';
+  let summary = picks.length
+    ? 'Ranked by win rate, return and number of trades.'
+    : `None of the ${reports.length} wallets checked passed the basics: 10+ finished trades, profitable overall, not a bot, and not selling within 2 minutes. Most wallets that catch one pump don't keep winning.`;
+  if (max > 0 && eligible.length && hasSecret('ANTHROPIC_API_KEY')) {
+    progress('Claude is choosing…');
+    const recs = walletRecords(engine.readTrades(), cfg.mode);
+    const current = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
+    const r = await ai.pickWallets(cfg, current, eligible.map(scoutView), max);
+    if (r) {
+      picks = r.picks;
+      pickedBy = 'claude';
+      summary = r.summary;
+    } else notes.push(`Claude wasn't available (${ai.aiStatus(cfg).lastError ?? 'no answer'}), so the picks are rule-based.`);
+  }
+
+  const added: string[] = [];
+  if (autoAdd && picks.length) {
+    const next = structuredClone(engine.cfg);
+    for (const p of picks) {
+      if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= cfg.ai.maxWallets) continue;
+      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol });
+      added.push(p.address);
+    }
+    if (added.length) {
+      const clean = sanitizeConfig(next, false);
+      await applyChange(() => saveConfig(clean));
+      for (const a of added) engine.log(`Wallet scout: now copying ${a.slice(0, 4)}…${a.slice(-4)}: ${picks.find((p) => p.address === a)!.reason}`, 'ai');
+    }
+  }
+  const result: ScoutResult = { at, tokens, reports, picks, pickedBy, summary, added, notes };
+  lastScout = result;
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(SCOUT_FILE, JSON.stringify(result));
+  broadcast('scout', result);
+  return result;
+}
+
+// Automatic scouting while the bot is running with the autopilot managing wallets.
+setInterval(() => {
+  const a = engine.cfg.ai;
+  if (!engine.running || !a.enabled || !a.manageWallets || !a.scoutEveryHours || scoutRunning) return;
+  if (Date.now() - (lastScout?.at ?? 0) < a.scoutEveryHours * 3_600_000) return;
+  try {
+    startScout(true);
+    engine.log('Wallet scout: searching for new wallets to copy…', 'ai');
+  } catch {
+    /* already running */
+  }
+}, 10 * 60_000).unref();
 
 // Automatic wallet reviews while the bot is running.
 setInterval(() => {
@@ -367,6 +555,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return;
   }
 
+  if (route === 'GET /api/trades.csv') {
+    const mode = url.searchParams.get('mode');
+    const labels = new Map(engine.cfg.wallets.map((w) => [w.address, w.label]));
+    res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/csv; charset=utf-8' });
+    return res.end(tradesCsv(readTrades(1e9).reverse().filter((t: any) => mode !== 'paper' && mode !== 'live' ? true : t.mode === mode), labels));
+  }
+
   if (route === 'GET /api/state') {
     return send(res, 200, {
       status: engine.snapshot(),
@@ -375,6 +570,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       trades: readTrades(),
       connection: connectionInfo(),
       jobs,
+      scout: lastScout,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
       ui: uiPrefs,
     });
@@ -405,7 +601,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/connection') {
     const b = await readBody(req);
-    for (const k of ['rpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey']) {
+    for (const k of ['rpcUrl', 'backupRpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey', 'solscanKey']) {
       if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
     }
     const env: Record<string, string> = {};
@@ -413,6 +609,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       if (!isHttpsUrl(b.rpcUrl.trim())) throw new HttpError(400, 'RPC URL must be a valid https:// address');
       env.RPC_URL = b.rpcUrl.trim();
       env.WS_URL = '';
+    }
+    if (typeof b.backupRpcUrl === 'string') {
+      const u = b.backupRpcUrl.trim();
+      if (u && !isHttpsUrl(u)) throw new HttpError(400, 'Backup RPC URL must be a valid https:// address');
+      if (u && u === (env.RPC_URL ?? rpcUrl())) throw new HttpError(400, 'The backup RPC should be a different one from your main RPC');
+      env.RPC_URL_BACKUP = u;
     }
     if (typeof b.jupiterKey === 'string') env.JUPITER_API_KEY = b.jupiterKey.trim();
     let newKey: string | null = null;
@@ -429,6 +631,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     try {
       // Data-source keys don't affect trading, so saving one never restarts the bot.
       if (typeof b.dexcheckKey === 'string') saveSecret('DEXCHECK_API_KEY', b.dexcheckKey);
+      if (typeof b.solscanKey === 'string') saveSecret('SOLSCAN_API_KEY', b.solscanKey);
       if (typeof b.anthropicKey === 'string') {
         if (b.anthropicKey.trim() && !/^sk-ant-[\w-]{20,}$/.test(b.anthropicKey.trim())) throw new Error('That doesn’t look like an Anthropic API key (it starts with sk-ant-).');
         saveSecret('ANTHROPIC_API_KEY', b.anthropicKey);
@@ -458,7 +661,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       });
       const jupMs = Date.now() - t2;
       const j = q.ok ? ((await q.json()) as { outAmount: string }) : null;
-      return send(res, 200, { ok: true, slot, rpcMs, jupiterOk: !!j, jupMs, solPrice: j ? Number(j.outAmount) / 1e6 / 0.1 : null });
+      let backup: { ok: boolean; ms?: number; error?: string } | null = null;
+      const bu = backupRpcUrl();
+      if (bu) {
+        const t3 = Date.now();
+        backup = await new Connection(bu, { commitment: 'confirmed', disableRetryOnRateLimit: true }).getSlot().then(() => ({ ok: true, ms: Date.now() - t3 }), (e) => ({ ok: false, error: (e as Error).message.slice(0, 120) }));
+      }
+      let solscan: { ok: boolean; error?: string } | null = null;
+      if (hasSecret('SOLSCAN_API_KEY')) {
+        // BONK: an established token with many holders.
+        solscan = await getHolderStats('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', null).then(() => ({ ok: true }), (e) => ({ ok: false, error: (e as Error).message.slice(0, 160) }));
+      }
+      return send(res, 200, { ok: true, slot, rpcMs, jupiterOk: !!j, jupMs, solPrice: j ? Number(j.outAmount) / 1e6 / 0.1 : null, solscan, backup });
     } catch (e) {
       return send(res, 200, { ok: false, error: (e as Error).message.slice(0, 200) });
     }
@@ -539,8 +753,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/ui') {
     const b = await readBody(req);
-    if (!MODES.includes(b.mode)) throw new HttpError(400, 'Unknown appearance');
-    uiPrefs = { mode: b.mode };
+    if (b.mode !== undefined && !MODES.includes(b.mode)) throw new HttpError(400, 'Unknown appearance');
+    if (b.setupDone !== undefined && typeof b.setupDone !== 'boolean') throw new HttpError(400, 'Invalid setupDone');
+    uiPrefs = { mode: b.mode ?? uiPrefs.mode, setupDone: b.setupDone ?? uiPrefs.setupDone };
     fs.mkdirSync('data', { recursive: true });
     fs.writeFileSync('data/ui.json', JSON.stringify(uiPrefs));
     broadcast('ui', uiPrefs);
@@ -584,6 +799,42 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return send(res, 200, await runWalletReview());
   }
 
+  if (route === 'PUT /api/alerts') {
+    const b = await readBody(req);
+    for (const k of ['telegramToken', 'telegramChatId', 'discordWebhook']) {
+      if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
+    }
+    const tok = typeof b.telegramToken === 'string' ? b.telegramToken.trim() : undefined;
+    const chat = typeof b.telegramChatId === 'string' ? b.telegramChatId.trim() : undefined;
+    const hook = typeof b.discordWebhook === 'string' ? b.discordWebhook.trim() : undefined;
+    if (tok && !alerts.isTelegramToken(tok)) throw new HttpError(400, 'That doesn’t look like a Telegram bot token (it looks like 123456789:ABC…, from @BotFather).');
+    if (chat && !alerts.isChatId(chat)) throw new HttpError(400, 'The Telegram chat ID should be a number (press Find my chat ID).');
+    if (hook && !alerts.isDiscordWebhook(hook)) throw new HttpError(400, 'That isn’t a Discord webhook link (it starts with https://discord.com/api/webhooks/).');
+    if (tok !== undefined) saveSecret('TELEGRAM_BOT_TOKEN', tok);
+    if (chat !== undefined) updateEnv({ TELEGRAM_CHAT_ID: chat });
+    if (hook !== undefined) saveSecret('DISCORD_WEBHOOK_URL', hook);
+    return send(res, 200, connectionInfo());
+  }
+
+  if (route === 'POST /api/alerts/detect-telegram') {
+    const b = await readBody(req);
+    let token = typeof b.telegramToken === 'string' && b.telegramToken.trim() ? b.telegramToken.trim() : null;
+    if (!token) token = readSecret('TELEGRAM_BOT_TOKEN', 'Telegram bot token');
+    if (!token || !alerts.isTelegramToken(token)) throw new HttpError(400, 'Paste your Telegram bot token first.');
+    const found = await alerts.detectTelegramChat(token).catch((e) => {
+      throw new HttpError(400, (e as Error).message);
+    });
+    if (!found) throw new HttpError(404, 'No messages yet. Open your bot in Telegram, press Start (or send it any message), then try again.');
+    return send(res, 200, found);
+  }
+
+  if (route === 'POST /api/alerts/test') {
+    if (!alerts.alertsConfigured()) throw new HttpError(400, 'Set up Telegram or Discord first, then save.');
+    const errs = await alerts.sendNow('✅ Copybot alerts are working. You’ll get trades, problems and autopilot actions here.');
+    if (errs.length) throw new HttpError(502, errs.join(' · '));
+    return send(res, 200, { ok: true });
+  }
+
   if (route === 'POST /api/guard/resume') {
     engine.resumeBuying();
     return send(res, 200, engine.snapshot());
@@ -610,6 +861,66 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       return reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
     });
     return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/jobs/backtest') {
+    const b = await readBody(req);
+    const wallets = addressList(b.wallets, 5, 'wallet address');
+    const txs = Math.min(2000, Math.max(100, Number(b.txs) || 600));
+    const delayPct = Math.min(50, Math.max(0, Number.isFinite(Number(b.delayPct)) ? Number(b.delayPct) : 5));
+    const replayExits = b.replayExits !== false;
+    const job = addJob('backtest', { wallets, txs, delayPct, replayExits }, async (progress) => {
+      const conn = makeConnection();
+      const swaps = [];
+      const stats = { read: 0, failed: 0 };
+      for (const [i, w] of wallets.entries()) {
+        swaps.push(
+          ...(await fetchSwaps(
+            conn,
+            w,
+            txs,
+            (n, t) => {
+              if (n % 25 === 0 || n === t) progress(`Wallet ${i + 1}/${wallets.length}: reading transaction ${n} of ${t}`);
+            },
+            { tries: 5, stats },
+          )),
+        );
+      }
+      // Your current settings; wallets you don't copy yet use size ×1 and no budget.
+      const cfg = structuredClone(engine.cfg);
+      for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
+      const opts = { delayPct, feeSol: 0.0002 };
+      let first = runBacktest(swaps, cfg, opts);
+      // Price candles for the tokens we'd have bought, so stop-loss and take-profits can be replayed.
+      const prices = new Map<string, import('./backtest').PriceSeries>();
+      if (replayExits) {
+        const bought = [...new Set(swaps.filter((s) => s.side === 'buy' && first.trades.some((t) => t.mint === s.mint)).map((s) => s.mint))];
+        const stillOpen = new Set(first.open.map((o) => o.mint));
+        for (const [i, mint] of bought.slice(0, 40).entries()) {
+          progress(`Loading price history for exits (${i + 1}/${Math.min(40, bought.length)})…`);
+          const times = swaps.filter((s) => s.mint === mint && s.blockTime).map((s) => s.blockTime! * 1000);
+          const from = Math.min(...times);
+          const to = stillOpen.has(mint) ? Date.now() : Math.max(...times) + 3_600_000;
+          const h = await markets.priceHistory(mint, from, to).catch(() => null);
+          if (h) prices.set(mint, h);
+        }
+        first = runBacktest(swaps, cfg, opts, new Map(), prices);
+      }
+      // Price what would still be held today.
+      const marks = new Map<string, number | null>();
+      for (const [i, o] of first.open.slice(0, 25).entries()) {
+        progress(`Pricing open positions (${i + 1}/${Math.min(25, first.open.length)})…`);
+        const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
+        const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
+        marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+      }
+      return { ...runBacktest(swaps, cfg, opts, marks, prices), unreadable: stats.failed, read: stats.read, settings: { delayPct, txs, sizing: cfg.buy.sizing, fixedSol: cfg.buy.fixedSol, percentOfTarget: cfg.buy.percentOfTarget, copySells: cfg.sell.copySells } };
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/jobs/scout') {
+    return send(res, 200, startScout(false));
   }
 
   if (route === 'POST /api/jobs/discover') {

@@ -78,6 +78,8 @@ export type MarketInfo = {
   change1hPct?: number | null;
   buys1h?: number | null;
   sells1h?: number | null;
+  buys5m?: number | null;
+  sells5m?: number | null;
 };
 
 const usd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${n.toFixed(0)}`);
@@ -103,6 +105,72 @@ export function marketSkipReason(info: MarketInfo | null, f: Config['filters'], 
   }
   return null;
 }
+
+/** Holder concentration check (Solscan). Null stats = no data, so no verdict. */
+export function holderSkipReason(h: { largestPct: number; top10Pct: number } | null, f: Pick<Config['filters'], 'maxTopHolderPct' | 'maxTop10HoldersPct'>): string | null {
+  if (!h) return null;
+  if (f.maxTopHolderPct > 0 && h.largestPct > f.maxTopHolderPct) return `one wallet owns ${h.largestPct.toFixed(1)}% of the supply (max ${f.maxTopHolderPct}%)`;
+  if (f.maxTop10HoldersPct > 0 && h.top10Pct > f.maxTop10HoldersPct) return `the 10 largest wallets own ${h.top10Pct.toFixed(0)}% of the supply (max ${f.maxTop10HoldersPct}%)`;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Rug and dump protection for open positions
+// ---------------------------------------------------------------------------
+
+export type DangerInputs = {
+  now: number;
+  valueSol: number;
+  samples: [number, number][]; // recent [time ms, value SOL], oldest first
+  liquidityUsd: number | null;
+  peakLiquidityUsd: number | null;
+  buys5m: number | null;
+  sells5m: number | null;
+};
+
+/** Why an open position should be sold right away to escape a rug or dump, or null. */
+export function dangerReason(d: DangerInputs, p: Config['protect']): string | null {
+  if (p.liquidityDropPct > 0 && d.liquidityUsd != null && d.peakLiquidityUsd && d.peakLiquidityUsd > 0) {
+    const drop = (1 - d.liquidityUsd / d.peakLiquidityUsd) * 100;
+    if (drop >= p.liquidityDropPct) return `rug protection: the pool's liquidity fell ${drop.toFixed(0)}% from its high`;
+  }
+  if (p.crashPct > 0) {
+    const since = d.now - p.crashWindowMin * 60_000;
+    const recent = d.samples.filter(([t]) => t >= since).map(([, v]) => v);
+    const high = Math.max(...recent, 0);
+    if (high > 0 && recent.length >= 2) {
+      const drop = (1 - d.valueSol / high) * 100;
+      if (drop >= p.crashPct) return `dump protection: value fell ${drop.toFixed(0)}% in under ${p.crashWindowMin} min`;
+    }
+  }
+  if (p.maxSellBuyRatio > 0 && d.sells5m != null && d.sells5m >= 20) {
+    const buys = Math.max(1, d.buys5m ?? 0);
+    if (d.sells5m / buys >= p.maxSellBuyRatio) return `dump protection: ${d.sells5m} sells vs ${d.buys5m ?? 0} buys in the last 5 min`;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Copy gap: how much worse our fill was than the copied wallet's
+// ---------------------------------------------------------------------------
+
+/**
+ * Percent we lost to copying late on one trade (positive = worse for us).
+ * Buys: we paid more per token than they did. Sells: we got less per token.
+ */
+export function copyGapPct(side: 'buy' | 'sell', theirSol: number, theirRaw: bigint, ourSol: number, ourRaw: bigint): number | null {
+  if (theirRaw <= 0n || ourRaw <= 0n || theirSol <= 0 || ourSol <= 0) return null;
+  const ratio = ourSol / Number(ourRaw) / (theirSol / Number(theirRaw));
+  if (!Number.isFinite(ratio)) return null;
+  return side === 'buy' ? (ratio - 1) * 100 : (1 - ratio) * 100;
+}
+
+export const median = (xs: number[]) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
 
 // ---------------------------------------------------------------------------
 // Circuit breaker: daily loss limit + pause after a losing streak

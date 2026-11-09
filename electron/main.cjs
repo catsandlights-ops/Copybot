@@ -8,7 +8,7 @@ const updater = require('./updater.cjs');
 const BASE = path.join(__dirname, '..'); // app files (ui/, dist/)
 // Links may only open these sites in the user's browser (news sources, data providers, key sign-up pages).
 const EXTERNAL_HOSTS = new Set([
-  'solscan.io', 'dexscreener.com', 'www.helius.dev', 'helius.dev', 'nodejs.org',
+  'solscan.io', 'dexscreener.com', 't.me', 'telegram.org', 'core.telegram.org', 'discord.com', 'support.discord.com', 'www.quicknode.com', 'quicknode.com', 'www.helius.dev', 'helius.dev', 'nodejs.org',
   'blockworks.com', 'blockworks.co', 'www.coindesk.com', 'coindesk.com', 'www.theblock.co', 'theblock.co', 'decrypt.co',
   'www.geckoterminal.com', 'www.coingecko.com', 'dexcheck.ai', 'api.dexcheck.ai', 'console.anthropic.com', 'docs.anthropic.com',
 ]);

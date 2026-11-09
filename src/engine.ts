@@ -1,12 +1,16 @@
 import { EventEmitter } from 'node:events';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { Config, loadConfig } from './config';
+import { Config, exitConfigFor, loadConfig } from './config';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { quoteBuy, quoteSell } from './jupiter';
 import { checkToken } from './safety';
 import { exposure, loadState, saveState, State } from './state';
-import { buyBlockReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
+import { getHolderStats, HolderStats } from './solscan';
+import { hasSecret, onRpcSwitch, rpcUrl } from './env';
+import { FastStream, heliusWsUrl } from './stream';
+import type { RawTx } from './util';
+import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
 import fs from 'node:fs';
@@ -41,9 +45,11 @@ export class BotEngine extends EventEmitter {
   private queue: Promise<void> = Promise.resolve();
   private lastRateWarn = 0;
   keyError: string | null = null;
+  private stream: FastStream | null = null;
 
   constructor() {
     super();
+    onRpcSwitch((to, why) => this.log(to === 'backup' ? `Switched to your backup RPC: ${why}.` : `Back on your main RPC (${why}).`, to === 'backup' ? 'warn' : 'system'));
     this.reload();
   }
 
@@ -139,12 +145,23 @@ export class BotEngine extends EventEmitter {
     this.exitLoop(gen);
     this.balanceLoop(gen);
     this.aiLoop(gen);
+    const wsu = this.cfg.execution.fastStream ? heliusWsUrl(rpcUrl()) : null;
+    if (wsu) {
+      this.stream = new FastStream(wsu, wallets.map((w) => w.address), (tx) => this.onStreamTx(tx), (s, detail) => {
+        if (s === 'connected') this.log('Fast trade detection is on (Helius stream).', 'system');
+        if (s === 'unavailable') this.log(`Fast trade detection isn't available on your Helius plan (${detail}). Using the normal method.`, 'warn');
+        this.emit('status');
+      });
+      this.stream.start();
+    }
   }
 
   async stop() {
     if (!this.running) return;
     this.gen++;
     this.running = false;
+    this.stream?.stop();
+    this.stream = null;
     for (const id of this.subs) await this.conn.removeOnLogsListener(id).catch(() => {});
     this.subs = [];
     this.log('Bot stopped', 'system');
@@ -160,7 +177,10 @@ export class BotEngine extends EventEmitter {
     const { guard, event } = recordSell(this.guard, pnl, this.cfg.risk, Date.now());
     this.state.guard = guard;
     saveState(this.state, this.cfg.mode);
-    if (event) this.log(event, 'warn');
+    if (event) {
+      this.log(event, 'warn');
+      this.emit('guard', event);
+    }
   }
 
   /** Let the bot buy again today despite the daily limit / losing-streak pause. */
@@ -186,6 +206,23 @@ export class BotEngine extends EventEmitter {
       throw e;
     }
     if (!tx || !this.running) return;
+    this.onTx(tx, wallet);
+  }
+
+  /** A transaction from the fast stream: already complete, no fetch needed. */
+  private onStreamTx(tx: RawTx) {
+    if (!this.running || this.seen.has(tx.signature) || tx.meta?.err) return;
+    for (const w of this.cfg.wallets) {
+      if (!w.enabled || !tx.accountKeys.includes(w.address)) continue;
+      if (decodeSwap(tx, w.address)) {
+        this.remember(tx.signature);
+        this.onTx(tx, w.address);
+        return;
+      }
+    }
+  }
+
+  private onTx(tx: RawTx, wallet: string) {
     const swap = decodeSwap(tx, wallet);
     if (!swap) return;
     const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
@@ -237,6 +274,20 @@ export class BotEngine extends EventEmitter {
       if (why) return skip(why);
     }
 
+    // Holder check (Solscan): skip tokens a few wallets control.
+    let holders: HolderStats | null = null;
+    if ((f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || useAi) && hasSecret('SOLSCAN_API_KEY')) {
+      try {
+        const supply = await this.conn.getTokenSupply(new PublicKey(s.mint)).then((r) => BigInt(r.value.amount)).catch(() => null);
+        holders = await getHolderStats(s.mint, supply);
+      } catch (e) {
+        if (f.skipIfNoMarketData) return skip(`couldn't check holders (${(e as Error).message})`);
+        this.log(`  note: couldn't check holders, continuing (${(e as Error).message})`, 'warn');
+      }
+      const why = holderSkipReason(holders, f);
+      if (why) return skip(why);
+    }
+
     let lamports = BigInt(Math.round(sol * 1e9));
     let check = await checkToken(this.conn, cfg, s.mint, lamports);
     if (!check.ok) return skip(check.reason);
@@ -264,6 +315,7 @@ export class BotEngine extends EventEmitter {
         driftPct: drift,
         priceImpactPct: Number(check.buyQuote.priceImpactPct ?? NaN) * 100 || null,
         market: info && { liquidityUsd: info.liquidityUsd, marketCapUsd: info.marketCapUsd, ageMin: info.createdAt ? Math.round((Date.now() - info.createdAt) / 60_000) : null, volume24hUsd: info.volume24hUsd, change1hPct: info.change1hPct, buys1h: info.buys1h, sells1h: info.sells1h },
+        holders: holders && { holderCount: holders.holderCount, largestWalletPct: +holders.largestPct.toFixed(2), top10WalletsPct: +holders.top10Pct.toFixed(1), largestIsTheCopiedWallet: holders.largestOwner === s.wallet },
         portfolio: { openPositions: Object.keys(state.positions).length, maxPositions: r.maxOpenPositions, exposureSol: exposure(state), maxExposureSol: r.maxTotalExposureSol, dayPnlSol: g.dayPnlSol },
         probe: { lamports: lamports.toString(), tokensOut: check.buyQuote.outAmount },
       });
@@ -286,7 +338,7 @@ export class BotEngine extends EventEmitter {
         if (late) return skip(late);
       }
     }
-    await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet);
+    await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
   }
 
   /** Our trade history (for per-wallet results). */
@@ -383,7 +435,7 @@ export class BotEngine extends EventEmitter {
     const p = this.state.positions[s.mint];
     if (!p || !p.sources.includes(s.wallet)) return;
     const fraction = s.tokenPost === 0n || s.tokenPre === 0n ? 1 : Number(s.tokenAmount) / Number(s.tokenPre);
-    await this.trader.sell(s.mint, fraction, `copied ${this.labels.get(s.wallet)} selling ${(fraction * 100).toFixed(0)}%`);
+    await this.trader.sell(s.mint, fraction, `copied ${this.labels.get(s.wallet)} selling ${(fraction * 100).toFixed(0)}%`, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
   }
 
   private async pollLoop(wallet: string, gen: number) {
@@ -409,12 +461,29 @@ export class BotEngine extends EventEmitter {
       for (const p of Object.values(this.state.positions)) {
         const v = this.values[p.mint];
         if (!v || gen !== this.gen || this.exiting.has(p.mint)) continue;
-        const { action, peakMultiple } = planExit(p, v.valueSol, this.cfg);
+        const { action, peakMultiple } = planExit(p, v.valueSol, exitConfigFor(this.cfg, p.sources));
         if (peakMultiple !== p.peakMultiple) {
           p.peakMultiple = peakMultiple;
           changed = true;
         }
-        if (!action) continue;
+        if (!action) {
+          const peakBefore = p.peakLiquidityUsd;
+          const why = await this.checkDanger(p, v.valueSol).catch(() => null);
+          if (p.peakLiquidityUsd !== peakBefore) changed = true;
+          if (why && gen === this.gen && !this.exiting.has(p.mint)) {
+            changed = true;
+            this.log(`${short(p.mint)}: ${why}. Selling everything.`, 'warn');
+            this.exiting.add(p.mint);
+            this.enqueue(async () => {
+              try {
+                await this.trader.sell(p.mint, 1, why);
+              } finally {
+                this.exiting.delete(p.mint);
+              }
+            });
+          }
+          continue;
+        }
         this.exiting.add(p.mint);
         this.enqueue(async () => {
           try {
@@ -432,6 +501,22 @@ export class BotEngine extends EventEmitter {
       if (changed) saveState(this.state, this.cfg.mode);
       await sleep(this.cfg.monitor.exitCheckIntervalSec * 1000);
     }
+  }
+
+  /** Recent value samples per position, for the crash check. */
+  private samples = new Map<string, [number, number][]>();
+
+  /** Rug/dump protection: liquidity drain, fast crash, heavy selling. Updates the liquidity high. */
+  private async checkDanger(p: import('./state').Position, valueSol: number): Promise<string | null> {
+    const pr = this.cfg.protect;
+    if (!pr.liquidityDropPct && !pr.crashPct && !pr.maxSellBuyRatio) return null;
+    const now = Date.now();
+    const s = (this.samples.get(p.mint) ?? []).filter(([t]) => now - t <= Math.max(pr.crashWindowMin, 1) * 60_000);
+    s.push([now, valueSol]);
+    this.samples.set(p.mint, s);
+    const info = pr.liquidityDropPct || pr.maxSellBuyRatio ? await getMarketInfo(p.mint).catch(() => null) : null;
+    if (info?.liquidityUsd != null && info.liquidityUsd > (p.peakLiquidityUsd ?? 0)) p.peakLiquidityUsd = info.liquidityUsd;
+    return dangerReason({ now, valueSol, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null }, pr);
   }
 
   async valuePositions() {
@@ -474,6 +559,7 @@ export class BotEngine extends EventEmitter {
     return {
       running: this.running,
       startedAt: this.startedAt,
+      stream: !this.cfg.execution.fastStream ? null : !heliusWsUrl(rpcUrl()) ? 'needs a Helius RPC' : this.stream ? ({ connecting: 'connecting…', connected: 'on', unavailable: 'not on your Helius plan', reconnecting: 'reconnecting…', off: 'off' } as const)[this.stream.status] : 'starts with the bot',
       mode: this.cfg.mode,
       realizedPnlSol: this.state.realizedPnlSol,
       unrealizedPnlSol: unrealized,

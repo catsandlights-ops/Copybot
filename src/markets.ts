@@ -11,7 +11,7 @@ import { isAddress } from './config';
 import { readSecret } from './env';
 import { sleep } from './util';
 
-const UA = 'Copybot (+https://github.com/catsandlights-ops/copybot)';
+const UA = 'Copybot (+https://github.com/catsandlights-ops/Copybot)';
 
 // ---------------- small cache with in-flight de-duplication ----------------
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -338,4 +338,30 @@ export function topTraders(pool: string, duration: (typeof DURATIONS)[number]) {
       .filter((t: any) => t.wallet)
       .slice(0, 30);
   });
+}
+
+// ---------------- price history for backtests ----------------
+export type Candle = { t: number; l: number; h: number; c: number }; // t = candle start (ms), USD prices
+
+/**
+ * USD price candles for a token between two times, from its most liquid pool on GeckoTerminal.
+ * Picks 5-minute candles for spans up to ~3 days, then 15-minute, then hourly (1000 candles max).
+ * Returns null when the token has no pool or no data.
+ */
+export async function priceHistory(mint: string, fromMs: number, toMs: number): Promise<{ step: number; candles: Candle[] } | null> {
+  const pools = await gecko(`/networks/solana/tokens/${mint}/pools?page=1`);
+  const pool = addr(pools?.data?.[0]?.attributes?.address);
+  if (!pool) return null;
+  const span = Math.max(0, toMs - fromMs);
+  const [tf, agg, step] = span <= 3.3 * 86_400_000 ? ['minute', 5, 300_000] : span <= 10 * 86_400_000 ? ['minute', 15, 900_000] : ['hour', 1, 3_600_000];
+  const before = Math.floor(Math.min(Date.now(), toMs + step) / 1000);
+  const d = await gecko(`/networks/solana/pools/${pool}/ohlcv/${tf}?aggregate=${agg}&before_timestamp=${before}&limit=1000&currency=usd&token=${mint}`);
+  const rows: unknown[] = d?.data?.attributes?.ohlcv_list ?? [];
+  const candles = rows
+    .map((r: any) => (Array.isArray(r) ? r.map(num) : []))
+    .filter((r) => r.length >= 5 && r.slice(0, 5).every((v) => v !== null && v >= 0))
+    .map(([t, , h, l, c]) => ({ t: t! * 1000, h: h!, l: l!, c: c! }))
+    .filter((k) => k.t + step >= fromMs && k.l > 0)
+    .sort((a, b) => a.t - b.t);
+  return candles.length ? { step, candles } : null;
 }

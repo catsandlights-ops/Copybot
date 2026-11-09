@@ -163,6 +163,39 @@ td.r, th.r { text-align: right; }
 .tag.ai { background: var(--panel-2); color: var(--accent); }
 .tag.skip { background: var(--amber-bg); color: var(--amber); }
 #ai-settings { scroll-margin-top: 110px; }
+.modal .with-unit span { min-width: 86px; text-align: center; }
+.modal.wizard { max-width: 620px; width: calc(100% - 32px); padding: 22px 26px; }
+.wz-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.wz-dots { display: flex; gap: 6px; }
+.wz-dot { width: 26px; height: 6px; border-radius: 6px; background: var(--panel-2); }
+.wz-dot.done { background: var(--accent); opacity: .5; }
+.wz-dot.on { background: var(--rainbow); }
+.wz-body h2 { margin: 10px 0 8px; font-size: 20px; }
+.wz-body p { line-height: 1.55; }
+.wz-hero svg { width: 64px; height: 64px; }
+.wz-nav { margin-top: 18px; }
+.wz-choices { display: grid; gap: 10px; }
+.wz-choice { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); font: inherit; }
+button.wz-choice { cursor: pointer; }
+button.wz-choice:hover { border-color: var(--accent); }
+.wz-choice span { color: var(--muted); font-size: 13px; }
+.wz-check { list-style: none; padding: 0; line-height: 2; }
+.scout-hero { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 20px 22px; }
+.scout-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.scout-steps span { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--panel-2); color: var(--muted); }
+.picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 0 18px 16px; }
+.pick { border: 1px solid var(--border); border-radius: 12px; padding: 14px; position: relative; overflow: hidden; }
+.pick::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--rainbow); }
+.pick .why { color: var(--muted); font-size: 13px; margin: 8px 0 10px; }
+.pick .nums { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
+.pick .nums b { color: var(--text); }
+.bt-curve { padding: 8px 18px 16px; }
+.bt-curve svg { width: 100%; height: 220px; display: block; }
+.bt-axis { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; margin-top: 6px; }
+.bt-form { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .bt-form { grid-template-columns: 1fr; } }
+.bt-hist { display: flex; gap: 6px; flex-wrap: wrap; }
+.tokchips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 18px 12px; }
 .ai-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 640px) { .ai-item { grid-template-columns: 1fr; } .ai-item .why { grid-column: 1; } .ai-item .meta { text-align: left; } }
 
@@ -424,6 +457,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
     <button class="nav" data-page="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg>Markets</button>
     <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
     <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
+    <button class="nav" data-page="backtest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>Backtest</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
     <button class="nav" data-page="autopilot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Autopilot<span class="count" id="nav-ai"></span></button>
     <button class="nav" data-page="learn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>Learn</button>
@@ -509,6 +543,71 @@ async function setAppearance(mode) {
   await act(() => api('PUT', '/api/ui', { mode }));
 }
 
+// ---------------- first-run setup ----------------
+const WZ_STEPS = ['Welcome', 'Connection', 'Wallets', 'Alerts', 'Ready'];
+function wizard(step = 0) {
+  S.wz = step;
+  const c = S.connection, mine = S.config.wallets.length;
+  const dots = WZ_STEPS.map((l, i) => `<span class="wz-dot ${i === step ? 'on' : i < step ? 'done' : ''}" title="${l}"></span>`).join('');
+  const body = [
+    `<div class="wz-hero">${ICON.rainbow}</div><h2>Welcome to Copybot</h2>
+     <p>Copybot follows Solana wallets you choose and copies their trades within seconds, with safety checks and limits you control.</p>
+     <p class="muted">It starts in <b>paper mode</b>: every trade is simulated with real prices and nothing is spent. Setup takes about 3 minutes.</p>`,
+    `<h2>Connect a fast RPC</h2>
+     <p>The RPC is Copybot's connection to Solana. The free public one is rate-limited and <b>misses trades</b>.</p>
+     <ol class="steps"><li>Create a free account at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>.</li><li>Copy your RPC link (<span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span>) and paste it here.</li></ol>
+     <input class="input mono" id="wz-rpc" placeholder="https://mainnet.helius-rpc.com/?api-key=…" value="${c.usingPublicRpc ? '' : esc(c.rpcUrl)}" spellcheck="false" style="width:100%">
+     <div class="row" style="margin-top:10px"><button class="btn" id="wz-test">Save &amp; test</button><span class="muted" id="wz-rpc-msg" style="font-size:13px">${c.usingPublicRpc ? '' : '<span class="pos">✓ A private RPC is set.</span>'}</span></div>`,
+    `<h2>Pick wallets to copy</h2>
+     <p>Copybot is only as good as the wallets it copies.${mine ? ` <b>You already copy ${mine}.</b>` : ''}</p>
+     <div class="wz-choices">
+       <button class="wz-choice" id="wz-scout"><b>Find wallets for me</b><span>Scans tokens that pumped recently, checks who bought early and picks the best (5–15 min, runs in the background).</span></button>
+       <div class="wz-choice"><b>I have a wallet address</b><span>Paste one or more, one per line.</span><textarea class="input mono" id="wz-addrs" rows="2" placeholder="Wallet address"></textarea><button class="btn sm" id="wz-add" style="margin-top:6px">Add</button></div>
+     </div><div class="muted" id="wz-w-msg" style="font-size:13px;margin-top:8px"></div>`,
+    `<h2>Get alerts on your phone <span class="muted" style="font-size:14px;font-weight:500">(optional)</span></h2>
+     <p>Copybot can message you on <b>Telegram</b> or <b>Discord</b> for every trade, problem or pause, so you don't have to keep it open.</p>
+     <p class="muted">Set it up any time in <b>Settings → Phone alerts</b>. It takes about 2 minutes.</p>
+     <button class="btn" id="wz-alerts">Set up alerts now</button>`,
+    `<div class="wz-hero">${ICON.star}</div><h2>You're ready</h2>
+     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '⚠️ No wallets yet (add them on the Wallets page)'}</li><li>✅ Paper mode: nothing is spent</li></ul>
+     <p class="muted">Tip: before copying a wallet with real money, run it on the <b>Backtest</b> page. Read <a href="#" data-guide="getting-started" id="wz-guide">Getting started</a> for the rest.</p>`,
+  ][step];
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal wizard" role="dialog" aria-modal="true" aria-label="Setup">
+    <div class="wz-top"><div class="wz-dots">${dots}</div><button class="btn sm ghost" id="wz-skip">Skip setup</button></div>
+    <div class="wz-body">${body}</div>
+    <div class="row wz-nav">${step ? '<button class="btn" id="wz-back">Back</button>' : ''}<span class="spacer" style="flex:1"></span>
+      ${step < WZ_STEPS.length - 1 ? `<button class="btn primary" id="wz-next">${step === 0 ? 'Let\'s go' : 'Next'}</button>` : `<button class="btn primary" id="wz-start" ${S.config.wallets.filter((w) => w.enabled !== false).length ? '' : 'disabled'}>Start in paper mode</button><button class="btn" id="wz-done">Finish</button>`}</div></div></div>`;
+  const finish = async () => { $('#modal-root').innerHTML = ''; S.ui = { ...S.ui, setupDone: true }; await act(() => api('PUT', '/api/ui', { setupDone: true })); };
+  $('#wz-skip').onclick = finish;
+  const nx = $('#wz-next'); if (nx) nx.onclick = () => wizard(step + 1);
+  const bk = $('#wz-back'); if (bk) bk.onclick = () => wizard(step - 1);
+  const dn = $('#wz-done'); if (dn) dn.onclick = finish;
+  const gd = $('#wz-guide'); if (gd) gd.addEventListener('click', finish);
+  const st = $('#wz-start'); if (st) st.onclick = async () => { await finish(); go('dashboard'); await act(() => api('POST', '/api/start'), 'Bot started in paper mode'); };
+  const t = $('#wz-test');
+  if (t) t.onclick = async () => {
+    const url = $('#wz-rpc').value.trim();
+    if (!url) return toast('Paste your RPC link first', true);
+    $('#wz-rpc-msg').innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Saving…';
+    const r = await act(() => api('PUT', '/api/connection', { rpcUrl: url }));
+    if (!r) return ($('#wz-rpc-msg').innerHTML = '');
+    S.connection = r;
+    const test = await act(() => api('POST', '/api/connection/test'));
+    $('#wz-rpc-msg').innerHTML = test?.ok ? `<span class="pos">✓ Connected (${test.rpcMs} ms)</span>` : `<span class="neg">✕ ${esc(test?.error || 'Could not connect')}</span>`;
+  };
+  const sc = $('#wz-scout');
+  if (sc) sc.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); $('#wz-w-msg').innerHTML = '<span class="pos">✓ The scout is searching in the background.</span>'; } };
+  const ad = $('#wz-add');
+  if (ad) ad.onclick = async () => {
+    const addrs = $('#wz-addrs').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean).filter((a) => !S.config.wallets.some((w) => w.address === a));
+    if (!addrs.length) return toast('Paste a wallet address first', true);
+    const r = await saveWallets([...S.config.wallets, ...addrs.map((address, i) => ({ address, label: `trader-${S.config.wallets.length + i + 1}`, enabled: true }))], `Added ${addrs.length} wallet${addrs.length > 1 ? 's' : ''}`);
+    if (r) wizard(2);
+  };
+  const al = $('#wz-alerts');
+  if (al) al.onclick = async () => { await finish(); await go('settings'); $('#alerts-settings')?.scrollIntoView({ block: 'start' }); };
+}
+
 const copyBtn = (v) => `<button class="copy" title="Copy" data-copy="${esc(v)}">${ICON_COPY}</button>`;
 const tokenLink = (m) => `<span class="addr"><a class="mono" href="https://dexscreener.com/solana/${esc(m)}" target="_blank" rel="noopener">${short(m)}</a>${copyBtn(m)}</span>`;
 const walletLink = (w) => `<span class="addr"><a class="mono" href="https://solscan.io/account/${esc(w)}" target="_blank" rel="noopener">${short(w)}</a>${copyBtn(w)}</span>`;
@@ -578,7 +677,7 @@ function renderChrome() {
   document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('on', n.dataset.page === S.page));
   const c = S.connection || {};
   $('#side-foot').innerHTML = `
-    <div class="row" style="gap:6px"><span class="dot ${c.usingPublicRpc ? 'warn' : 'ok'}"></span>${c.usingPublicRpc ? 'Public RPC (slow)' : 'Private RPC'}</div>
+    <div class="row" style="gap:6px"><span class="dot ${c.activeRpc === 'backup' || c.usingPublicRpc ? 'warn' : 'ok'}"></span>${c.activeRpc === 'backup' ? 'Backup RPC in use' : c.usingPublicRpc ? 'Public RPC (slow)' : 'Private RPC'}</div>
     <div class="row" style="gap:6px"><span class="dot ${c.hasPrivateKey ? 'ok' : ''}"></span>${c.hasPrivateKey ? 'Trading wallet set' : 'No trading wallet'}</div>
     ${S.app.version ? `<div class="row" style="gap:6px"><span class="dot ${S.app.update.state === 'ready' ? 'warn' : ''}"></span>v${esc(S.app.version)}${updateShort()}</div>` : ''}`;
 }
@@ -612,16 +711,16 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
-    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-05">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
+    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-06">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
     $('#upd-dismiss').onclick = () => { S.updateNoticeDismissed = true; render(); };
   }
   const u = S.app.update;
@@ -719,7 +818,8 @@ function renderDashboard(el) {
 }
 /** What the staged exits have done for a position, and what happens next. */
 function exitPlan(p) {
-  const x = S.config.exits, done = new Set(p.steps || []);
+  const { stopLossPct, ...ov } = S.config.wallets.find((w) => w.address === p.sources?.[0])?.exits || {};
+  const x = { ...S.config.exits, ...ov }, done = new Set(p.steps || []);
   const chips = [];
   const step = (id, on, label) => { if (on) chips.push(`<span class="chip ${done.has(id) ? 'done' : ''}">${done.has(id) ? '✓ ' : ''}${label}</span>`); };
   step('recover', x.recoverCostAtPct > 0, `cost back +${x.recoverCostAtPct}%`);
@@ -730,6 +830,7 @@ function exitPlan(p) {
     const floor = ((p.peakMultiple || 1) * (1 - x.trailingStopPct / 100) - 1) * 100;
     chips.push(`<span class="chip trail" title="Peak +${peakGain.toFixed(0)}%. Sells everything if it falls to ${pct(floor)}.">trailing: sells below ${pct(floor)}</span>`);
   }
+  if (Object.keys(ov).length || stopLossPct !== undefined) chips.push('<span class="chip" title="This wallet has its own exit settings (Wallets page)">wallet\'s own exits</span>');
   return chips.join(' ') || '<span class="muted">stop-loss only</span>';
 }
 
@@ -748,13 +849,56 @@ async function sellPosition(mint, fraction) {
 
 // ----- wallets -----
 /** Your own results from copying each wallet, from the trade history in the current mode. */
+const medianOf = (xs) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b), m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+/** Your measured copy gap across all copied trades in this mode: { median, n }. */
+function measuredGap() {
+  const g = S.trades.filter((t) => t.mode === S.config.mode && typeof t.gapPct === 'number').map((t) => t.gapPct);
+  return { median: medianOf(g), n: g.length };
+}
+const EXIT_FIELDS = [
+  ['stopLossPct', 'Stop-loss', '% down', 'risk.stopLossPct'],
+  ['recoverCostAtPct', 'Take back my cost at', '% up', 'exits.recoverCostAtPct'],
+  ['tp1AtPct', 'Take-profit 1 at', '% up', 'exits.tp1AtPct'],
+  ['tp1SellPct', 'Take-profit 1 sells', '% of rest', 'exits.tp1SellPct'],
+  ['tp2AtPct', 'Take-profit 2 at', '% up', 'exits.tp2AtPct'],
+  ['tp2SellPct', 'Take-profit 2 sells', '% of rest', 'exits.tp2SellPct'],
+  ['trailingAfterPct', 'Start trailing stop after', '% up', 'exits.trailingAfterPct'],
+  ['trailingStopPct', 'Trailing stop', '% drop', 'exits.trailingStopPct'],
+];
+/** Edit one wallet's own exit settings. Blank = use the global setting. */
+function walletExitsModal(i) {
+  const w = S.config.wallets[i], o = w.exits || {};
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:560px"><h3>Exits for ${esc(w.label)}</h3>
+    <p class="muted" style="margin-top:0">Used for positions copied from this wallet. Leave a box empty to use your normal setting (shown in grey). Useful for a fast scalper vs a long holder.</p>
+    <div class="stack" style="gap:8px">${EXIT_FIELDS.map(([k, label, unit, path]) => `<label class="row" style="justify-content:space-between;gap:12px"><span>${label}</span>
+      <span class="with-unit" style="width:190px"><input type="number" min="0" step="any" data-ex="${k}" value="${o[k] ?? ''}" placeholder="${esc(getP(S.config, path))}"><span>${unit}</span></span></label>`).join('')}</div>
+    <div class="row" style="margin-top:16px"><button class="btn ghost" data-a="reset">Use normal settings</button><span class="spacer" style="flex:1"></span><button class="btn" data-a="no">Cancel</button><button class="btn primary" data-a="yes">Save</button></div></div></div>`;
+  const close = () => { $('#modal-root').innerHTML = ''; };
+  const save = async (exits) => {
+    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits } : x));
+    if (await saveWallets(wallets, 'Exit settings saved')) close();
+  };
+  $('#modal-root [data-a=no]').onclick = close;
+  $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) close(); };
+  $('#modal-root [data-a=reset]').onclick = () => save(undefined);
+  $('#modal-root [data-a=yes]').onclick = () => {
+    const exits = {};
+    for (const inp of document.querySelectorAll('[data-ex]')) if (inp.value !== '') exits[inp.dataset.ex] = Number(inp.value);
+    save(Object.keys(exits).length ? exits : undefined);
+  };
+}
 function walletStats() {
   const mode = S.config.mode, weekAgo = Date.now() - 7 * 86400_000;
   const out = {}, lastBuy = {};
-  const get = (a) => (out[a] ??= { buys: 0, sells: 0, wins: 0, pnl: 0, week: 0 });
+  const get = (a) => (out[a] ??= { buys: 0, sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [] });
   for (const t of [...S.trades].reverse()) { // oldest first
     if (t.mode !== mode) continue;
-    if (t.side === 'buy') { lastBuy[t.mint] = t.source; if (t.source) get(t.source).buys++; continue; }
+    if (t.side === 'buy') {
+      lastBuy[t.mint] = t.source;
+      if (t.source) { const w = get(t.source); w.buys++; if (typeof t.gapPct === 'number') w.gaps.push(t.gapPct); if (typeof t.lagSec === 'number') w.lags.push(t.lagSec); }
+      continue;
+    }
+    if (typeof t.gapPct === 'number' && t.sources?.length === 1) get(t.sources[0]).gaps.push(t.gapPct);
     const srcs = t.sources || (lastBuy[t.mint] ? [lastBuy[t.mint]] : []);
     for (const a of srcs) {
       const share = (t.pnl || 0) / srcs.length, w = get(a);
@@ -777,12 +921,13 @@ function renderWallets(el) {
       <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a></div>
     </div></div>
     <div class="card">
-      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
+      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
       ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
-      <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
+      <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
           const held = S.status.positions.filter((p) => p.sources.includes(w.address)).length;
-          const st = stats[w.address] || { sells: 0, wins: 0, pnl: 0, week: 0 };
+          const st = stats[w.address] || { sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [] };
+          const gap = medianOf(st.gaps), lag = medianOf(st.lags);
           const losing = st.sells >= 5 && st.pnl < 0;
           return `<tr class="wallet-row">
             <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
@@ -791,10 +936,11 @@ function renderWallets(el) {
             <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
             <td class="r num">${st.sells ? Math.round((st.wins / st.sells) * 100) + '%' : '—'}</td>
             <td class="r num muted">${st.sells || '—'}</td>
+            <td class="r num ${gap == null ? 'muted' : gap > 10 ? 'neg' : ''}" title="${gap == null ? 'Measured on your next copied trades' : `Median of ${st.gaps.length} trades${lag != null ? `, ${lag.toFixed(1)} s behind them` : ''}`}">${gap == null ? '—' : `${gap > 0 ? '−' : '+'}${Math.abs(gap).toFixed(1)}%`}</td>
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits ? 'primary' : ''}" data-exits="${i}" title="${w.exits ? 'This wallet has its own exit settings' : 'Use different exit settings for this wallet'}">Exits${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;
@@ -805,6 +951,7 @@ function renderWallets(el) {
     if (ws.some((w) => w.address === address)) return toast('That wallet is already in the list', true);
     if (await saveWallets([...ws, { address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], 'Wallet added')) e.target.reset();
   };
+  el.querySelectorAll('[data-exits]').forEach((b) => (b.onclick = () => walletExitsModal(Number(b.dataset.exits))));
   el.querySelectorAll('[data-toggle]').forEach((c) => (c.onchange = () => saveWallets(ws.map((w, i) => (i == c.dataset.toggle ? { ...w, enabled: c.checked } : w)))));
   el.querySelectorAll('[data-label]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.label ? { ...w, label: inp.value.trim() } : w)), 'Saved')));
   el.querySelectorAll('[data-mult]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.mult ? { ...w, sizeMultiplier: Number(inp.value) } : w)), 'Saved')));
@@ -828,8 +975,42 @@ async function startAnalyze(wallets, txs = 300) {
   const j = await act(() => api('POST', '/api/jobs/analyze', { wallets, txs }));
   if (j) { upsertJob(j); go('research'); }
 }
+function scoutJob() { return S.jobs.find((j) => j.kind === 'scout' && (j.status === 'queued' || j.status === 'running')); }
+function scoutCard() {
+  const run = scoutJob(), r = S.scout, cfg = S.config, auto = cfg.ai.enabled && cfg.ai.manageWallets, c = S.connection || {};
+  const hrs = (m) => (m < 60 ? `${m.toFixed(0)} min` : `${(m / 60).toFixed(1)} h`);
+  const pickCard = (p) => {
+    const rep = r.reports.find((x) => x.wallet === p.address) || {};
+    const added = r.added.includes(p.address), copying = inList(p.address);
+    return `<div class="pick"><div class="row" style="justify-content:space-between">${walletLink(p.address)}${copying ? `<span class="tag buy">${added ? 'Added' : 'Copying'}</span>` : `<button class="btn sm primary" data-scout-add="${esc(p.address)}" data-mult="${p.sizeMultiplier}" data-budget="${p.budgetSol}">Copy</button>`}</div>
+      <div class="why">${esc(p.reason)}</div>
+      <div style="margin:-4px 0 8px"><button class="btn sm ghost" data-backtest="${esc(p.address)}">Backtest this wallet</button></div>
+      <div class="nums"><span>Win rate <b>${Math.round((rep.winRate || 0) * 100)}%</b></span><span>Return <b class="${cls(rep.roiPct)}">${pct(rep.roiPct || 0)}</b></span><span>Trades <b>${rep.closedTokens ?? '–'}</b></span><span>Holds <b>${rep.closedTokens ? hrs(rep.medianHoldMin) : '–'}</b></span>${rep.earlyOn?.length ? `<span>Early on <b>${esc(rep.earlyOn.join(', '))}</b></span>` : ''}</div>
+      ${p.sizeMultiplier !== 1 || p.budgetSol ? `<div class="muted" style="font-size:12px;margin-top:8px">Suggested size ×${p.sizeMultiplier}${p.budgetSol ? ` · budget ${p.budgetSol} SOL` : ''}</div>` : ''}</div>`;
+  };
+  const result = !r ? '' : `
+    <div class="card-h" style="border-top:1px solid var(--border)"><div><h2>Last search · ${ago(r.at)} ago</h2><div class="muted" style="font-size:12.5px">${r.pickedBy === 'claude' ? 'Picked by Claude' : 'Picked by the rules'}: ${esc(r.summary)}</div></div></div>
+    <div class="tokchips"><span class="muted" style="font-size:12.5px;align-self:center">Tokens scanned:</span>${r.tokens.map((t) => `<span class="chip">${esc(t.symbol)} <b class="pos">+${t.change24hPct.toFixed(0)}%</b></span>`).join('')}</div>
+    ${r.notes.length ? `<div class="banner warn" style="margin:0 18px 12px">${r.notes.map(esc).join('<br>')}</div>` : ''}
+    ${r.picks.length ? `<div class="picks">${r.picks.map(pickCard).join('')}</div>` : '<div class="empty" style="padding:16px">No wallet was good enough this time. That\'s normal: most wallets that catch one pump don\'t keep winning.</div>'}
+    <details style="padding:0 18px 16px"><summary class="muted" style="cursor:pointer;font-size:13px">${r.reports.length === 1 ? 'The 1 wallet' : `All ${r.reports.length} wallets`} checked</summary>${analyzeTable(r.reports)}</details>`;
+  return `<div class="card" style="margin-bottom:16px">
+    <div class="scout-hero"><div class="orb" style="width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--rainbow);color:#fff;flex:none">${ICON_SPARK}</div>
+      <div style="flex:1;min-width:260px"><h2 style="margin:0 0 4px;font-size:18px">Let Copybot find wallets for you</h2>
+        <div class="muted">It scans tokens that pumped recently, finds the wallets that bought early, checks their real track record, and ${c.hasAnthropicKey ? 'Claude picks the most suitable ones' : 'ranks the best ones (connect Claude on the Autopilot page to have it choose)'}. ${auto ? `<b>Autopilot is on, so picks are added to your copy list automatically</b> (up to ${cfg.ai.scoutMaxPicks} per search${cfg.ai.scoutEveryHours ? `, every ${cfg.ai.scoutEveryHours} h while the bot runs` : ''}).` : 'You decide which picks to copy.'}</div>
+        <div class="scout-steps"><span>1 · Pumped tokens</span><span>2 · Early buyers</span><span>3 · Track records</span><span>4 · ${c.hasAnthropicKey ? 'Claude picks' : 'Best ranked'}</span></div></div>
+      <div style="text-align:right">${run ? `<div class="row" style="gap:8px"><span class="spinner"></span><span class="muted" style="font-size:13px;max-width:280px">${esc(run.progress)}</span></div>` : `<button class="btn primary" id="scout-go">Find wallets for me</button>`}
+        <div class="muted" style="font-size:12px;margin-top:6px">Takes 5–15 minutes${c.usingPublicRpc ? ', slower on the public RPC' : ''}</div></div>
+    </div>${result}</div>`;
+}
+function bindScout() {
+  const g = $('#scout-go');
+  if (g) g.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); if (S.page === 'research') render(); } };
+  document.querySelectorAll('[data-scout-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.scoutAdd, label: `scout-${b.dataset.scoutAdd.slice(0, 4)}`, enabled: true, sizeMultiplier: Number(b.dataset.mult) || 1, maxExposureSol: Number(b.dataset.budget) || 0 }], 'Added to your copy list')));
+}
 function renderResearch(el) {
-  el.innerHTML = `
+  el.innerHTML = `${scoutCard()}
+    <h3 class="more-h" style="margin:4px 0 12px">Or search by hand</h3>
     <div class="grid two" style="margin-bottom:16px">
       <div class="card"><div class="card-h"><h2>1 · Discover early buyers</h2></div><div class="card-b stack">
         <ol class="steps">
@@ -852,6 +1033,7 @@ function renderResearch(el) {
     <div class="card"><div class="card-h"><h2>Results</h2></div><div id="jobs">${jobsHtml()}</div></div>`;
   const lines = (id) => $(id).value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
   $('#disc-go').onclick = async () => { const j = await act(() => api('POST', '/api/jobs/discover', { mints: lines('#disc-mints') })); if (j) { upsertJob(j); renderJobs(); } };
+  bindScout();
   $('#an-go').onclick = async () => { const j = await act(() => api('POST', '/api/jobs/analyze', { wallets: lines('#an-wallets'), txs: Number($('#an-txs').value) })); if (j) { upsertJob(j); renderJobs(); } };
   bindJobs();
 }
@@ -863,10 +1045,12 @@ function renderJobs() { const el = $('#jobs'); if (el) { el.innerHTML = jobsHtml
 function jobsHtml() {
   if (!S.jobs.length) return '<div class="empty">Results from discovery and analysis show up here.</div>';
   return S.jobs.map((j) => {
-    const title = j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
+    const title = j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
     const head = `<div class="job-h">${j.status === 'running' || j.status === 'queued' ? '<span class="spinner"></span>' : j.status === 'error' ? '<span class="dot bad"></span>' : '<span class="dot ok"></span>'}
       <b style="font-weight:600">${title}</b><span class="muted" style="font-size:12.5px">${esc(j.status === 'error' ? j.error : j.progress)}</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:12px">${time(j.createdAt)}</span></div>`;
     if (j.status !== 'done') return `<div class="job">${head}</div>`;
+    if (j.kind === 'scout') return `<div class="job">${head}<div class="muted" style="padding:0 18px 12px;font-size:13px">Results are shown in the Wallet scout card above.</div></div>`;
+    if (j.kind === 'backtest') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the backtest results →</a></div></div>`;
     return `<div class="job">${head}${j.kind === 'analyze' ? analyzeTable(j.result) : discoverTable(j.result)}</div>`;
   }).join('');
 }
@@ -881,7 +1065,7 @@ function analyzeTable(rs) {
       <td class="r num">${Math.round(r.tradesPerDay)}</td>
       <td class="r num">${sol(r.medianBuySol, 2)}</td>
       <td class="r num">${r.closedTokens ? (r.medianHoldMin < 60 ? r.medianHoldMin.toFixed(1) + 'm' : (r.medianHoldMin / 60).toFixed(1) + 'h') : '—'}</td>
-      <td class="r">${inList(r.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(r.wallet)}">Copy</button>`}</td>
+      <td class="r" style="white-space:nowrap"><button class="btn sm ghost" data-backtest="${esc(r.wallet)}">Backtest</button> ${inList(r.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(r.wallet)}">Copy</button>`}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 function discoverTable(res) {
@@ -899,7 +1083,116 @@ function bindJobs() {
   document.querySelectorAll('[data-analyze-list]').forEach((b) => (b.onclick = () => startAnalyze(b.dataset.analyzeList.split(','))));
 }
 
+// ----- backtest -----
+const dateFmt = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
+async function startBacktest(wallets, txs, delayPct) {
+  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, txs, delayPct, replayExits: S.btExits !== false }));
+  if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); go('backtest'); }
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-backtest]');
+  if (b) { e.preventDefault(); startBacktest(b.dataset.backtest.split(','), S.btTxs || 600, S.btDelay ?? 5); }
+  const o = e.target.closest('[data-bt-open]');
+  if (o) { e.preventDefault(); S.btJob = Number(o.dataset.btOpen); go('backtest'); }
+});
+function curveSvg(curve, from, to) {
+  if (curve.length < 2) return '<div class="muted" style="padding:20px 0;text-align:center">Not enough closed trades to draw a chart.</div>';
+  const W = 1000, H = 220, pad = 8;
+  const t0 = from ?? curve[0][0], t1 = Math.max((to ?? curve[curve.length - 1][0]), t0 + 1);
+  const pts = [[t0, 0], ...curve];
+  const vals = pts.map((p) => p[1]);
+  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), span = hi - lo || 1;
+  const x = (t) => ((t - t0) / (t1 - t0)) * W, y = (v) => pad + (1 - (v - lo) / span) * (H - 2 * pad);
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
+  const last = vals[vals.length - 1];
+  const col = last >= 0 ? 'var(--green)' : 'var(--red)';
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Profit over time">
+    <defs><linearGradient id="btfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+    <line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--border)" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>
+    <path d="${line}L${x(pts[pts.length - 1][0]).toFixed(1)},${y(0)}L0,${y(0)}Z" fill="url(#btfill)"/>
+    <path d="${line}" fill="none" stroke="${col}" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
+    <div class="bt-axis"><span>${dateFmt(t0)}</span><span>high ${signed(hi, 3)} · low ${signed(lo, 3)} SOL</span><span>${dateFmt(t1)}</span></div>`;
+}
+function btResult(j) {
+  const r = j.result, s = r.settings;
+  const label = (w) => S.config.wallets.find((x) => x.address === w)?.label;
+  const wname = (w) => (label(w) ? `${esc(label(w))} <span class="muted">${short(w)}</span>` : walletLink(w));
+  const skippedTotal = Object.values(r.skipped).reduce((a, n) => a + n, 0);
+  const copied = r.wallets.reduce((a, w) => a + w.copied, 0);
+  const unpriced = r.open.filter((o) => o.valueSol === null).length;
+  return `
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${r.from ? ` · ${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">Your settings: ${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, last ${s.txs} transactions per wallet.</div></div></div></div>
+    ${!r.from ? '<div class="card"><div class="empty"><h3>No SOL swaps found</h3>These wallets have no token trades in the transactions read. Try a longer history.</div></div>' : `
+    <div class="grid stats">
+      <div class="card stat"><div class="k">${ICON.coin}Total profit</div><div class="v num ${cls(r.totalSol)}">${signed(r.totalSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${r.roiPct != null ? `${pct(r.roiPct)} on ${sol(r.spentSol, 2)} SOL spent` : ''}</div></div>
+      <div class="card stat"><div class="k">${ICON.star}Win rate</div><div class="v num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '–'}</div><div class="s">${r.wins} of ${r.closed} sells in profit</div></div>
+      <div class="card stat"><div class="k">${pixelSvg(HEART)}Worst dip</div><div class="v num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">largest drop from a high point</div></div>
+      <div class="card stat"><div class="k">${ICON.key}Trades copied</div><div class="v num">${copied}</div><div class="s">${skippedTotal} skipped by your limits</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Profit over time</h2><span class="spacer"></span><span class="muted" style="font-size:12px">closed trades only · realized ${signed(r.realizedSol, 3)} SOL</span></div><div class="bt-curve">${curveSvg(r.curve, r.from, r.to)}</div></div>
+    <div class="grid two" style="margin-bottom:16px">
+      <div class="card"><div class="card-h"><h2>By wallet</h2></div><div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th class="r">Their buys</th><th class="r">Copied</th><th class="r">Win rate</th><th class="r">Profit</th><th></th></tr></thead><tbody>
+        ${r.wallets.map((w) => `<tr><td>${wname(w.wallet)}</td><td class="r num">${w.signals}</td><td class="r num">${w.copied}</td><td class="r num">${w.closed ? Math.round((w.wins / w.closed) * 100) + '%' : '–'}</td><td class="r num ${cls(w.pnlSol)}">${signed(w.pnlSol, 3)}</td>
+          <td class="r">${inList(w.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(w.wallet)}">Copy</button>`}</td></tr>`).join('')}</tbody></table></div></div>
+      <div class="card"><div class="card-h"><h2>Skipped and still open</h2></div><div class="card-b stack">
+        <div class="row" style="gap:6px">${skippedTotal ? Object.entries(r.skipped).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip">${esc(k)} <b>${n}</b></span>`).join('') : '<span class="muted">Nothing was skipped.</span>'}</div>
+        <div class="muted" style="font-size:13px">${r.open.length ? `${r.open.length} position${r.open.length > 1 ? 's' : ''} would still be open: cost ${sol(r.open.reduce((a, o) => a + o.costSol, 0), 3)} SOL${r.unrealizedSol != null ? `, worth ${signed(r.unrealizedSol, 3)} SOL vs cost at today's prices` : `. ${unpriced} couldn't be priced today (likely dead) and count as a total loss`}.` : 'No positions would still be open.'}</div>
+        ${r.best ? `<div class="muted" style="font-size:13px">Best trade <b class="pos">${signed(r.best.pnl, 3)}</b> · worst <b class="${cls(r.worst.pnl)}">${signed(r.worst.pnl, 3)}</b> SOL</div>` : ''}
+      </div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Trades</h2><span class="spacer"></span><span class="muted" style="font-size:12px">newest first${r.trades.length >= 200 ? ', last 200' : ''}</span></div>
+      <div class="tbl-wrap"><table><thead><tr><th>When</th><th>Side</th><th>Token</th><th>Copied from</th><th class="r">SOL</th><th class="r">Profit</th><th>Why</th></tr></thead><tbody>
+      ${r.trades.slice(0, 100).map((t) => `<tr><td class="muted num">${dateFmt(t.t)} ${new Date(t.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td><span class="tag ${t.side}">${t.side}</span></td><td>${tokenLink(t.mint)}</td><td>${wname(t.wallet)}</td><td class="r num">${sol(t.sol, 3)}</td><td class="r num ${cls(t.pnl)}">${t.pnl != null ? signed(t.pnl, 3) : ''}</td><td class="muted" style="font-size:12.5px">${esc(t.reason || '')}</td></tr>`).join('')}
+      </tbody></table></div></div>`}
+    ${r.unreadable ? `<div class="banner warn"><div><b>${r.unreadable} of ${r.read} transactions couldn't be read</b> (the connection was rate-limiting), so some trades may be missing and the numbers are less certain. A private RPC (Settings → Connection) fixes this.</div></div>` : ''}
+    <div class="banner info"><div><b>How to read this.</b> It replays these wallets' real trades with your current settings, buying ${s.delayPct}% higher and selling ${s.delayPct}% lower than they did, because you always trade after them, plus network fees. It sells when they sell${r.exitsReplayed?.withPrices ? `, and your stop-loss, take-profits and trailing stop were replayed from price history for ${r.exitsReplayed.withPrices} of ${r.exitsReplayed.tokens} tokens (${r.exitsReplayed.exitSells} sells came from them)` : '. Stop-loss and take-profits were not replayed'}. Rug protection isn't replayed. Past results don't predict future ones.</div></div>`;
+}
+function renderBacktest(el) {
+  const list = S.jobs.filter((j) => j.kind === 'backtest');
+  const j = list.find((x) => x.id === S.btJob) || list[0];
+  const mine = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>What would copying have made?</h2><div class="muted" style="font-size:12.5px">Replays up to 5 wallets' real trades with your current settings (buy size, limits, budgets, copying sells, daily loss limit).</div></div></div>
+      <div class="card-b bt-form">
+        <div class="stack"><textarea class="input mono" id="bt-wallets" rows="4" placeholder="Wallet addresses, one per line (up to 5)">${esc(S.btWallets || '')}</textarea>
+          <div class="row"><button class="btn sm ghost" id="bt-mine" ${mine.length ? '' : 'disabled'}>Use the wallets I copy</button></div></div>
+        <div class="stack">
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Copy-delay cost <span class="with-unit" style="width:120px"><input type="number" id="bt-delay" min="0" max="50" step="0.5" value="${S.btDelay ?? 5}"><span>%</span></span></label>
+          <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.${(() => { const g = measuredGap(); return g.n >= 5 ? ` <b>Your measured gap: ${g.median.toFixed(1)}%</b> over ${g.n} trades. <a href="#" id="bt-use-gap">Use it</a>` : ''; })()}</div>
+          <label class="row muted" style="gap:8px;font-size:13px"><input type="checkbox" id="bt-exits" ${S.btExits === false ? '' : 'checked'}> Replay my stop-loss and take-profits (slower: loads price history, ~5 s per token)</label>
+          <button class="btn primary" id="bt-go">Run backtest</button>
+        </div>
+      </div></div>
+    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
+    ${!j ? `<div class="card"><div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No backtests yet</h3>Enter wallets above, or press <b>Backtest</b> next to any wallet on the Wallets or Find wallets pages.</div></div>`
+      : j.status === 'done' ? btResult(j)
+      : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
+      : `<div class="card"><div class="empty"><span class="spinner"></span><h3 style="margin-top:12px">Running the backtest…</h3>${esc(j.progress)}</div></div>`}`;
+  const ug = $('#bt-use-gap');
+  if (ug) ug.onclick = (e) => { e.preventDefault(); $('#bt-delay').value = Math.max(0, +measuredGap().median.toFixed(1)); };
+  $('#bt-mine').onclick = () => { $('#bt-wallets').value = mine.join('\n'); };
+  $('#bt-go').onclick = () => {
+    const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    S.btTxs = Number($('#bt-txs').value); S.btDelay = Number($('#bt-delay').value); S.btExits = $('#bt-exits').checked;
+    startBacktest(wallets, S.btTxs, S.btDelay);
+  };
+  el.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.add, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list')));
+}
+
 // ----- trades -----
+async function exportCsv(mode) {
+  try {
+    const r = await fetch(`/api/trades.csv?mode=${mode}`, { headers: { 'x-copybot-token': TOKEN || '' } });
+    if (!r.ok) throw new Error(`Export failed (${r.status})`);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = `copybot-trades-${mode}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) { toast(e.message, true); }
+}
 function renderTrades(el) {
   const f = S.tradeFilter;
   const ts = S.trades.filter((t) => f === 'all' || t.mode === f);
@@ -910,6 +1203,7 @@ function renderTrades(el) {
     <div class="row" style="margin-bottom:16px">
       <div class="seg" id="tf">${['all', 'paper', 'live'].map((m) => `<button class="${f === m ? 'on' : ''}" data-f="${m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div>
       <span class="spacer" style="flex:1"></span>
+      ${ts.length ? `<button class="btn sm" id="csv-btn">Export CSV</button>` : ''}
       <span class="muted">${ts.length} trades · ${sells.length ? `${Math.round((wins / sells.length) * 100)}% profitable sells · ` : ''}<span class="${cls(total)}">${signed(total, 3)} SOL</span></span>
     </div>
     <div class="card">${ts.length ? `<div class="tbl-wrap"><table>
@@ -925,6 +1219,7 @@ function renderTrades(el) {
         <td class="r">${t.sig && t.sig !== 'PAPER' ? `<a href="https://solscan.io/tx/${esc(t.sig)}" target="_blank" rel="noopener" style="font-size:12.5px">View tx</a>` : ''}</td>
       </tr>`).join('')}</tbody></table></div>` : '<div class="empty"><h3>No trades yet</h3>Trades the bot makes appear here.</div>'}</div>`;
   el.querySelectorAll('#tf button').forEach((b) => (b.onclick = () => { S.tradeFilter = b.dataset.f; render(); }));
+  const cb = $('#csv-btn'); if (cb) cb.onclick = () => exportCsv(S.tradeFilter);
 }
 const labelFor = (addr) => { const w = S.config.wallets.find((x) => x.address === addr); return w?.label || short(addr); };
 
@@ -1146,7 +1441,7 @@ async function loadAi() {
 }
 const usd = (v) => (v < 0.01 && v > 0 ? '<$0.01' : '$' + v.toFixed(2));
 function aiItem(d) {
-  const kind = { buy: d.verdict === 'skip' ? ['skip', 'Skipped buy'] : ['buy', 'Bought'], review: ['ai', 'Position review'], wallets: ['ai', 'Wallet review'], test: ['ai', 'Test'] }[d.kind] || ['ai', d.kind];
+  const kind = { buy: d.verdict === 'skip' ? ['skip', 'Skipped buy'] : ['buy', 'Bought'], review: ['ai', 'Position review'], wallets: ['ai', 'Wallet review'], scout: ['ai', 'Wallet scout'], test: ['ai', 'Test'] }[d.kind] || ['ai', d.kind];
   const token = d.mint ? ` ${tokenLink(d.mint)}${d.symbol ? ` <span class="muted">${esc(d.symbol)}</span>` : ''}` : '';
   let outcome = '';
   if (d.kind === 'buy' && d.verdict === 'skip') {
@@ -1190,6 +1485,7 @@ function renderAutopilot(el, fresh) {
     <div class="card"><div class="card-h"><h2>Ask Claude now</h2></div><div class="card-b ai-actions">
       <button class="btn" id="ai-test" ${a.hasKey ? '' : 'disabled'}>Test connection</button>
       <button class="btn" id="ai-rev-pos" ${a.hasKey && S.status.positions.length && !a.reviewBusy ? '' : 'disabled'}>${a.reviewBusy ? 'Reviewing…' : `Review open positions (${S.status.positions.length})`}</button>
+      <button class="btn primary" id="ai-scout" ${scoutJob() ? 'disabled' : ''}>${scoutJob() ? 'Searching for wallets…' : 'Find new wallets'}</button>
       <button class="btn" id="ai-rev-w" ${a.hasKey && !a.walletReviewBusy ? '' : 'disabled'}>${a.walletReviewBusy ? 'Reviewing wallets…' : `Review wallets${a.candidates ? ` + ${a.candidates} candidate${a.candidates === 1 ? '' : 's'}` : ''}`}</button>
       <span class="muted" id="ai-msg" style="font-size:13px;align-self:center">${a.lastWalletReview ? `Last wallet review ${ago(a.lastWalletReview)} ago.` : ''}${a.candidates ? '' : ' Analyze wallets on <a href="#" onclick="go(\'research\');return false">Find wallets</a> to give Claude candidates.'}</span>
     </div></div>
@@ -1215,6 +1511,7 @@ function renderAutopilot(el, fresh) {
     const r = await act(() => api('POST', '/api/ai/test'));
     $('#ai-msg').innerHTML = r ? (r.ok ? `<span class="pos">✓ ${esc(r.message)}</span> <span class="muted">(${usd(r.costUsd || 0)})</span>` : `<span class="neg">✕ ${esc(r.message)}</span>`) : '';
   };
+  $('#ai-scout').onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); go('research'); } };
   $('#ai-rev-pos').onclick = async () => { const b = $('#ai-rev-pos'); b.disabled = true; b.textContent = 'Reviewing…'; await act(() => api('POST', '/api/ai/review-positions')); loadAi(); };
   $('#ai-rev-w').onclick = async () => {
     const b = $('#ai-rev-w'); b.disabled = true; b.textContent = 'Reviewing wallets…';
@@ -1247,12 +1544,20 @@ const FIELDS = [
     { k: 'exits.trailingStopPct', label: 'Trailing stop', unit: '% drop', help: 'Then sell everything if it falls this much from its highest point. 0 = off.' },
     { k: 'risk.takeProfitPct', label: 'Sell everything at', unit: '% up', help: 'Optional: close the whole position at this gain. 0 = off (use the steps above).' },
   ]},
-  { title: 'Token filters', desc: 'Market checks before every buy, using Dexscreener data. 0 turns a filter off.', fields: [
+  { title: 'Rug protection', desc: 'While you hold a token, sell everything at once if it looks like a rug pull or a dump. Checked with the stop-loss. 0 turns a check off.', fields: [
+    { k: 'protect.liquidityDropPct', label: 'Sell if liquidity drains by', unit: '% from high', help: 'The pool emptying out is the classic rug pull. Compared with the highest liquidity seen since you bought. Pump.fun tokens still on their bonding curve have no pool figure, so this waits until they graduate.' },
+    { k: 'protect.crashPct', label: 'Sell if value crashes by', unit: '%', help: 'A drop this big within the window below, even if you\'re still in profit.' },
+    { k: 'protect.crashWindowMin', label: 'Crash window', unit: 'min', step: 1 },
+    { k: 'protect.maxSellBuyRatio', label: 'Sell if sellers outnumber buyers', unit: '× (5 min)', help: 'E.g. 3 = three times more sells than buys in the last 5 minutes, with at least 20 sells.' },
+  ]},
+  { title: 'Token filters', desc: 'Market checks before every buy, using Dexscreener data (and Solscan for holders). 0 turns a filter off.', fields: [
     { k: 'filters.minLiquidityUsd', label: 'Minimum liquidity', unit: 'USD', step: 1000, help: 'Thin pools mean big slippage: often -20% to -50% on the way out. Pump.fun tokens still on their bonding curve have no pool figure; the buy-then-sell check covers them.' },
     { k: 'filters.maxTradePctOfLiquidity', label: 'Max buy size vs pool', unit: '% of pool', help: 'Skip if your buy would be this big a share of the pool. It would move the price against you.' },
     { k: 'filters.minMarketCapUsd', label: 'Minimum market cap', unit: 'USD', step: 1000 },
     { k: 'filters.maxMarketCapUsd', label: 'Maximum market cap', unit: 'USD', step: 1000 },
     { k: 'filters.minTokenAgeMin', label: 'Minimum token age', unit: 'min', step: 1, help: 'Skip tokens whose first pool is newer than this.' },
+    { k: 'filters.maxTopHolderPct', label: 'Largest holder limit', unit: '% of supply', help: () => `Skip if one wallet owns more than this. Liquidity pools don't count. ${S.connection?.hasSolscanKey ? '' : '<b>Needs a Solscan API key (Settings → Connection).</b> '}0 = off.` },
+    { k: 'filters.maxTop10HoldersPct', label: 'Top 10 holders limit', unit: '% of supply', help: 'Skip if the 10 largest wallets together own more than this. 0 = off.' },
     { k: 'filters.skipIfNoMarketData', label: 'Skip tokens with no market data', type: 'toggle', help: "Brand-new launches may not be listed yet. On = skip them, off = only the other safety checks apply." },
   ]},
   { title: 'Limits', desc: 'Caps that protect your balance.', fields: [
@@ -1273,6 +1578,12 @@ const FIELDS = [
     { k: 'safety.rejectToken2022', label: 'Skip Token-2022 tokens', type: 'toggle', help: 'Newer token standard that can carry transfer taxes.' },
     { k: 'safety.blacklist', label: 'Never buy these tokens', type: 'list', help: 'One token address per line.' },
   ]},
+  { title: 'Phone alerts', id: 'alerts-settings', desc: 'Get a message on Telegram or Discord when something happens, so you don\'t have to keep Copybot open.', extra: alertsSetupHtml, fields: [
+    { k: 'alerts.trades', label: 'Trades', type: 'toggle', help: 'Every buy and sell, with profit.' },
+    { k: 'alerts.errors', label: 'Problems', type: 'toggle', help: 'Errors and RPC trouble. The same problem is sent at most once every 10 minutes.' },
+    { k: 'alerts.guard', label: 'Circuit breaker', type: 'toggle', help: 'When the daily loss limit or losing-streak pause stops new buys.' },
+    { k: 'alerts.autopilot', label: 'Autopilot decisions', type: 'toggle', help: 'What Claude decided, and why.' },
+  ]},
   { title: 'Autopilot (Claude)', id: 'ai-settings', desc: 'What Claude may decide. It always stays inside every limit above. Turn it on and add your key on the Autopilot page.', fields: [
     { k: 'ai.enabled', label: 'Autopilot on', type: 'toggle' },
     { k: 'ai.decideBuys', label: 'Claude decides buys', type: 'toggle', help: 'Buy or skip each copy signal that passed the safety checks, and how big (¼× to 2× your normal size).' },
@@ -1281,12 +1592,16 @@ const FIELDS = [
     { k: 'ai.manageWallets', label: 'Claude manages wallets', type: 'toggle', help: 'Pause losing wallets, change sizes and budgets, and add wallets from your Find wallets results.' },
     { k: 'ai.walletReviewHours', label: 'Review wallets every', unit: 'hours', step: 1 },
     { k: 'ai.maxWallets', label: 'Max wallets copied at once', unit: 'wallets', step: 1 },
+    { k: 'ai.scoutEveryHours', label: 'Search for new wallets every', unit: 'hours', step: 1, help: 'The wallet scout looks for new wallets while the bot runs and adds the best ones. 0 = only when you press "Find wallets for me".' },
+    { k: 'ai.scoutMaxPicks', label: 'New wallets per search', unit: 'wallets', step: 1 },
     { k: 'ai.dailyBudgetUsd', label: 'Daily AI budget', unit: 'USD', help: 'What Claude may cost per day. When it runs out, Copybot uses its normal rules until tomorrow.' },
     { k: 'ai.guidance', label: 'Your instructions for Claude', type: 'text', help: 'Optional. For example: "Be picky. Avoid tokens younger than 10 minutes."' },
   ]},
   { title: 'Speed', desc: 'Faster fills cost a little more in fees.', fields: [
     { k: 'execution.priorityLevel', label: 'Transaction priority', type: 'select', options: [['medium', 'Normal'], ['high', 'High'], ['veryHigh', 'Very high']] },
     { k: 'execution.priorityFeeMaxLamports', label: 'Max priority fee per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9) },
+    { k: 'execution.jitoTipLamports', label: 'Jito tip per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9), help: 'Live mode: pay validators running Jito a tip (instead of the priority fee) so your trade lands sooner. 0.0005–0.002 SOL is typical when it\'s busy. 0 = off. Tips only ever go to Jito\'s official tip accounts, capped at this amount.' },
+    { k: 'execution.fastStream', label: 'Fast trade detection (Helius)', type: 'toggle', help: () => `Gets the copied wallet\'s full transaction the moment it happens, instead of being told and then fetching it. Needs a Helius RPC with Enhanced WebSockets on your plan; otherwise Copybot uses the normal method automatically.${S.status?.stream ? ` <b>Status: ${esc(S.status.stream)}</b>` : ''}` },
     { k: 'monitor.pollIntervalSec', label: 'Backup check every', unit: 'sec', step: 1, help: 'Polling backup in case the live feed drops a trade.' },
     { k: 'monitor.exitCheckIntervalSec', label: 'Check stop-loss / take-profit every', unit: 'sec', step: 1 },
   ]},
@@ -1304,7 +1619,7 @@ function fieldHtml(f) {
   else if (f.type === 'text') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" maxlength="1000" placeholder="none">${esc(v || '')}</textarea>`;
   else if (f.type === 'list') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" placeholder="none">${esc((v || []).join('\n'))}</textarea>`;
   else ctl = `<div class="with-unit"><input type="number" inputmode="decimal" id="${id}" data-k="${f.k}" value="${esc(+Number(v).toFixed(9))}" step="${f.step || 'any'}" min="0"><span>${f.unit}</span></div>`;
-  return `<div class="field"><div><label class="l" for="${id}">${f.label}</label>${f.help ? `<div class="h">${f.help}</div>` : ''}</div>${ctl}</div>`;
+  return `<div class="field"><div><label class="l" for="${id}">${f.label}</label>${f.help ? `<div class="h">${typeof f.help === 'function' ? f.help() : f.help}</div>` : ''}</div>${ctl}</div>`;
 }
 
 function renderSettings(el) {
@@ -1314,7 +1629,7 @@ function renderSettings(el) {
       <div class="card"><div class="card-h"><div><h2>Look</h2><div class="muted" style="font-size:12.5px">Changes apply instantly and don't affect the bot.</div></div></div>
         <div class="card-b">
           <div class="row" style="justify-content:space-between"><span class="muted">Appearance</span>
-            <div class="seg" id="look-seg">${[['system', 'Follow my computer'], ['light', 'Light'], ['dark', 'Dark']].map(([m, l]) => `<button data-mode-pick="${m}" class="${S.ui.mode === m ? 'on' : ''}" aria-pressed="${S.ui.mode === m}">${l}</button>`).join('')}</div></div>
+            <div class="row" style="gap:10px"><button class="btn sm ghost" id="wz-again">Run setup again</button><div class="seg" id="look-seg">${[['system', 'Follow my computer'], ['light', 'Light'], ['dark', 'Dark']].map(([m, l]) => `<button data-mode-pick="${m}" class="${S.ui.mode === m ? 'on' : ''}" aria-pressed="${S.ui.mode === m}">${l}</button>`).join('')}</div></div></div>
         </div></div>
 
       <div class="card"><div class="card-h"><div><h2>App updates</h2><div class="muted" style="font-size:12.5px">${S.app.version ? `You have Copybot v${esc(S.app.version)}. ` : ''}Updates download automatically and only install when you restart. Each one is checked against Copybot's security signature first.</div></div></div>
@@ -1326,15 +1641,19 @@ function renderSettings(el) {
         <div class="seg" id="mode-seg"><button data-m="paper" class="${!live ? 'on' : ''}">Paper</button><button data-m="live" class="${live ? 'on live' : ''}">Live</button></div>
       </div></div>
 
-      ${FIELDS.map((s) => `<div class="card"${s.id ? ` id="${s.id}"` : ''}><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.fields.map(fieldHtml).join('')}</div>`).join('')}
+      ${FIELDS.map((s) => `<div class="card"${s.id ? ` id="${s.id}"` : ''}><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.extra ? s.extra() : ''}${s.fields.map(fieldHtml).join('')}</div>`).join('')}
 
       <div class="card" id="conn"><div class="card-h"><div><h2>Connection</h2><div class="muted" style="font-size:12.5px">Stored in the <span class="mono">.env</span> file on this computer only.</div></div></div>
         <div class="field"><div><label class="l" for="c-rpc">Solana RPC URL</label><div class="h">Get a free key at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>, then paste <span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span></div></div>
           <input class="input mono" id="c-rpc" value="${esc(c.rpcUrl)}" spellcheck="false"></div>
+        <div class="field"><div><label class="l" for="c-rpc2">Backup RPC URL <span class="muted">(optional)</span></label><div class="h">Copybot switches to this one automatically if your main RPC keeps failing, and back again after 5 minutes. Use a different provider, e.g. a free <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> endpoint.${c.activeRpc === 'backup' ? ' <b class="neg">The backup is in use right now.</b>' : ''}</div></div>
+          <input class="input mono" id="c-rpc2" value="${esc(c.backupRpcUrl || '')}" placeholder="not set" spellcheck="false"></div>
         <div class="field"><div><label class="l" for="c-jupkey">Jupiter API key <span class="muted">(optional)</span></label><div class="h">Only if you've outgrown the free tier. ${c.hasJupiterKey ? '<b>A key is saved.</b>' : ''}</div></div>
           <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="field"><div><label class="l" for="c-dexkey">DexCheck API key <span class="muted">(optional)</span></label><div class="h">Turns on whale trades and top traders in Markets. Free at <a href="https://dexcheck.ai/" target="_blank" rel="noopener">dexcheck.ai</a> (API dashboard → Settings → API Keys). ${c.hasDexcheckKey ? `<b>A key is saved${c.dexcheckEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
           <input class="input mono" id="c-dexkey" type="password" placeholder="${c.hasDexcheckKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
+        <div class="field"><div><label class="l" for="c-sskey">Solscan API key <span class="muted">(optional)</span></label><div class="h">Turns on the holder check (Settings → Token filters). Get one at <a href="https://solscan.io/apis" target="_blank" rel="noopener">solscan.io/apis</a> (needs a plan that includes token holders). ${c.hasSolscanKey ? `<b>A key is saved${c.solscanEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
+          <input class="input mono" id="c-sskey" type="password" placeholder="${c.hasSolscanKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="field"><div><label class="l" for="c-antkey">Anthropic API key <span class="muted">(for the autopilot)</span></label><div class="h">Lets Claude make trading decisions. From <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys. ${c.hasAnthropicKey ? `<b>A key is saved${c.anthropicEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
           <input class="input mono" id="c-antkey" type="password" placeholder="${c.hasAnthropicKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="card-b row" style="border-top:1px solid var(--border)">
@@ -1362,11 +1681,14 @@ function renderSettings(el) {
   el.querySelectorAll('[data-mode-pick]').forEach((b) => (b.onclick = () => b.dataset.modePick !== S.ui.mode && setAppearance(b.dataset.modePick)));
   const ui2 = $('#upd-install2'); if (ui2) ui2.onclick = installUpdate;
   $('#s-save').onclick = saveSettings;
+  $('#wz-again').onclick = () => wizard(0);
+  bindAlerts();
   el.querySelectorAll('#mode-seg button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
   $('#c-save').onclick = async () => {
-    const body = { rpcUrl: $('#c-rpc').value };
+    const body = { rpcUrl: $('#c-rpc').value, backupRpcUrl: $('#c-rpc2').value };
     if ($('#c-jupkey').value) body.jupiterKey = $('#c-jupkey').value;
     if ($('#c-dexkey').value) { body.dexcheckKey = $('#c-dexkey').value; S.m.data = {}; }
+    if ($('#c-sskey').value) body.solscanKey = $('#c-sskey').value;
     if ($('#c-antkey').value) { body.anthropicKey = $('#c-antkey').value; S.ai = null; }
     const r = await act(() => api('PUT', '/api/connection', body), 'Connection saved');
     if (r) { S.connection = r; S.connTest = null; render(); }
@@ -1388,11 +1710,59 @@ function renderSettings(el) {
     if (r) { S.connection = r; render(); }
   };
 }
+function alertsSetupHtml() {
+  const c = S.connection;
+  const on = (c.hasTelegram && c.telegramChatId) || c.hasDiscord;
+  return `<div class="card-b stack" style="border-bottom:1px solid var(--border)">
+    <div class="row" style="gap:8px">${on ? `<span class="tag buy">On</span><span class="muted" style="font-size:13px">Sending to ${[c.hasTelegram && c.telegramChatId && 'Telegram', c.hasDiscord && 'Discord'].filter(Boolean).join(' and ')}.</span>` : '<span class="tag paper">Off</span><span class="muted" style="font-size:13px">Set up one or both below.</span>'}</div>
+    <details ${c.hasTelegram ? '' : 'open'}><summary style="cursor:pointer;font-weight:600">Telegram</summary>
+      <ol class="steps" style="margin:8px 0">
+        <li>In Telegram, open <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a>, send <span class="mono">/newbot</span> and follow the steps. Copy the token it gives you.</li>
+        <li>Open your new bot and press <b>Start</b>.</li>
+        <li>Paste the token here and press <b>Find my chat ID</b>.</li>
+      </ol>
+      <div class="row"><input class="input mono" id="al-tg" type="password" placeholder="${c.hasTelegram ? '•••••••• (saved)' : 'Bot token, e.g. 123456789:ABC…'}" autocomplete="off" style="flex:2;min-width:220px">
+        <input class="input mono" id="al-chat" value="${esc(c.telegramChatId || '')}" placeholder="Chat ID" style="flex:1;min-width:120px"><button class="btn" id="al-detect">Find my chat ID</button></div>
+    </details>
+    <details ${c.hasDiscord ? '' : ''}><summary style="cursor:pointer;font-weight:600">Discord</summary>
+      <div class="muted" style="font-size:13px;margin:8px 0">In your Discord server: <b>Server Settings → Integrations → Webhooks → New Webhook</b>, pick a channel, then <b>Copy Webhook URL</b>.</div>
+      <input class="input mono" id="al-dc" type="password" placeholder="${c.hasDiscord ? '•••••••• (saved)' : 'https://discord.com/api/webhooks/…'}" autocomplete="off" style="width:100%">
+    </details>
+    <div class="row"><button class="btn primary" id="al-save">Save alerts</button><button class="btn" id="al-test" ${on ? '' : 'disabled'}>Send a test message</button>
+      ${c.hasTelegram || c.hasDiscord ? '<button class="btn ghost danger" id="al-clear">Turn off</button>' : ''}<span class="muted" id="al-msg" style="font-size:13px"></span></div>
+  </div>`;
+}
+function bindAlerts() {
+  const msg = (h) => { $('#al-msg').innerHTML = h; };
+  $('#al-detect').onclick = async () => {
+    msg('<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Looking…');
+    const r = await act(() => api('POST', '/api/alerts/detect-telegram', { telegramToken: $('#al-tg').value }));
+    if (r) { $('#al-chat').value = r.chatId; msg(`<span class="pos">✓ Found ${esc(r.name)}. Press Save alerts.</span>`); } else msg('');
+  };
+  $('#al-save').onclick = async () => {
+    const body = { telegramChatId: $('#al-chat').value };
+    if ($('#al-tg').value) body.telegramToken = $('#al-tg').value;
+    if ($('#al-dc').value) body.discordWebhook = $('#al-dc').value;
+    const r = await act(() => api('PUT', '/api/alerts', body), 'Alerts saved');
+    if (r) { S.connection = r; render(); }
+  };
+  $('#al-test').onclick = async () => {
+    msg('<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Sending…');
+    const r = await act(() => api('POST', '/api/alerts/test'));
+    msg(r ? '<span class="pos">✓ Sent. Check your phone.</span>' : '');
+  };
+  const cl = $('#al-clear');
+  if (cl) cl.onclick = async () => {
+    if (!(await confirmModal({ title: 'Turn off phone alerts?', body: '<p>Your Telegram token and Discord webhook are removed from this computer.</p>', confirm: 'Turn off' }))) return;
+    const r = await act(() => api('PUT', '/api/alerts', { telegramToken: '', telegramChatId: '', discordWebhook: '' }), 'Alerts turned off');
+    if (r) { S.connection = r; render(); }
+  };
+}
 function connTestHtml() {
   const t = S.connTest;
   if (!t) return '';
   if (!t.ok) return `<span class="neg">✕ ${esc(t.error)}</span>`;
-  return `<span class="${t.rpcMs < 800 ? 'pos' : ''}">✓ RPC ${t.rpcMs} ms</span> · ${t.jupiterOk ? `<span class="pos">✓ Jupiter ${t.jupMs} ms</span>` : '<span class="neg">✕ Jupiter unreachable</span>'}${t.solPrice ? ` · SOL ≈ $${t.solPrice.toFixed(2)}` : ''}`;
+  return `<span class="${t.rpcMs < 800 ? 'pos' : ''}">✓ RPC ${t.rpcMs} ms</span> · ${t.jupiterOk ? `<span class="pos">✓ Jupiter ${t.jupMs} ms</span>` : '<span class="neg">✕ Jupiter unreachable</span>'}${t.backup ? (t.backup.ok ? ` · <span class="pos">✓ Backup RPC ${t.backup.ms} ms</span>` : ` · <span class="neg">✕ Backup RPC: ${esc(t.backup.error)}</span>`) : ''}${t.solscan ? (t.solscan.ok ? ' · <span class="pos">✓ Solscan</span>' : ` · <span class="neg">✕ Solscan: ${esc(t.solscan.error)}</span>`) : ''}${t.solPrice ? ` · SOL ≈ $${t.solPrice.toFixed(2)}` : ''}`;
 }
 async function saveSettings() {
   const cfg = structuredClone(S.config);
@@ -1463,6 +1833,8 @@ function connectEvents() {
     if (['ready', 'rejected', 'installing'].includes(S.app.update.state) || !t) { if (!(S.page === 'settings' && S.dirty)) render(); }
     else t.innerHTML = updateText();
   });
+  es.addEventListener('connection', (e) => { S.connection = JSON.parse(e.data); renderChrome(); });
+  es.addEventListener('scout', (e) => { S.scout = JSON.parse(e.data); });
   es.addEventListener('ai', (e) => {
     const d = JSON.parse(e.data);
     if (!S.ai) return;
@@ -1471,8 +1843,11 @@ function connectEvents() {
     if (S.page === 'autopilot') loadAi();
   });
   es.addEventListener('job', (e) => {
-    upsertJob(JSON.parse(e.data));
-    if (S.page === 'research') renderJobs();
+    const j = JSON.parse(e.data);
+    upsertJob(j);
+    if (S.page === 'research') { if (j.kind === 'scout') render(); else renderJobs(); }
+    if (S.page === 'backtest' && j.kind === 'backtest') render();
+    if (S.page === 'autopilot' && j.kind === 'scout') renderAutopilot($('#content'), true);
   });
   es.onerror = () => { $('#run-pill').innerHTML = '<span class="pill"><span class="dot bad"></span>Disconnected</span>'; };
   es.onopen = () => load();
@@ -1481,8 +1856,10 @@ async function load() {
   try {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs });
+    const firstLoad = !S.loadedOnce; S.loadedOnce = true;
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout });
     render();
+    if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }
 }
 const h = location.hash.slice(1);

@@ -1,0 +1,21 @@
+name: Tests
+
+# Type-check and run the unit tests on every push and pull request.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test

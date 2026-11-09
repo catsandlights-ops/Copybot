@@ -26,7 +26,8 @@ export type Report = {
 
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);
 
-export async function fetchSwaps(conn: Connection, wallet: string, maxTxs: number, onProgress?: (n: number, total: number) => void): Promise<Swap[]> {
+/** `stats.failed` counts transactions that couldn't be read (RPC errors), so callers can warn about gaps. */
+export async function fetchSwaps(conn: Connection, wallet: string, maxTxs: number, onProgress?: (n: number, total: number) => void, opts: { tries?: number; stats?: { read: number; failed: number } } = {}): Promise<Swap[]> {
   const pk = new PublicKey(wallet);
   const sigs: string[] = [];
   let before: string | undefined;
@@ -39,7 +40,11 @@ export async function fetchSwaps(conn: Connection, wallet: string, maxTxs: numbe
   }
   let done = 0;
   const swaps = await mapLimit(sigs, 4, async (sig) => {
-    const tx = await getTx(sig, 2).catch(() => null);
+    const tx = await getTx(sig, opts.tries ?? 2).catch(() => {
+      if (opts.stats) opts.stats.failed++;
+      return null;
+    });
+    if (opts.stats) opts.stats.read++;
     onProgress?.(++done, sigs.length);
     return tx ? decodeSwap(tx, wallet) : null;
   });

@@ -10,6 +10,7 @@ export type Position = {
   sources: string[]; // wallets we copied into this position
   steps?: ExitStep[]; // staged exits already taken
   peakMultiple?: number; // highest value / cost seen (for the trailing stop)
+  peakLiquidityUsd?: number; // highest pool liquidity seen while held (for rug protection)
 };
 
 export type State = { positions: Record<string, Position>; realizedPnlSol: number; guard?: GuardState };

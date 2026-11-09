@@ -2,7 +2,36 @@ import fs from 'node:fs';
 import { PublicKey } from '@solana/web3.js';
 
 /** sizeMultiplier scales every buy copied from this wallet; maxExposureSol caps SOL in its positions (0 = no cap). */
-export type WalletCfg = { address: string; label: string; enabled: boolean; sizeMultiplier: number; maxExposureSol: number };
+export type ExitOverrides = Partial<{
+  stopLossPct: number;
+  recoverCostAtPct: number;
+  tp1AtPct: number;
+  tp1SellPct: number;
+  tp2AtPct: number;
+  tp2SellPct: number;
+  trailingAfterPct: number;
+  trailingStopPct: number;
+}>;
+/** `exits` overrides the global exit settings for positions copied from this wallet. */
+export type WalletCfg = { address: string; label: string; enabled: boolean; sizeMultiplier: number; maxExposureSol: number; exits?: ExitOverrides };
+const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
+  stopLossPct: 'risk.stopLossPct',
+  recoverCostAtPct: 'exits.recoverCostAtPct',
+  tp1AtPct: 'exits.tp1AtPct',
+  tp1SellPct: 'exits.tp1SellPct',
+  tp2AtPct: 'exits.tp2AtPct',
+  tp2SellPct: 'exits.tp2SellPct',
+  trailingAfterPct: 'exits.trailingAfterPct',
+  trailingStopPct: 'exits.trailingStopPct',
+};
+
+/** Exit settings for a position: the opening wallet's overrides on top of the global ones. */
+export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
+  const o = cfg.wallets.find((w) => w.address === sources[0])?.exits;
+  if (!o || !Object.keys(o).length) return cfg;
+  const { stopLossPct, ...exits } = o;
+  return { risk: { ...cfg.risk, ...(stopLossPct !== undefined ? { stopLossPct } : {}) }, exits: { ...cfg.exits, ...exits } };
+}
 
 export type Config = {
   mode: 'paper' | 'live';
@@ -32,6 +61,13 @@ export type Config = {
     trailingAfterPct: number; // trailing stop arms once the position has been up this much
     trailingStopPct: number; // then sells everything if it falls this much from its peak
   };
+  /** Rug and dump protection for open positions. 0 turns a check off. */
+  protect: {
+    liquidityDropPct: number; // sell if the pool's liquidity falls this much from its high since we bought
+    crashPct: number; // sell if the position loses this much within crashWindowMin
+    crashWindowMin: number;
+    maxSellBuyRatio: number; // sell if sells outnumber buys this many times over in the last 5 minutes (20+ sells)
+  };
   /** Market-data filters (Dexscreener). 0 turns a filter off. */
   filters: {
     minLiquidityUsd: number;
@@ -40,6 +76,8 @@ export type Config = {
     maxMarketCapUsd: number;
     minTokenAgeMin: number;
     skipIfNoMarketData: boolean;
+    maxTopHolderPct: number; // Solscan holder check: skip if one wallet owns more than this % (0 = off)
+    maxTop10HoldersPct: number; // ...or the 10 largest wallets together own more than this %
   };
   safety: {
     slippageBps: number;
@@ -49,8 +87,15 @@ export type Config = {
     rejectToken2022: boolean;
     blacklist: string[];
   };
-  execution: { priorityLevel: 'medium' | 'high' | 'veryHigh'; priorityFeeMaxLamports: number };
+  execution: {
+    priorityLevel: 'medium' | 'high' | 'veryHigh';
+    priorityFeeMaxLamports: number;
+    jitoTipLamports: number; // 0 = off; otherwise pay this Jito tip instead of a priority fee
+    fastStream: boolean; // Helius enhanced websocket for faster signals (needs a Helius RPC)
+  };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
+  /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
+  alerts: { trades: boolean; errors: boolean; guard: boolean; autopilot: boolean };
   /** Claude autopilot. Off until the user turns it on and adds an Anthropic API key. */
   ai: {
     enabled: boolean;
@@ -60,6 +105,8 @@ export type Config = {
     manageWallets: boolean;
     walletReviewHours: number;
     maxWallets: number;
+    scoutEveryHours: number; // wallet scout: search for new wallets this often (0 = only when asked)
+    scoutMaxPicks: number; // most new wallets added per scout run
     dailyBudgetUsd: number;
     guidance: string; // the user's own instructions for Claude
   };
@@ -84,7 +131,8 @@ export const DEFAULT_CONFIG: Config = {
     pauseMinutes: 60,
   },
   exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30 },
-  filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false },
+  protect: { liquidityDropPct: 50, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 3 },
+  filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false, maxTopHolderPct: 15, maxTop10HoldersPct: 50 },
   safety: {
     slippageBps: 300,
     maxRoundTripLossPct: 12,
@@ -93,9 +141,10 @@ export const DEFAULT_CONFIG: Config = {
     rejectToken2022: false,
     blacklist: [],
   },
-  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000 },
+  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
-  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, dailyBudgetUsd: 3, guidance: '' },
+  alerts: { trades: true, errors: true, guard: true, autopilot: true },
+  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 
 /** Allowed range for every numeric setting: [min, max, human name]. */
@@ -122,22 +171,31 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'exits.tp2SellPct': [1, 100, 'Take-profit 2 sell amount'],
   'exits.trailingAfterPct': [0, 100_000, 'Arm trailing stop after'],
   'exits.trailingStopPct': [0, 99, 'Trailing stop'],
+  'protect.liquidityDropPct': [0, 99, 'Liquidity drain limit'],
+  'protect.crashPct': [0, 99, 'Crash limit'],
+  'protect.crashWindowMin': [1, 60, 'Crash window'],
+  'protect.maxSellBuyRatio': [0, 100, 'Sell pressure limit'],
   'filters.minLiquidityUsd': [0, 1e10, 'Minimum liquidity'],
   'filters.maxTradePctOfLiquidity': [0, 100, 'Max trade size vs liquidity'],
   'filters.minMarketCapUsd': [0, 1e13, 'Minimum market cap'],
   'filters.maxMarketCapUsd': [0, 1e13, 'Maximum market cap'],
   'filters.minTokenAgeMin': [0, 525_600, 'Minimum token age'],
+  'filters.maxTopHolderPct': [0, 100, 'Largest holder limit'],
+  'filters.maxTop10HoldersPct': [0, 100, 'Top 10 holders limit'],
   'safety.slippageBps': [10, 5_000, 'Max slippage', (v) => `${v / 100}%`],
   'safety.maxRoundTripLossPct': [0.1, 100, 'Max buy-then-sell loss'],
   'execution.priorityFeeMaxLamports': [0, 50_000_000, 'Max priority fee', (v) => `${v / 1e9} SOL`],
+  'execution.jitoTipLamports': [0, 10_000_000, 'Jito tip', (v) => `${v / 1e9} SOL`],
   'monitor.pollIntervalSec': [1, 300, 'Backup check interval'],
   'monitor.exitCheckIntervalSec': [5, 3_600, 'Stop-loss check interval'],
   'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],
   'ai.walletReviewHours': [1, 720, 'Review wallets every'],
   'ai.maxWallets': [1, 50, 'Max wallets for the AI'],
+  'ai.scoutEveryHours': [0, 720, 'Search for new wallets every'],
+  'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
@@ -219,12 +277,27 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) fail(`${name} must be between ${min} and ${max}`);
       return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def;
     };
+    const exits: ExitOverrides = {};
+    if (w.exits && typeof w.exits === 'object') {
+      for (const [k, path] of Object.entries(EXIT_KEYS) as [keyof ExitOverrides, string][]) {
+        const v = w.exits[k];
+        if (v === undefined || v === null || v === '') continue;
+        const [min, max, name] = NUMBERS[path];
+        if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) {
+          fail(`${cleanLabel(w.label) || 'Wallet'}: ${name} must be between ${min} and ${max}`);
+          continue;
+        }
+        exits[k] = v;
+      }
+      if (exits.tp1AtPct && exits.tp2AtPct && exits.tp2AtPct <= exits.tp1AtPct) fail(`${cleanLabel(w.label) || 'Wallet'}: take-profit 2 must be higher than take-profit 1`);
+    }
     out.wallets.push({
       address: w.address,
       label: cleanLabel(w.label) || `trader-${out.wallets.length + 1}`,
       enabled: w.enabled !== false,
       sizeMultiplier: num(w.sizeMultiplier, 0.1, 10, 1, 'Size multiplier'),
       maxExposureSol: num(w.maxExposureSol, 0, 10_000, 0, 'Wallet budget'),
+      ...(Object.keys(exits).length ? { exits } : {}),
     });
   }
 

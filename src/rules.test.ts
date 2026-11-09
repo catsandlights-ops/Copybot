@@ -96,7 +96,7 @@ test('summarizePairs adds up liquidity across pools and keeps the oldest pool ti
     { chainId: 'solana', baseToken: { address: m }, liquidity: { usd: 500 }, fdv: 60_000, pairCreatedAt: 1000, volume: { h24: 200 } },
     { chainId: 'ethereum', baseToken: { address: m }, liquidity: { usd: 99999 } },
   ])!;
-  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, buys1h: 40, sells1h: 10 });
+  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, buys1h: 40, sells1h: 10, buys5m: null, sells5m: null });
   assert.equal(summarizePairs(m, []), null);
 });
 
@@ -162,4 +162,52 @@ test('walletRecords: our results per copied wallet, shared sells split', () => {
   );
   assert.deepEqual(r.A, { trades: 1, closed: 2, wins: 1, pnlSol: 0.15000000000000002 });
   assert.deepEqual(r.B, { trades: 1, closed: 1, wins: 0, pnlSol: -0.05 });
+});
+
+test('copyGapPct: buys paying more and sells getting less are both positive (worse for us)', async () => {
+  const { copyGapPct, median } = await import('./rules');
+  // They paid 1 SOL for 1,000,000 raw; we paid 0.1 SOL for 90,000 raw → 11.1% more per token.
+  assert.ok(Math.abs(copyGapPct('buy', 1, 1_000_000n, 0.1, 90_000n)! - 11.111) < 0.01);
+  // They sold 1,000,000 raw for 2 SOL; we sold 100,000 raw for 0.19 SOL → 5% less.
+  assert.ok(Math.abs(copyGapPct('sell', 2, 1_000_000n, 0.19, 100_000n)! - 5) < 1e-9);
+  // We beat them (price dipped before we bought) → negative gap.
+  assert.ok(copyGapPct('buy', 1, 1_000_000n, 0.1, 110_000n)! < 0);
+  assert.equal(copyGapPct('buy', 1, 0n, 0.1, 5n), null);
+  assert.equal(median([5, 1, 3]), 3);
+  assert.equal(median([4, 1, 3, 2]), 2.5);
+  assert.equal(median([]), null);
+});
+
+test('dangerReason: rug, crash and dump checks', async () => {
+  const { dangerReason } = await import('./rules');
+  const p = { liquidityDropPct: 50, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 3 };
+  const now = 10 * 60_000;
+  const base = { now, valueSol: 1, samples: [[now - 60_000, 1], [now, 1]] as [number, number][], liquidityUsd: 50_000, peakLiquidityUsd: 60_000, buys5m: 30, sells5m: 40 };
+  assert.equal(dangerReason(base, p), null);
+  assert.match(dangerReason({ ...base, liquidityUsd: 20_000 }, p)!, /liquidity fell 67%/);
+  assert.equal(dangerReason({ ...base, liquidityUsd: null }, p), null); // bonding curve: no pool figure
+  assert.match(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 120_000, 1], [now, 0.6]] }, p)!, /value fell 40% in under 5 min/);
+  // A slow decline outside the window doesn't count.
+  assert.equal(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 10 * 60_000, 1], [now, 0.6]] }, p), null);
+  assert.match(dangerReason({ ...base, buys5m: 5, sells5m: 25 }, p)!, /25 sells vs 5 buys/);
+  assert.equal(dangerReason({ ...base, buys5m: 1, sells5m: 10 }, p), null); // too few sells to judge
+  assert.equal(dangerReason({ ...base, liquidityUsd: 1, buys5m: 0, sells5m: 99 }, { liquidityDropPct: 0, crashPct: 0, crashWindowMin: 5, maxSellBuyRatio: 0 }), null);
+});
+
+test('per-wallet exits: overrides apply to positions opened by that wallet only, and are validated', async () => {
+  const { DEFAULT_CONFIG, exitConfigFor, sanitizeConfig } = await import('./config');
+  const W = 'So11111111111111111111111111111111111111112';
+  const c = sanitizeConfig({ wallets: [{ address: W, label: 'scalper', exits: { stopLossPct: 15, tp1AtPct: 50, trailingStopPct: '' } }] }, true);
+  assert.deepEqual(c.wallets[0].exits, { stopLossPct: 15, tp1AtPct: 50 });
+  const own = exitConfigFor(c, [W]);
+  assert.equal(own.risk.stopLossPct, 15);
+  assert.equal(own.exits.tp1AtPct, 50);
+  assert.equal(own.exits.tp2AtPct, DEFAULT_CONFIG.exits.tp2AtPct);
+  assert.equal(exitConfigFor(c, ['other']).risk.stopLossPct, DEFAULT_CONFIG.risk.stopLossPct);
+  assert.throws(() => sanitizeConfig({ wallets: [{ address: W, label: 'x', exits: { stopLossPct: 400 } }] }, true), /Stop-loss must be between/);
+  assert.throws(() => sanitizeConfig({ wallets: [{ address: W, label: 'x', exits: { tp1AtPct: 500, tp2AtPct: 100 } }] }, true), /take-profit 2 must be higher/);
+  // planExit with a wallet's tighter stop-loss sells where the global one would hold.
+  const { planExit } = await import('./rules');
+  assert.equal(planExit({ costSol: 1 }, 0.8, exitConfigFor(c, [W])).action?.fraction, 1);
+  assert.equal(planExit({ costSol: 1 }, 0.8, c).action, null);
 });

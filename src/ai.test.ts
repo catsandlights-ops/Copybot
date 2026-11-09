@@ -166,3 +166,25 @@ test('config: ai section is sanitized', () => {
   assert.throws(() => sanitizeConfig({ ai: { guidance: 'x'.repeat(1001) } }, true), /1000 characters/);
   assert.equal(sanitizeConfig({}, false).ai.enabled, false);
 });
+
+test('wallet scout picks: only candidates, deduped, capped and clamped', async () => {
+  const a = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+  const b = 'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So';
+  next.push({
+    text: JSON.stringify({
+      picks: [
+        { address: a, sizeMultiplier: 0.1, budgetSol: -3, reason: 'Early on 3 pumps, 62% win rate.' },
+        { address: a, sizeMultiplier: 1, budgetSol: 0, reason: 'dup' },
+        { address: 'So11111111111111111111111111111111111111112', sizeMultiplier: 1, budgetSol: 0, reason: 'invented' },
+        { address: b, sizeMultiplier: 1, budgetSol: 0.2, reason: 'Solid.' },
+      ],
+      summary: 'Two strong early buyers.',
+    }),
+  });
+  const r = await ai.pickWallets(cfg(), [], [{ address: a, source: 'scout', stats: {} }, { address: b, source: 'scout', stats: {} }], 1);
+  assert.deepEqual(r, { picks: [{ address: a, sizeMultiplier: 0.25, budgetSol: 0, reason: 'Early on 3 pumps, 62% win rate.' }], summary: 'Two strong early buyers.' });
+  assert.equal(ai.aiStatus(cfg()).decisions[0].kind, 'scout');
+  const before = seen.length;
+  assert.deepEqual(await ai.pickWallets(cfg(), [], [], 2), { picks: [], summary: 'No free slots or no candidates.' });
+  assert.equal(seen.length, before);
+});

@@ -9,12 +9,13 @@ import { decodeSwap } from './decode';
 import { getTx, mapLimit, short, withRetry } from './util';
 
 
-export async function earlyBuyers(conn: Connection, mint: string, early: number, maxPages: number, warn: (m: string) => void = console.log) {
+export async function earlyBuyers(conn: Connection, mint: string, early: number, maxPages: number, warn: (m: string) => void = console.log, onProgress?: (m: string) => void) {
   const pk = new PublicKey(mint);
   let before: string | undefined;
   let oldest: string[] = [];
   let reachedStart = false;
   for (let p = 0; p < maxPages; p++) {
+    onProgress?.(`reading its history (${p * 1000}+ transactions so far)`);
     const page = await withRetry(() => conn.getSignaturesForAddress(pk, { limit: 1000, before }));
     if (!page.length) {
       reachedStart = true;
@@ -30,8 +31,10 @@ export async function earlyBuyers(conn: Connection, mint: string, early: number,
   if (!reachedStart) warn(`⚠ ${short(mint)} has more history than ${maxPages}k txs; "early" here means early within what we scanned. Use --pages to go deeper.`);
   const sigs = oldest.reverse(); // oldest first
   const buyers = new Map<string, number>();
+  let read = 0;
   await mapLimit(sigs, 4, async (sig) => {
     if (buyers.size >= early) return;
+    if (++read % 20 === 0) onProgress?.(`checking its first trades (${buyers.size} early buyers found)`);
     const tx = await getTx(sig, 2).catch(() => null);
     if (!tx) return;
     const signer = tx.accountKeys[0];

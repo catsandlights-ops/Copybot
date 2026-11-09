@@ -64,12 +64,43 @@ jobs:
         with: { node-version: 22 }
       - if: steps.check.outputs.skip != 'true'
         run: npm ci
+
+      # Never publish an update that fails its checks: installed apps would install it automatically.
+      - name: Type-check
+        if: steps.check.outputs.skip != 'true'
+        run: npx tsc --noEmit
+      - name: Run tests
+        if: steps.check.outputs.skip != 'true'
+        run: npm test
       - if: steps.check.outputs.skip != 'true'
         run: npm run bundle
 
       # 1. Build the installer locally on the runner (no upload yet).
-      - if: steps.check.outputs.skip != 'true'
-        run: npx electron-builder --win --publish never
+      #    With the Azure Artifact Signing secrets set (see docs/CODE-SIGNING.md), the installer is
+      #    also code-signed so Windows SmartScreen trusts it. Without them it's built unsigned as before.
+      - name: Build installer
+        if: steps.check.outputs.skip != 'true'
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_CERT_PROFILE: ${{ secrets.AZURE_CERT_PROFILE }}
+          AZURE_PUBLISHER_NAME: ${{ secrets.AZURE_PUBLISHER_NAME }}
+        run: |
+          EXTRA=()
+          if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_SIGNING_ENDPOINT" ]; then
+            echo "Code-signing the installer with Azure Artifact Signing"
+            EXTRA=(-c.win.azureSignOptions.publisherName="$AZURE_PUBLISHER_NAME"
+                   -c.win.azureSignOptions.endpoint="$AZURE_SIGNING_ENDPOINT"
+                   -c.win.azureSignOptions.codeSigningAccountName="$AZURE_SIGNING_ACCOUNT"
+                   -c.win.azureSignOptions.certificateProfileName="$AZURE_CERT_PROFILE")
+          else
+            echo "No code-signing secrets set: building an unsigned installer"
+          fi
+          npx electron-builder --win --publish never "${EXTRA[@]}"
 
       # 2. Sign the installer with the Copybot update key.
       - name: Sign update

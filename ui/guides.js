@@ -10,6 +10,47 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'whats-new-06', cat: 'news', mins: 4, title: "What's new in Copybot 0.6",
+    teaser: 'The wallet scout, backtesting, rug protection, phone alerts, faster trades and much more.',
+    body: `
+<p>Finding good wallets was the hardest part of copy trading. Now Copybot can do it for you.</p>
+<h3>The wallet scout</h3>
+<ol>
+<li>It picks Solana tokens that <b>pumped recently</b> (up 30%+ in a day, a few hours to a week old, with real liquidity).</li>
+<li>It finds the wallets that <b>bought them early</b>, and with a DexCheck key, their top traders too.</li>
+<li>It checks each wallet's <b>real on-chain record</b>: win rate, profit, how long it holds, and whether it's a bot.</li>
+<li><b>Claude picks the most suitable ones</b> and explains why. Without Claude, the rules rank them.</li>
+</ol>
+<p>Try it on <b>Find wallets → Find wallets for me</b>. It takes 5–15 minutes.</p>
+<h3>Backtest</h3>
+<p>The new <b>Backtest</b> page answers "what would copying these wallets have made?" It replays up to 5 wallets' real trades with your current settings, buying a little higher and selling a little lower than they did (you always trade after them). You get the total profit, win rate, worst dip, a chart and every trade. There's a <b>Backtest</b> button next to wallets on the Wallets and Find wallets pages too.</p>
+<p class="tip">A wallet that made money for itself can still lose money for you, because you buy after it. Backtest before you copy.</p>
+<h3>Solscan holder check</h3>
+<p>Add a Solscan API key (Settings → Connection) and Copybot checks who owns each token before buying. It skips tokens that one wallet, or a small group, controls. Claude sees the same numbers when it decides. Change the limits in Settings → Token filters.</p>
+<h3>With the autopilot</h3>
+<p>If the autopilot manages your wallets, the scout runs by itself once a day while the bot is running and <b>adds its picks to your copy list</b> (2 per search, never more than your maximum). Change this in Settings → Autopilot.</p>
+<p class="tip">Most wallets that catch one pump don't keep winning, so some searches find nothing good. That's the scout doing its job.</p>
+<h3>Protecting your trades</h3>
+<ul>
+<li><b>Rug protection</b> (Settings → Rug protection): sells everything at once if a token's liquidity drains, its price crashes within minutes, or sellers swamp buyers.</li>
+<li><b>Exits per wallet:</b> on the Wallets page, press <b>Exits</b> to give a wallet its own stop-loss and take-profits, e.g. tighter for a fast scalper.</li>
+<li><b>Backtests replay your exits too:</b> stop-loss, take-profits and trailing stop, using price history.</li>
+</ul>
+<h3>Knowing what's happening</h3>
+<ul>
+<li><b>Phone alerts</b> on Telegram or Discord for trades, problems, the circuit breaker and autopilot decisions (Settings → Phone alerts).</li>
+<li><b>Copy gap:</b> the Wallets page shows how much worse your price is than each wallet's, measured on your real trades. The Backtest can use your measured number.</li>
+<li><b>Export CSV</b> on the Trades page, for spreadsheets and taxes.</li>
+</ul>
+<h3>Speed and reliability</h3>
+<ul>
+<li><b>Backup RPC:</b> add a second RPC in Settings → Connection and Copybot switches over automatically if your main one fails.</li>
+<li><b>Jito tips</b> (Settings → Speed): in live mode, pay a small tip so trades land sooner when the network is busy.</li>
+<li><b>Fast trade detection</b> with a Helius RPC that includes Enhanced WebSockets: Copybot sees the copied trade without an extra lookup.</li>
+</ul>
+<p>New installs also get a short <b>setup guide</b> on first launch (you can run it again from Settings → Look).</p>`,
+  },
+  {
     id: 'whats-new-05', cat: 'news', mins: 3, title: "What's new in Copybot 0.5",
     teaser: 'Smart exits, token filters, a circuit breaker, a wallet scoreboard, the Markets hub, the AI autopilot and a new look.',
     body: `
@@ -67,6 +108,8 @@ window.GUIDES = [
 <p>Copy trading is only as good as the wallets you copy. A wallet that looks amazing for one week is often just lucky, or is a bot you can't keep up with.</p>
 <h3>Where to look</h3>
 <ul>
+<li><b>Backtest first:</b> before copying a wallet, run it on the Backtest page. It shows what copying it would have made <i>for you</i>, after the price you lose by trading later.</li>
+<li><b>Find wallets → Find wallets for me:</b> the easiest way. Copybot picks tokens that pumped recently, finds their early buyers, checks each wallet's record, and Claude (or the rules) picks the best ones.</li>
 <li><b>Find wallets → Discover early buyers:</b> paste 3–5 tokens that pumped recently. Wallets that were early on <i>several</i> of them rank highest.</li>
 <li><b>Markets → Top traders</b> for a token (needs a free DexCheck key), with a <b>Copy</b> button.</li>
 </ul>
@@ -130,6 +173,7 @@ window.GUIDES = [
 <li><b>Freeze check:</b> skips tokens whose creator can freeze your tokens so you can't sell.</li>
 <li><b>Buy-then-sell test:</b> gets a quote to buy and then sell straight back. If it can't sell, or the round trip loses more than 12%, it skips. This catches most "honeypots" and very thin pools.</li>
 <li><b>Liquidity filters:</b> skips pools under $10K, and buys that would be more than 2% of the pool.</li>
+<li><b>Holder check</b> (with a Solscan API key): skips tokens where one wallet owns more than 15% of the supply, or the 10 largest wallets own more than 50%. Those wallets can dump on you at any moment. Liquidity pools don't count as holders.</li>
 <li><b>Don't chase:</b> skips if the price is already 15% above what the copied wallet paid.</li>
 <li><b>Limits and budgets:</b> max positions, max SOL in trades, per-wallet budgets, and the circuit breaker.</li>
 </ul>
@@ -165,13 +209,14 @@ window.GUIDES = [
 <ul>
 <li><b>Buys:</b> for each copy signal that passes the safety checks, Claude decides <i>buy or skip</i> and how much, and explains why.</li>
 <li><b>Open positions:</b> every few minutes it reviews them and can sell early or hold.</li>
-<li><b>Wallets:</b> it reviews your copied wallets and candidates, and can pause wallets, add new ones from the candidate list, and adjust sizes and budgets.</li>
+<li><b>Wallets:</b> it reviews your copied wallets and can pause them or adjust sizes and budgets.</li>
+<li><b>Finding new wallets:</b> once a day (Settings → Autopilot) the <b>wallet scout</b> scans tokens that pumped recently, finds who bought them early, checks those wallets' real records, and Claude adds the most suitable ones to your list, up to your maximum.</li>
 </ul>
 <h3>What it can never do</h3>
 <ul>
 <li>Go past your limits: trade size, total SOL, budgets, daily loss limit, stop-loss.</li>
 <li>Skip any safety check, or send money anywhere except through normal buys and sells.</li>
-<li>Copy a wallet that isn't on a candidate list it was given.</li>
+<li>Copy a wallet whose track record wasn't checked first.</li>
 </ul>
 <h3>Cost</h3>
 <p>You use your own Anthropic API key (from console.anthropic.com) and pay Anthropic per decision, roughly <b>$0.02–0.04</b> each with Claude Opus 5.5. A <b>daily AI budget</b> (Settings → Autopilot) caps the spend. When it's used up, Copybot falls back to its normal rules.</p>

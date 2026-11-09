@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { failoverFetch, RpcFailover } from './rpc';
 
 // Connection settings live in .env and are read lazily so the app can change them at runtime.
 export const rpcUrl = () => process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -9,8 +10,19 @@ export const wsUrl = () => process.env.WS_URL || rpcUrl().replace(/^http/, 'ws')
 export const jupUrl = () => (process.env.JUPITER_API_URL || 'https://lite-api.jup.ag/swap/v1').replace(/\/$/, '');
 export const jupKey = () => process.env.JUPITER_API_KEY || '';
 
+export const backupRpcUrl = () => process.env.RPC_URL_BACKUP?.trim() || null;
+
+// Switch to the backup RPC after repeated failures; see rpc.ts.
+const switchListeners = new Set<(to: 'primary' | 'backup', why: string) => void>();
+export const onRpcSwitch = (fn: (to: 'primary' | 'backup', why: string) => void) => switchListeners.add(fn);
+export const failover = new RpcFailover(
+  () => ({ primary: rpcUrl(), backup: backupRpcUrl() }),
+  (to, why) => switchListeners.forEach((fn) => fn(to, why)),
+);
+export const rpcFetch = failoverFetch(failover, rpcUrl);
+
 export function makeConnection(): Connection {
-  return new Connection(rpcUrl(), { commitment: 'confirmed', wsEndpoint: wsUrl(), disableRetryOnRateLimit: true });
+  return new Connection(rpcUrl(), { commitment: 'confirmed', wsEndpoint: wsUrl(), disableRetryOnRateLimit: true, fetch: rpcFetch as typeof fetch });
 }
 
 export function isHttpsUrl(s: string) {
@@ -79,8 +91,8 @@ export function loadKeypair(): Keypair | null {
 // Each secret is stored encrypted as NAME_ENC when the OS secret box is available,
 // otherwise as plain NAME in .env (readable only by this user).
 
-export type SecretName = 'PRIVATE_KEY' | 'ANTHROPIC_API_KEY' | 'DEXCHECK_API_KEY';
-const SECRETS: SecretName[] = ['PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'DEXCHECK_API_KEY'];
+export type SecretName = 'PRIVATE_KEY' | 'ANTHROPIC_API_KEY' | 'DEXCHECK_API_KEY' | 'SOLSCAN_API_KEY' | 'TELEGRAM_BOT_TOKEN' | 'DISCORD_WEBHOOK_URL';
+const SECRETS: SecretName[] = ['PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'DEXCHECK_API_KEY', 'SOLSCAN_API_KEY', 'TELEGRAM_BOT_TOKEN', 'DISCORD_WEBHOOK_URL'];
 
 /** Store (or with '' remove) a secret, encrypted when possible. */
 export function saveSecret(name: SecretName, value: string) {

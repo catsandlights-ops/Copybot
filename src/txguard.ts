@@ -21,6 +21,18 @@ const P = {
   jupiter: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
 };
 
+/** Jito's official tip accounts (getTipAccounts). A tip may only go to one of these, up to your limit. */
+export const JITO_TIP_ACCOUNTS = new Set([
+  '96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5',
+  'HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe',
+  'Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY',
+  'ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49',
+  'DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh',
+  'ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt',
+  'DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL',
+  '3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT',
+]);
+
 const BASE_FEE = 5_000; // lamports per signature
 const RENT_MARGIN = 3 * 2_039_280; // up to three new token accounts (refundable rent)
 const DEFAULT_CU_LIMIT = 1_400_000;
@@ -32,6 +44,7 @@ export type SwapExpectation = {
   inputMint: string;
   inAmount: bigint;
   maxPriorityLamports: number;
+  maxTipLamports?: number; // Jito tip allowed (0/undefined = none)
 };
 
 const u32 = (b: Uint8Array, o: number) => new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(o, true);
@@ -65,6 +78,7 @@ export async function checkInstructions(conn: Connection, tx: VersionedTransacti
   let cuLimit = DEFAULT_CU_LIMIT;
   let cuPrice = 0n; // micro-lamports per compute unit
   let wrapped = 0n;
+  let tip = 0n;
   let sawJupiter = false;
 
   for (const ix of msg.compiledInstructions) {
@@ -77,11 +91,17 @@ export async function checkInstructions(conn: Connection, tx: VersionedTransacti
         else if (d[0] === 3) cuPrice = u64(d, 1);
         break;
       case P.system: {
-        // Only allowed: wrapping our own SOL into our own WSOL account.
+        // Only allowed: wrapping our own SOL into our own WSOL account, or one Jito tip within the limit.
         const isTransfer = d.length >= 12 && u32(d, 0) === 2;
-        if (!isTransfer || acct(0) !== me || acct(1) !== myWsol) throw new TxRejected('unexpected SOL transfer in swap transaction');
-        wrapped += u64(d, 4);
-        break;
+        if (isTransfer && acct(0) === me && acct(1) === myWsol) {
+          wrapped += u64(d, 4);
+          break;
+        }
+        if (isTransfer && acct(0) === me && JITO_TIP_ACCOUNTS.has(acct(1) ?? '') && tip === 0n && exp.maxTipLamports && u64(d, 4) <= BigInt(exp.maxTipLamports)) {
+          tip = u64(d, 4);
+          break;
+        }
+        throw new TxRejected('unexpected SOL transfer in swap transaction');
       }
       case P.token:
       case P.token2022:
@@ -108,7 +128,7 @@ export async function checkInstructions(conn: Connection, tx: VersionedTransacti
   if (priorityFee > BigInt(Math.ceil(exp.maxPriorityLamports * 1.1) + 10_000)) {
     throw new TxRejected(`priority fee ${Number(priorityFee) / 1e9} SOL is above your limit`);
   }
-  return { priorityFee: Number(priorityFee) };
+  return { priorityFee: Number(priorityFee) + Number(tip), tip: Number(tip) };
 }
 
 /** Layer 2: simulate and make sure we don't lose more SOL than expected. */
