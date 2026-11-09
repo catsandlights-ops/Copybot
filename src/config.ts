@@ -47,6 +47,8 @@ const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
  */
 /** Positions the market scanner opened (not copied from a wallet) carry this as their source. */
 export const SCANNER_SOURCE = 'scanner';
+/** Positions bought by the user's own limit and DCA orders. */
+export const ORDER_SOURCE = 'order';
 
 /** The scanner's own quick exits: stop-loss, take-profit, and a trailing stop once it's up. */
 export function scannerRules(cfg: Pick<Config, 'risk' | 'exits'> & { scanner?: Config['scanner'] }): { risk: Config['risk']; exits: Config['exits'] } {

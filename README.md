@@ -68,6 +68,18 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **Find traders:** while the bot runs, it keeps looking at new *and older* coins that are moving, finds traders who caught the move, backtests them with your settings, and adds the best on a trial. No Claude needed.
 - **Trade coins:** buys coins that are rising on real buying (up over the last hour but not already run, more buyers than sellers, more volume than usual, not falling right now), through every limit and safety check, with its own budget, stop-loss, take-profit, trailing stop and maximum hold time. It stops itself after a losing streak. Both switches are off by default.
 
+- **Is it working?** A live track record of every coin signal (bought or not), checked later against real prices, and a **test on the past** that replays the rules on recent history with different buying rules and exits.
+
+### Your own orders
+- **Limit orders:** buy when a coin drops to (or rises past) a price; sell part or all when it hits a target or a floor. Optional expiry.
+- **DCA:** buy a fixed amount every 15 minutes to a week, a set number of times, optionally only under a price cap.
+- Every buy goes through your limits and safety checks. Orders run while the bot runs; paper and live orders are kept apart.
+
+### Panic button, reports and taxes
+- **Sell everything & stop** from the Dashboard or your phone, plus an optional **panic limit** that does it automatically when today's closed and open result reaches a loss you set.
+- **Profit report** by day, week or month, with best and worst trades and results per wallet.
+- **Tax export:** a year of trades with USD values (daily SOL prices) and the gain or loss on each sale (average-cost method).
+
 ### Phone access
 - **Control Copybot from your phone** at home over Wi-Fi, or anywhere with the free [Tailscale](https://tailscale.com/download) app: profit, positions, trades and activity; start and stop; sell half or all of a position; the scanner switches.
 - **Paired with a one-time QR code** (5 minutes, single use). Each phone has its own key, stored only as a hash, and can be removed at any time.

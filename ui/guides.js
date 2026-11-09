@@ -11,7 +11,7 @@ window.GUIDE_CATS = {
 window.GUIDES = [
   {
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
-    teaser: 'Control Copybot from your phone, and a market scanner that finds traders and trades rising coins.',
+    teaser: 'Phone access, a market scanner, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
 <h3>Phone access</h3>
 <p>Check your profit and positions, start and stop the bot, and sell from your phone, at home over Wi-Fi or anywhere with the free Tailscale app. Set it up in <b>Settings → Phone access</b>. Your phone can't change settings or touch your keys and wallets. <a href="#" data-guide="phone">Set it up →</a></p>
@@ -21,6 +21,14 @@ window.GUIDES = [
 <li><b>Find traders:</b> keeps looking at new <i>and older</i> coins for traders who are winning, backtests them with your settings, and adds the best on a trial.</li>
 <li><b>Trade coins:</b> buys coins that are rising on strong buying, on its own, with its own budget, stop-loss and take-profit, through every safety check. Try it in paper mode first. <a href="#" data-guide="scanner">How it works →</a></li>
 </ul>
+<h3>Is the scanner any good?</h3>
+<p>The Scanner page now shows a <b>live track record</b>: every coin it flags (bought or not) is checked later against the real price. <b>Test on the past</b> replays its rules on the last 1 to 3 days with different buying rules and exits, and lets you switch to the best one in a click.</p>
+<h3>Your own orders</h3>
+<p>A new <b>Orders</b> page: buy a coin when it drops to a price, sell when it reaches a target, or buy a little every few hours (DCA). Every buy goes through your limits and safety checks. Use <b>Place an order</b> on any coin in Markets.</p>
+<h3>Panic button</h3>
+<p><b>Sell everything &amp; stop</b> on the Dashboard and on your phone. Optionally set a <b>panic limit</b> (Settings → Limits) so Copybot does it by itself if today's total loss gets too big.</p>
+<h3>Reports and taxes</h3>
+<p>The Trades page shows your profit by day, week or month, your best and worst trades, and results per wallet. <b>Tax export</b> gives a year of trades with USD values and the gain on every sale.</p>
 <h3>Fixes</h3>
 <ul>
 <li>The one-press paper experiment no longer fails with "Couldn't find active traders" when the market data service is busy: it retries, says what went wrong, and falls back to your last Find wallets results.</li>

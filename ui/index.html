@@ -482,6 +482,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
     <button class="nav" data-page="strategies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 2 5-6"/><circle cx="19" cy="7" r="1.5"/></svg>Strategies</button>
     <button class="nav" data-page="backtest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>Backtest</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
+    <button class="nav" data-page="orders"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Orders<span class="count" id="nav-orders"></span></button>
     <button class="nav" data-page="autopilot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Autopilot<span class="count" id="nav-ai"></span></button>
     <button class="nav" data-page="learn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>Learn</button>
     <button class="nav" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Settings</button>
@@ -701,6 +702,7 @@ function renderChrome() {
   const enabled = cfg.wallets.filter((w) => w.enabled !== false).length;
   $('#nav-wallets').textContent = cfg.wallets.length ? `${enabled}` : '';
   $('#nav-ai').textContent = cfg.ai.enabled ? 'on' : '';
+  $('#nav-orders').textContent = (S.status?.orders || []).filter((o) => o.status === 'active').length || '';
   $('#nav-scan').textContent = cfg.scanner.tradeCoins || cfg.scanner.findTraders ? 'on' : '';
   document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('on', n.dataset.page === S.page));
   const c = S.connection || {};
@@ -722,7 +724,7 @@ $('#run-btn').onclick = async () => {
     if (!ok) return;
   }
   // Paper mode with no wallets yet: offer a one-press experiment instead of an error.
-  if (!S.status.running && S.config.mode === 'paper' && !S.config.wallets.some((w) => w.enabled !== false) && !S.config.scanner.tradeCoins && !S.config.scanner.findTraders) return quickStart();
+  if (!S.status.running && S.config.mode === 'paper' && !S.config.wallets.some((w) => w.enabled !== false) && !S.config.scanner.tradeCoins && !S.config.scanner.findTraders && !(S.status.orders || []).some((o) => o.status === 'active')) return quickStart();
   S.busy = true; renderChrome();
   await act(() => api('POST', S.status.running ? '/api/stop' : '/api/start'));
   S.busy = false; renderChrome();
@@ -773,13 +775,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', scanner: 'Market scanner', strategies: 'Strategies', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', scanner: 'Market scanner', strategies: 'Strategies', backtest: 'Backtest', trades: 'Trade history', orders: 'Your orders', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, scanner: renderScanner, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, scanner: renderScanner, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, orders: renderOrders, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
     el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-08">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
@@ -1614,6 +1616,90 @@ function bindReport() {
     } catch (e) { res.textContent = ''; toast(e.message, true); }
   };
 }
+// ----- your orders: limit buys and sells, DCA -----
+const OF = { kind: 'buy', mint: '', tok: null };
+function orderPrice(p) { if (p == null) return '—'; if (p >= 1) return '$' + p.toFixed(4).replace(/\.?0+$/, ''); const d = Math.max(2, -Math.floor(Math.log10(p)) + 3); return '$' + p.toFixed(Math.min(12, d)).replace(/0+$/, ''); }
+function renderOrders(el) {
+  if (S.orderMint) { OF.mint = S.orderMint; OF.tok = null; S.orderMint = null; }
+  const live = S.config.mode === 'live';
+  const held = S.status.positions;
+  const k = OF.kind;
+  el.innerHTML = `
+    <div class="card"><div class="card-h"><div><h2>New order</h2><div class="muted" style="font-size:12.5px">Orders run while the bot is running. Every buy goes through your limits and safety checks; ${live ? '<b class="neg">you are in live mode: these are real trades</b>' : 'you are in paper mode, so nothing real is spent'}.</div></div></div>
+      <div class="card-b stack">
+        <div class="seg" id="of-kind">${[['buy', 'Buy at a price'], ['sell', 'Sell at a price'], ['dca', 'Buy regularly (DCA)']].map(([v, l]) => `<button data-k="${v}" class="${k === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <div><label class="l" for="of-mint" style="font-weight:600">Token</label> <span class="muted" style="font-size:12.5px">Paste a token address${held.length && k === 'sell' ? ', or pick one you hold:' : ''} ${k === 'sell' ? held.map((p) => `<a href="#" class="chip" data-hold="${esc(p.mint)}">${short(p.mint)}</a>`).join(' ') : ''}</span>
+          <input class="input mono" id="of-mint" value="${esc(OF.mint)}" placeholder="Token address" spellcheck="false" style="width:100%;max-width:560px;margin-top:6px;display:block"><div id="of-tok" class="muted" style="font-size:13px;margin-top:4px"></div></div>
+        ${k === 'dca' ? `
+          <div class="row" style="flex-wrap:wrap;gap:14px">
+            <label class="row muted" style="gap:6px">Buy <div class="with-unit"><input type="number" id="of-sol" value="0.05" step="any" min="0.001"><span>SOL</span></div></label>
+            <label class="row muted" style="gap:6px">every <select class="input" id="of-every" style="width:auto;height:34px">${[[0.25, '15 minutes'], [1, 'hour'], [4, '4 hours'], [6, '6 hours'], [12, '12 hours'], [24, 'day'], [168, 'week']].map(([v, l]) => `<option value="${v}" ${v === 24 ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+            <label class="row muted" style="gap:6px"><div class="with-unit"><input type="number" id="of-times" value="7" step="1" min="1" max="500"><span>times</span></div></label>
+            <label class="row muted" style="gap:6px">only when the price is under <div class="with-unit"><input type="number" id="of-cap" placeholder="any" step="any" min="0"><span>USD</span></div></label>
+          </div>` : `
+          <div class="row" style="flex-wrap:wrap;gap:14px">
+            <label class="row muted" style="gap:6px">${k === 'buy' ? 'Buy' : 'Sell'} ${k === 'buy' ? '<div class="with-unit"><input type="number" id="of-sol" value="0.05" step="any" min="0.001"><span>SOL</span></div>' : '<select class="input" id="of-pct" style="width:auto;height:34px"><option value="100">all</option><option value="50">half</option><option value="25">a quarter</option></select> of it'}</label>
+            <label class="row muted" style="gap:6px">when the price is <select class="input" id="of-cond" style="width:auto;height:34px"><option value="below" ${k === 'buy' ? 'selected' : ''}>at or below</option><option value="above" ${k === 'sell' ? 'selected' : ''}>at or above</option></select></label>
+            <label class="row muted" style="gap:6px"><div class="with-unit"><input type="number" id="of-price" step="any" min="0" placeholder="price"><span>USD</span></div></label>
+            <span class="row" style="gap:4px" id="of-quick"></span>
+            <label class="row muted" style="gap:6px">wait up to <select class="input" id="of-exp" style="width:auto;height:34px"><option value="24">1 day</option><option value="72">3 days</option><option value="168" selected>1 week</option><option value="720">30 days</option><option value="0">no limit</option></select></label>
+          </div>`}
+        <div class="row"><button class="btn primary" id="of-go">Place order</button><span class="muted" id="of-sum" style="font-size:13px"></span></div>
+        ${k === 'sell' ? '<div class="muted" style="font-size:12.5px">Your normal stop-loss, take-profits and copied sells keep running too; whichever comes first sells.</div>' : k === 'dca' ? '<div class="muted" style="font-size:12.5px">The first buy happens as soon as the bot runs. A round skipped (price above your cap, or a safety check said no) waits for the next one and doesn\'t count.</div>' : '<div class="muted" style="font-size:12.5px">Bought coins follow your normal exits (stop-loss, take-profits, trailing stop). If a safety check refuses the coin 3 times, the order gives up.</div>'}
+      </div></div>
+    <div id="orders-list"></div>`;
+  paintOrderLists();
+  const tokBox = $('#of-tok');
+  const showTok = () => {
+    const t = OF.tok;
+    tokBox.innerHTML = !t ? '' : t.error ? `<span class="neg">${esc(t.error)}</span>` : `<b>${esc(t.symbol)}</b> ${esc(t.name || '')} · now <b>${orderPrice(t.priceUsd)}</b>${S.status.positions.some((p) => p.mint === OF.mint) ? ' · <span class="pos">you hold it</span>' : ''}`;
+    const q = $('#of-quick');
+    if (q) q.innerHTML = t && t.priceUsd ? (OF.kind === 'buy' ? [-5, -10, -20, -30] : [10, 25, 50, 100]).map((d) => `<button class="btn sm ghost" data-pct="${d}">${d > 0 ? '+' : ''}${d}%</button>`).join('') : '';
+    document.querySelectorAll('[data-pct]').forEach((b) => (b.onclick = () => { $('#of-price').value = +(OF.tok.priceUsd * (1 + Number(b.dataset.pct) / 100)).toPrecision(4); $('#of-cond').value = Number(b.dataset.pct) < 0 ? 'below' : 'above'; summary(); }));
+  };
+  const lookup = async () => {
+    const m = $('#of-mint').value.trim();
+    OF.mint = m;
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)) { OF.tok = null; showTok(); return; }
+    if (OF.tok && OF.tok.mint === m && $('#of-tok').innerHTML) return; // unchanged: don't redraw (a click may be on its way)
+    tokBox.textContent = 'Looking up the price…';
+    try { const t = (await api('GET', `/api/markets/token?mint=${m}`))?.data; OF.tok = t ? { ...t, mint: m } : { mint: m, error: 'No market data for this token.' }; } catch (e) { OF.tok = { mint: m, error: e.message }; }
+    showTok(); summary();
+  };
+  const val = (id) => { const e = $(id); return e ? e.value : undefined; };
+  const body = () => ({ kind: OF.kind, mint: OF.mint, symbol: OF.tok?.symbol || '', sol: Number(val('#of-sol')), sellPct: Number(val('#of-pct')), cond: val('#of-cond'), priceUsd: Number(val('#of-price')), expiresInHours: Number(val('#of-exp')), everyHours: Number(val('#of-every')), times: Number(val('#of-times')), maxPriceUsd: Number(val('#of-cap')) || 0 });
+  const summary = () => {
+    const b = body(), name = OF.tok?.symbol || 'this token';
+    const txt = b.kind === 'dca' ? (b.sol > 0 && b.times > 0 ? `${b.times} buys of ${b.sol} SOL = up to ${+(b.sol * b.times).toFixed(4)} SOL of ${esc(name)} in total.` : '')
+      : b.priceUsd > 0 && OF.tok?.priceUsd ? `That's ${Math.abs((b.priceUsd / OF.tok.priceUsd - 1) * 100).toFixed(1)}% ${b.priceUsd < OF.tok.priceUsd ? 'below' : 'above'} the current price.${(b.cond === 'below') === (b.priceUsd >= OF.tok.priceUsd) ? ' <b>It would fill right away.</b>' : ''}` : '';
+    $('#of-sum').innerHTML = txt;
+  };
+  el.querySelectorAll('#of-kind button').forEach((b) => (b.onclick = () => { OF.kind = b.dataset.k; renderOrders(el); }));
+  el.querySelectorAll('[data-hold]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $('#of-mint').value = a.dataset.hold; lookup(); }));
+  $('#of-mint').onchange = lookup; $('#of-mint').onpaste = () => setTimeout(lookup, 0);
+  el.querySelectorAll('input,select').forEach((i) => { if (i.id !== 'of-mint') i.addEventListener('input', summary); });
+  $('#of-go').onclick = async () => {
+    const b = body();
+    if (live && !(await confirmModal({ title: 'Place a live order?', confirm: 'Place order', danger: true, body: '<p>When it triggers, Copybot will trade <b>real SOL</b> from your trading wallet (after the usual safety checks).</p>' }))) return;
+    const r = await act(() => api('POST', '/api/orders', b), 'Order placed');
+    if (r) { S.status = r; renderChrome(); paintOrderLists(); if (!S.status.running) toast('Start the bot for your orders to run'); }
+  };
+  if (OF.mint) lookup();
+}
+function paintOrderLists() {
+  const box = $('#orders-list'); if (!box) return;
+  const all = S.status.orders || [];
+  const open = all.filter((o) => o.status === 'active'), done = all.filter((o) => o.status !== 'active');
+  const name = (o) => esc(o.symbol || short(o.mint));
+  const what = (o) => o.kind === 'buy' ? `Buy <b>${o.sol} SOL</b> of ${name(o)} at or ${o.cond} <b>${orderPrice(o.priceUsd)}</b>` : o.kind === 'sell' ? `Sell <b>${o.sellPct}%</b> of ${name(o)} at or ${o.cond} <b>${orderPrice(o.priceUsd)}</b>` : `Buy <b>${o.sol} SOL</b> of ${name(o)} every ${o.everyHours < 1 ? Math.round(o.everyHours * 60) + ' min' : o.everyHours + ' h'} · ${o.done} of ${o.times} done${o.maxPriceUsd ? ` · only under ${orderPrice(o.maxPriceUsd)}` : ''}`;
+  const when = (o) => o.kind === 'dca' && o.status === 'active' ? `next ${o.nextAt <= Date.now() ? (S.status.running ? 'now' : 'when the bot starts') : 'in ' + ago(Date.now() - (o.nextAt - Date.now()))}` : o.expiresAt && o.status === 'active' ? `expires in ${ago(Date.now() - (o.expiresAt - Date.now()))}` : '';
+  const badge = { filled: 'buy', cancelled: 'paper', failed: 'sell', expired: 'paper' };
+  box.innerHTML = `<div class="card"><div class="card-h"><h2>Open orders</h2><span class="spacer"></span><span class="muted" style="font-size:12.5px">${open.length ? (S.status.running ? 'checking prices every 15 seconds' : '<b>start the bot</b> for these to run') : ''}</span></div>
+      ${open.length ? open.map((o) => `<div class="row" style="justify-content:space-between;padding:10px 16px;border-top:1px solid var(--border)"><div><div>${what(o)}</div><div class="muted" style="font-size:12.5px">${[when(o), o.note].filter(Boolean).map(esc).join(' · ')}</div></div><button class="btn sm" data-cancel="${esc(o.id)}">Cancel</button></div>`).join('') : '<div class="card-b muted">No open orders.</div>'}</div>
+    ${done.length ? `<div class="card"><div class="card-h"><h2>Finished orders</h2></div>${done.map((o) => `<div class="row" style="justify-content:space-between;padding:8px 16px;border-top:1px solid var(--border);font-size:13.5px"><div>${what(o)}<div class="muted" style="font-size:12.5px">${esc(o.note || '')} · ${dateTime(o.updatedAt)}</div></div><span class="tag ${badge[o.status]}">${o.status}</span></div>`).join('')}</div>` : ''}`;
+  box.querySelectorAll('[data-cancel]').forEach((b) => (b.onclick = async () => { const r = await act(() => api('DELETE', '/api/orders?id=' + encodeURIComponent(b.dataset.cancel)), 'Order cancelled'); if (r) { S.status = r; renderChrome(); paintOrderLists(); } }));
+}
+
 const labelFor = (addr) => { const w = S.config.wallets.find((x) => x.address === addr); return w?.label || short(addr); };
 
 // ----- markets -----
@@ -1751,6 +1837,7 @@ function renderToken(el) {
     <div class="card tok-h">
       <div class="row" style="gap:14px">${tokenThumb(t.image, t.symbol).replace('tthumb', 'tthumb lg')}<div><h2 style="margin:0">${esc(t.symbol)} <span class="muted" style="font-weight:500;font-size:15px">${esc(t.name)}</span></h2><div class="row" style="gap:12px"><b class="num" style="font-size:24px">${priceFmt(t.priceUsd)}</b>${chg(t.change?.h24)}<span class="muted small">24h</span></div></div></div>
       <div class="row">
+        <button class="btn" id="mk-order">Place an order</button>
         <button class="btn ${t.watched ? '' : 'primary'}" id="mk-watch">${t.watched ? '★ Watching' : '☆ Watch'}</button>
         <a class="btn" href="https://dexscreener.com/solana/${esc(t.pool)}" target="_blank" rel="noopener">Dexscreener</a>
         <a class="btn" href="https://solscan.io/token/${esc(t.mint)}" target="_blank" rel="noopener">Solscan</a>
@@ -1778,6 +1865,7 @@ function renderToken(el) {
   bindBack(el);
   el.querySelectorAll('[data-tf]').forEach((b) => (b.onclick = () => { S.m.tf = b.dataset.tf; render(); }));
   el.querySelectorAll('[data-dur]').forEach((b) => (b.onclick = () => { S.m.dur = b.dataset.dur; render(); }));
+  $('#mk-order').onclick = () => { S.orderMint = t.mint; go('orders'); };
   $('#mk-watch').onclick = async () => {
     const r = await act(() => api('PUT', '/api/markets/watchlist', { mint, watch: !t.watched }), t.watched ? 'Removed from watchlist' : 'Added to watchlist');
     if (r) { t.watched = r.watched; delete S.m.data['pools:watch']; render(); }
@@ -2403,6 +2491,7 @@ function connectEvents() {
     S.status = JSON.parse(e.data);
     renderChrome();
     if (S.page === 'dashboard') render();
+    if (S.page === 'orders') paintOrderLists();
   });
   es.addEventListener('config', (e) => {
     if (S.page === 'settings' && S.dirty) return;

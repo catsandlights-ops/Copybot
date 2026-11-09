@@ -155,6 +155,7 @@ function render() {
       ${sc.record.trades ? `<div class="muted" style="font-size:13px;margin-top:8px">Scanner: <span class="${cls(sc.record.pnlSol)}">${sol(sc.record.pnlSol)} SOL</span> · ${sc.record.wins} of ${sc.record.closed} sells in profit</div>` : ''}
       ${sc.tradeCoins && sc.signals.length ? `<div class="muted" style="font-size:13px;margin-top:6px">Rising now: ${sc.signals.map((x) => `<b>${esc(x.symbol)}</b>`).join(', ')}</div>` : ''}
     </div>
+    ${S.orders && S.orders.length ? `<div class="card"><h2>Open orders</h2>${S.orders.map((o) => `<div class="pos-item"><div style="font-size:14px">${esc(o.text)}</div>${o.note ? `<div class="muted" style="font-size:12.5px">${esc(o.note)}</div>` : ''}<button class="sm" data-cancel="${esc(o.id)}" style="margin-top:6px">Cancel</button></div>`).join('')}</div>` : ''}
     <div class="tabs">${[['positions', `Positions (${S.positions.length})`], ['trades', 'Trades'], ['activity', 'Activity']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div class="card">${tab === 'positions' ? posHtml : tab === 'trades' ? tradesHtml : logHtml}</div>
     <div class="row between muted" style="font-size:12.5px;margin-top:18px"><span>Copybot${S.version ? ' v' + esc(S.version) : ''} · updates every few seconds</span><button class="sm" id="unpair">Unpair</button></div>`;
@@ -173,6 +174,7 @@ function bind() {
     if (!confirm(n ? `Sell ALL ${n} open position${n === 1 ? '' : 's'}${S.mode === 'live' ? ' (LIVE, real sells)' : ''} and stop the bot?` : 'Stop the bot?')) return;
     action(() => call('POST', '/r/panic'), (r) => (r.panic?.failed?.length ? [`Sold ${r.panic.sold}; ${r.panic.failed.length} couldn't be sold. Check the computer.`, true] : ['Sold everything. The bot is stopped.']));
   };
+  document.querySelectorAll('[data-cancel]').forEach((b) => (b.onclick = () => confirm('Cancel this order?') && action(() => call('POST', '/r/orders/cancel', { id: b.dataset.cancel }), 'Order cancelled')));
   const res = $('#resume'); if (res) res.onclick = () => confirm('Let the bot buy again today despite the loss limit?') && action(() => call('POST', '/r/resume'), 'Buying resumed');
   document.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => {
     const f = Number(b.dataset.f);

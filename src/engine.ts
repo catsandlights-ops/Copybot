@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { Config, exitConfigFor, loadConfig, SCANNER_SOURCE, walletRules } from './config';
+import { Config, exitConfigFor, loadConfig, ORDER_SOURCE, SCANNER_SOURCE, walletRules } from './config';
+import { afterAttempt, describeOrder, MAX_ACTIVE_ORDERS, orderDue, type Order } from './orders';
+import * as markets from './markets';
 import { overHeld } from './scanner';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
@@ -87,6 +89,7 @@ export class BotEngine extends EventEmitter {
       this.keyError = (e as Error).message;
       this.log(this.keyError, 'error');
     }
+    this.orders = this.loadOrders();
     const { state, warning } = loadState(this.cfg.mode);
     this.state = state;
     if (warning) this.log(warning, 'error');
@@ -109,7 +112,7 @@ export class BotEngine extends EventEmitter {
   }
 
   private setLabels() {
-    this.labels = new Map([[SCANNER_SOURCE, 'Market scanner'], ...this.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
+    this.labels = new Map([[SCANNER_SOURCE, 'Market scanner'], [ORDER_SOURCE, 'Your order'], ...this.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
   }
 
   /** Track processed signatures without growing memory forever. */
@@ -128,7 +131,8 @@ export class BotEngine extends EventEmitter {
     this.reload();
     const wallets = this.cfg.wallets.filter((w) => w.enabled);
     const sc = this.cfg.scanner;
-    if (!wallets.length && !sc.tradeCoins && !sc.findTraders) throw new Error('Add at least one wallet to copy first, or turn on the Market scanner.');
+    const hasOrders = this.orders.some((o) => o.status === 'active');
+    if (!wallets.length && !sc.tradeCoins && !sc.findTraders && !hasOrders) throw new Error('Add at least one wallet to copy first, turn on the Market scanner, or place an order.');
     if (this.cfg.mode === 'live' && !this.kp) throw new Error(this.keyError ?? 'Live mode needs a trading wallet (Settings → Trading wallet).');
 
     const gen = ++this.gen;
@@ -136,7 +140,7 @@ export class BotEngine extends EventEmitter {
     this.startedAt = Date.now();
     this.emit('status');
     const scanning = [sc.tradeCoins && 'trading coins', sc.findTraders && 'finding traders'].filter(Boolean).join(' and ');
-    this.log(`Bot started in ${this.cfg.mode.toUpperCase()} mode, watching ${wallets.length} wallet(s)${scanning ? `; market scanner ${scanning}` : ''}`, 'system');
+    this.log(`Bot started in ${this.cfg.mode.toUpperCase()} mode, watching ${wallets.length} wallet(s)${scanning ? `; market scanner ${scanning}` : ''}${hasOrders ? `; ${this.orders.filter((o) => o.status === 'active').length} open order(s)` : ''}`, 'system');
 
     for (const w of wallets) {
       try {
@@ -156,6 +160,7 @@ export class BotEngine extends EventEmitter {
       }
     }
     this.exitLoop(gen);
+    this.orderLoop(gen);
     this.balanceLoop(gen);
     this.aiLoop(gen);
     const wsu = this.cfg.execution.fastStream ? heliusWsUrl(rpcUrl()) : null;
@@ -181,6 +186,116 @@ export class BotEngine extends EventEmitter {
     this.emit('status');
   }
 
+  // ---------- the user's own orders: limit buys and sells, DCA ----------
+  orders: Order[] = [];
+  private ordersFile = () => `data/orders-${this.cfg.mode}.json`;
+
+  private loadOrders(): Order[] {
+    try {
+      const j = JSON.parse(fs.readFileSync(this.ordersFile(), 'utf8'));
+      return Array.isArray(j) ? j.filter((o) => o && typeof o.id === 'string' && typeof o.mint === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveOrders() {
+    // Keep every active order and the 100 most recent finished ones.
+    const active = this.orders.filter((o) => o.status === 'active');
+    const done = this.orders.filter((o) => o.status !== 'active').slice(-100);
+    this.orders = [...done, ...active].sort((a, b) => a.createdAt - b.createdAt);
+    fs.mkdirSync('data', { recursive: true });
+    fs.writeFileSync(this.ordersFile() + '.tmp', JSON.stringify(this.orders, null, 2));
+    fs.renameSync(this.ordersFile() + '.tmp', this.ordersFile());
+    this.emit('status');
+  }
+
+  addOrder(o: Order) {
+    if (this.orders.filter((x) => x.status === 'active').length >= MAX_ACTIVE_ORDERS) throw new Error(`At most ${MAX_ACTIVE_ORDERS} open orders. Cancel one first.`);
+    this.orders.push(o);
+    this.saveOrders();
+    this.log(`New order: ${describeOrder(o)}.${this.running ? '' : ' It starts when you start the bot.'}`, 'system');
+  }
+
+  cancelOrder(id: string): boolean {
+    const o = this.orders.find((x) => x.id === id && x.status === 'active');
+    if (!o) return false;
+    Object.assign(o, { status: 'cancelled', note: 'cancelled by you', updatedAt: Date.now() });
+    this.saveOrders();
+    this.log(`Order cancelled: ${describeOrder(o)}.`, 'system');
+    return true;
+  }
+
+  private ordersBusy = false;
+
+  /** Checks prices for open orders every 15 seconds and acts on the ones that are due. */
+  private async orderLoop(gen: number) {
+    while (gen === this.gen) {
+      if (!this.ordersBusy && this.orders.some((o) => o.status === 'active')) {
+        this.ordersBusy = true;
+        await this.checkOrders(gen).catch((e) => this.logError(e));
+        this.ordersBusy = false;
+      }
+      await sleep(15_000);
+    }
+  }
+
+  private async checkOrders(gen: number) {
+    const active = this.orders.filter((o) => o.status === 'active');
+    const mints = [...new Set(active.map((o) => o.mint))];
+    const prices = new Map<string, number | null>();
+    for (let i = 0; i < mints.length; i += 30) {
+      const list = await markets.tokens(mints.slice(i, i + 30)).catch(() => []);
+      for (const t of list as { mint: string | null; priceUsd: number | null }[]) if (t.mint) prices.set(t.mint, t.priceUsd ?? null);
+    }
+    let changed = false;
+    for (const o of active) {
+      if (gen !== this.gen) return;
+      const now = Date.now();
+      const act = orderDue(o, prices.get(o.mint) ?? null, !!this.state.positions[o.mint], now);
+      if (!act) continue;
+      changed = true;
+      const replace = (n: Order) => (this.orders = this.orders.map((x) => (x.id === o.id ? n : x)));
+      if ('expire' in act) {
+        replace({ ...o, status: 'expired', note: 'expired before the price was reached', updatedAt: now });
+        this.log(`Order expired: ${describeOrder(o)}.`, 'system');
+      } else if ('skip' in act) {
+        // A sell order waits while there's nothing to sell; a DCA round is skipped.
+        replace(o.kind === 'dca' ? afterAttempt(o, false, act.skip, now) : { ...o, note: act.skip, updatedAt: now });
+        if (o.kind === 'dca') this.log(`Order: skipped a round of "${describeOrder(o)}": ${act.skip}.`, 'skip');
+      } else if ('buySol' in act) {
+        this.log(`Order: ${describeOrder(o)}${o.kind === 'dca' ? ` (buy ${o.done + 1} of ${o.times})` : ''}`, 'signal');
+        const why = await new Promise<string | null>((resolve) => {
+          this.enqueue(async () => resolve(await this.orderBuyNow(o.mint, act.buySol).catch((e) => (e as Error).message)));
+        });
+        if (why) this.log(`  skipped: ${why}`, 'skip');
+        replace(afterAttempt(o, !why, why ?? `bought ${act.buySol} SOL`, Date.now()));
+      } else if ('sellFraction' in act) {
+        const pnl = await new Promise<number | null>((resolve) => {
+          this.enqueue(async () => resolve(await this.trader.sell(o.mint, act.sellFraction, `your order: ${describeOrder(o)}`).catch(() => null)));
+        });
+        replace(afterAttempt(o, pnl !== null, pnl === null ? 'the sell did not go through' : `sold, profit ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} SOL`, Date.now()));
+      }
+    }
+    if (changed) this.saveOrders();
+  }
+
+  /** An order's buy: the same limits and safety checks as every other buy. Returns why not, or null. */
+  private async orderBuyNow(mint: string, sol: number): Promise<string | null> {
+    if (!this.running) return 'the bot stopped';
+    const room = this.roomFor(mint, sol);
+    if (room) return room;
+    if (this.kp && this.cfg.mode === 'live') {
+      const bal = (await this.conn.getBalance(this.kp.publicKey)) / 1e9;
+      if (bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
+    }
+    const checked = await this.tokenChecks(mint, sol, false);
+    if (typeof checked === 'string') return checked;
+    if (!this.running) return 'the bot stopped';
+    await this.trader.buy(mint, checked.check.decimals, checked.check.buyQuote, ORDER_SOURCE);
+    return null;
+  }
+
   // ---------- panic: sell everything and stop ----------
   panicking = false;
 
@@ -197,6 +312,13 @@ export class BotEngine extends EventEmitter {
       this.emit('guard', `Selling everything and stopping: ${reason}`);
       // Stop first so nothing new is bought while selling; exits for anything left are retried below.
       if (this.running) await this.stop();
+      const open = this.orders.filter((o) => o.status === 'active');
+      if (open.length) {
+        const now = Date.now();
+        this.orders = this.orders.map((o) => (o.status === 'active' ? { ...o, status: 'cancelled' as const, note: 'cancelled by Sell everything', updatedAt: now } : o));
+        this.saveOrders();
+        this.log(`Cancelled ${open.length} open order${open.length === 1 ? '' : 's'}.`, 'warn');
+      }
       let sold = 0;
       for (let attempt = 0; attempt < 2; attempt++) {
         for (const mint of Object.keys(this.state.positions)) {
@@ -746,6 +868,7 @@ export class BotEngine extends EventEmitter {
       paper: this.cfg.mode === 'paper' ? { startSol: this.cfg.paper.startSol, freeSol: paperFreeSol(this.cfg.paper.startSol, this.state.realizedPnlSol, exposure(this.state)) } : null,
       guard: { blocked: buyBlockReason(this.guard, this.cfg.risk, Date.now()), dayPnlSol: this.guard.dayPnlSol, lossStreak: this.guard.lossStreak },
       panicking: this.panicking,
+      orders: [...this.orders.filter((o) => o.status === 'active'), ...this.orders.filter((o) => o.status !== 'active').slice(-15).reverse()],
       wallet: this.kp ? { address: this.kp.publicKey.toBase58(), balance: this.walletBalance } : null,
     };
   }

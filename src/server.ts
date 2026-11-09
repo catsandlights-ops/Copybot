@@ -20,6 +20,7 @@ import { coinSignals, entryRulesFor, exitVariants, replayExit, replaySignals, RU
 import * as remote from './remote';
 import QRCode from 'qrcode';
 import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report';
+import { describeOrder, makeOrder } from './orders';
 import { PublicKey } from '@solana/web3.js';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { readSecret } from './env';
@@ -1092,6 +1093,13 @@ async function handleRemote(req: http.IncomingMessage, res: http.ServerResponse)
     });
     return send(res, 200, { ...phoneState(), panic: r });
   }
+  if (route === 'POST /r/orders/cancel') {
+    const b = await readBody(req);
+    const o = engine.orders.find((x) => x.id === b.id && x.status === 'active');
+    if (!o || !engine.cancelOrder(o.id)) throw new HttpError(404, 'That order is no longer open.');
+    from(`cancelled an order (${describeOrder(o)})`);
+    return send(res, 200, phoneState());
+  }
   if (route === 'POST /r/resume') {
     engine.resumeBuying();
     from('resumed buying for today');
@@ -1134,6 +1142,7 @@ function phoneState() {
     balance: s.wallet?.balance ?? null,
     guard: s.guard,
     panicking: s.panicking,
+    orders: engine.orders.filter((o) => o.status === 'active').map((o) => ({ id: o.id, text: describeOrder(o), note: o.note ?? null })),
     wallets: engine.cfg.wallets.filter((w) => w.enabled).length,
     positions: s.positions.map((p: any) => ({ mint: p.mint, from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt })),
     logs: engine.logs.slice(-40).map((l) => ({ t: l.t, level: l.level, msg: l.msg })),
@@ -1384,6 +1393,29 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     await engine.start().catch((e) => {
       throw new HttpError(400, e.message);
     });
+    return send(res, 200, engine.snapshot());
+  }
+
+  if (route === 'POST /api/orders') {
+    const b = await readBody(req);
+    if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'Live mode needs a trading wallet first (Settings → Trading wallet).');
+    const o = makeOrder(b, Date.now(), crypto.randomBytes(6).toString('hex'));
+    if (typeof o === 'string') throw new HttpError(400, o);
+    if (!o.symbol) {
+      const info = await markets.tokens([o.mint]).catch(() => []);
+      const sym = (info as any[])[0]?.symbol;
+      if (sym && sym !== '?') o.symbol = sym;
+    }
+    try {
+      engine.addOrder(o);
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    return send(res, 200, engine.snapshot());
+  }
+
+  if (route === 'DELETE /api/orders') {
+    if (!engine.cancelOrder(url.searchParams.get('id') ?? '')) throw new HttpError(404, 'That order is no longer open.');
     return send(res, 200, engine.snapshot());
   }
 
