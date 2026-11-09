@@ -24,16 +24,19 @@ type Pair = {
 };
 
 /** Combine every Solana pool for the token: total liquidity, market cap, oldest pool's creation time. */
+/** EVM addresses are case-insensitive; Solana's are not. */
+const same = (a: unknown, b: string) => typeof a === 'string' && (a === b || (a.startsWith('0x') && a.toLowerCase() === b.toLowerCase()));
+
 export function summarizePairs(mint: string, pairs: Pair[], dexscreenerId = 'solana'): MarketInfo | null {
-  const mine = pairs.filter((p) => p.chainId === dexscreenerId && (p.baseToken?.address === mint || p.quoteToken?.address === mint));
+  const mine = pairs.filter((p) => p.chainId === dexscreenerId && (same(p.baseToken?.address, mint) || same(p.quoteToken?.address, mint)));
   if (!mine.length) return null;
   const known = mine.filter((p) => typeof p.liquidity?.usd === 'number' && Number.isFinite(p.liquidity.usd));
   const liquidityUsd = known.length ? known.reduce((a, p) => a + Number(p.liquidity!.usd), 0) : null;
-  const caps = mine.filter((p) => p.baseToken?.address === mint).map((p) => Number(p.marketCap ?? p.fdv)).filter((n) => Number.isFinite(n) && n > 0);
+  const caps = mine.filter((p) => same(p.baseToken?.address, mint)).map((p) => Number(p.marketCap ?? p.fdv)).filter((n) => Number.isFinite(n) && n > 0);
   const created = mine.map((p) => Number(p.pairCreatedAt)).filter((n) => Number.isFinite(n) && n > 0);
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   const top = [...mine].sort((a, b) => (num(b.liquidity?.usd) ?? -1) - (num(a.liquidity?.usd) ?? -1))[0];
-  const side = top.baseToken?.address === mint ? top.baseToken : top.quoteToken;
+  const side = same(top.baseToken?.address, mint) ? top.baseToken : top.quoteToken;
   const vols = mine.map((p) => num(p.volume?.h24)).filter((n): n is number => n !== null);
   return {
     liquidityUsd,

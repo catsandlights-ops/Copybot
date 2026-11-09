@@ -122,6 +122,12 @@ export class EvmRpc {
   }
   balance = async (addr: string) => BigInt(await this.call<string>('eth_getBalance', [addr, 'latest']));
 
+  /** Is this address a smart contract (e.g. a smart wallet), and how many transactions has it sent? */
+  async accountKind(addr: string): Promise<{ contract: boolean; sent: number }> {
+    const [code, nonce] = await Promise.all([this.call<string>('eth_getCode', [addr, 'latest']), this.call<string>('eth_getTransactionCount', [addr, 'latest'])]);
+    return { contract: !!code && code !== '0x', sent: Number(nonce) };
+  }
+
   /** ERC-20 view calls. */
   async decimals(token: string): Promise<number> {
     const r = await this.call<string>('eth_call', [{ to: token, data: '0x313ce567' }, 'latest']);

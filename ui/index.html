@@ -1283,7 +1283,11 @@ function renderWallets(el) {
     if (chain === 'base') address = address.toLowerCase();
     if (ws.some((w) => w.address === address)) return toast('That wallet is already in the list', true);
     if (chain === 'base' && S.config.mode === 'live') toast('Base wallets only run in paper mode for now: it will be watched when you switch to paper.', true);
-    if (await saveWallets([...ws, { chain, address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], chain === 'base' ? 'Base wallet added (paper mode)' : 'Wallet added')) e.target.reset();
+    if (await saveWallets([...ws, { chain, address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], chain === 'base' ? 'Base wallet added (paper mode)' : 'Wallet added')) {
+      e.target.reset();
+      // Base: say what kind of address this is (a smart-contract wallet, a regular one, or one that never trades itself).
+      if (chain === 'base') api('POST', '/api/wallets/base-check', { address }).then((r) => { if (r.level === 'warn') confirmModal({ title: 'Check this Base address', confirm: 'OK', body: `<p>${esc(r.text)}</p>` }); else toast(r.text); }).catch(() => {});
+    }
   };
   el.querySelectorAll('[data-exits]').forEach((b) => (b.onclick = () => walletExitsModal(Number(b.dataset.exits))));
   const hg = $('#health-go');
@@ -1925,10 +1929,13 @@ const tokenThumb = (img, sym) => img ? `<img class="tthumb" src="${esc(img)}" al
 
 function renderMarkets(el) {
   if (S.m.token) return renderToken(el);
-  const ov = mdata('overview'), pools = mdata(`pools:${S.m.tab}`), news = mdata('news'), wh = mdata('whales');
+  const mc = S.m.chain || 'solana';
+  if (mc === 'base' && S.m.tab === 'watch') S.m.tab = 'trending';
+  const pkey = S.m.tab === 'watch' ? 'pools:watch' : `pools:${mc}:${S.m.tab}`;
+  const ov = mdata('overview'), pools = mdata(pkey), news = mdata('news'), wh = mdata('whales');
   mload('overview', '/api/markets/overview');
   if (S.m.tab === 'watch') mload('pools:watch', '/api/markets/watchlist', 30_000);
-  else mload(`pools:${S.m.tab}`, `/api/markets/pools?kind=${S.m.tab}`);
+  else mload(pkey, `/api/markets/pools?kind=${S.m.tab}&chain=${mc}`);
   mload('news', '/api/markets/news', 10 * 60_000);
   mload('whales', '/api/markets/whales', 60_000);
   const rows = pools?.data || [];
@@ -1937,11 +1944,12 @@ function renderMarkets(el) {
       ${(ov?.data || [{ symbol: 'BTC' }, { symbol: 'ETH' }, { symbol: 'SOL' }]).map((c) => `<div class="card coin"><span class="muted">${esc(c.symbol)}</span><b class="num">${priceFmt(c.priceUsd)}</b>${chg(c.change24h)}</div>`).join('')}
       <form class="card mk-search" id="mk-search"><input class="input" name="q" placeholder="Search a token by name, symbol or address" value="${esc(S.m.q || '')}" autocomplete="off"><button class="btn primary">Search</button></form>
     </div>
-    ${S.m.results ? `<div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Search results</h2><span class="spacer"></span><button class="btn sm ghost" id="mk-clear">Clear</button></div>${S.m.results.length ? `<div class="tbl-wrap"><table><tbody>${S.m.results.map((t) => `<tr class="clickrow" data-open="${esc(t.mint)}"><td>${tokenThumb(t.image, t.symbol)}<b>${esc(t.symbol)}</b> <span class="muted">${esc(t.name)}</span></td><td class="r num">${priceFmt(t.priceUsd)}</td><td class="r">${chg(t.change?.h24)}</td><td class="r num">${usdC(t.liquidityUsd)}</td><td class="r num">${usdC(t.marketCapUsd)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No Solana tokens found.</div>'}</div>` : ''}
+    ${S.m.results ? `<div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Search results</h2><span class="spacer"></span><button class="btn sm ghost" id="mk-clear">Clear</button></div>${S.m.results.length ? `<div class="tbl-wrap"><table><tbody>${S.m.results.map((t) => `<tr class="clickrow" data-open="${esc(t.mint)}"><td>${tokenThumb(t.image, t.symbol)}<b>${esc(t.symbol)}</b> <span class="muted">${esc(t.name)}</span></td><td class="r num">${priceFmt(t.priceUsd)}</td><td class="r">${chg(t.change?.h24)}</td><td class="r num">${usdC(t.liquidityUsd)}</td><td class="r num">${usdC(t.marketCapUsd)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="empty">No ${mc === 'base' ? 'Base' : 'Solana'} tokens found.</div>`}</div>` : ''}
     <div class="grid mk-main">
       <div class="card">
         <div class="card-h"><h2>Tokens</h2><span class="spacer"></span>
-          <div class="seg">${[['trending', 'Trending'], ['new', 'New'], ['watch', '★ Watchlist']].map(([k, l]) => `<button data-mtab="${k}" class="${S.m.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+          <div class="seg" style="margin-right:8px">${[['solana', 'Solana'], ['base', 'Base']].map(([k, l]) => `<button data-mchain="${k}" class="${mc === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+          <div class="seg">${[['trending', 'Trending'], ['new', 'New'], ...(mc === 'solana' ? [['watch', '★ Watchlist']] : [])].map(([k, l]) => `<button data-mtab="${k}" class="${S.m.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <div class="tbl-wrap"><table>
           <thead><tr><th>Token</th><th class="r">Price</th><th class="r">1h</th><th class="r">24h</th><th class="r">Volume 24h</th><th class="r">Liquidity</th><th class="r">Mkt cap</th><th class="r">Age</th><th>Buys / sells</th></tr></thead>
           <tbody>${!pools ? loadingRow(9) : pools.error ? `<tr><td colspan="9">${errBox(pools)}</td></tr>` : !rows.length ? `<tr><td colspan="9" class="empty">${S.m.tab === 'watch' ? 'Your watchlist is empty. Open a token and press ★ Watch.' : 'Nothing right now.'}</td></tr>` : rows.map((t) => {
@@ -1958,13 +1966,14 @@ function renderMarkets(el) {
     <div class="card" style="margin-top:16px"><div class="card-h"><h2>Whale trades</h2><span class="muted small">Big Solana trades over $10K, from DexCheck</span></div>
       ${!wh ? '<div class="empty"><span class="spinner" style="display:inline-block"></span></div>' : wh.needsKey ? `<div class="card-b row" style="justify-content:space-between"><span class="muted">See the biggest trades on Solana and copy the wallets behind them. Needs a free DexCheck API key.</span><button class="btn sm primary" onclick="go('settings')">Add DexCheck key</button></div>` : wh.error ? errBox(wh) : walletTable((wh.data || []).map((w) => ({ ...w, label: `${w.side === 'buy' ? '<span class="tag buy">buy</span>' : '<span class="tag sell">sell</span>'} <b>${esc(w.token)}</b> <span class="num">${usdC(w.amountUsd)}</span> <span class="muted small">${w.at ? ago(w.at) + ' ago' : ''}</span>` })), 'Trade')}
     </div>`;
+  el.querySelectorAll('[data-mchain]').forEach((b) => (b.onclick = () => { S.m.chain = b.dataset.mchain; S.m.results = null; render(); }));
   el.querySelectorAll('[data-mtab]').forEach((b) => (b.onclick = () => { S.m.tab = b.dataset.mtab; render(); }));
   el.querySelectorAll('[data-open]').forEach((r) => (r.onclick = () => openToken(r.dataset.open)));
   $('#mk-search').onsubmit = async (e) => {
     e.preventDefault();
     const q = new FormData(e.target).get('q').trim(); S.m.q = q;
     if (q.length > 30 && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(q)) return openToken(q);
-    const r = await act(() => api('GET', `/api/markets/search?q=${encodeURIComponent(q)}`));
+    const r = await act(() => api('GET', `/api/markets/search?q=${encodeURIComponent(q)}&chain=${S.m.chain || 'solana'}`));
     if (r) { S.m.results = r.data || []; render(); }
   };
   const cl = $('#mk-clear'); if (cl) cl.onclick = () => { S.m.results = null; S.m.q = ''; render(); };
@@ -1987,7 +1996,7 @@ function bindWalletActions(el) {
   }));
 }
 
-function openToken(mint) { S.m.token = mint; render(); window.scrollTo(0, 0); }
+function openToken(mint) { S.m.token = mint; S.m.tokenChain = /^0x/i.test(mint) ? 'base' : 'solana'; render(); window.scrollTo(0, 0); }
 
 function candleChart(c) {
   if (!c.length) return '<div class="empty">No chart data for this pool yet.</div>';
@@ -2004,12 +2013,12 @@ function candleChart(c) {
 }
 
 function renderToken(el) {
-  const mint = S.m.token, tk = mdata(`tok:${mint}`);
-  mload(`tok:${mint}`, `/api/markets/token?mint=${mint}`, 30_000);
+  const mint = S.m.token, tk = mdata(`tok:${mint}`), tc = S.m.tokenChain || 'solana';
+  mload(`tok:${mint}`, `/api/markets/token?mint=${mint}&chain=${tc}`, 30_000);
   const t = tk?.data;
   if (t?.pool) {
-    mload(`chart:${t.pool}:${S.m.tf}`, `/api/markets/chart?pool=${t.pool}&tf=${S.m.tf}`);
-    mload(`top:${t.pool}:${S.m.dur}`, `/api/markets/top-traders?pool=${t.pool}&duration=${S.m.dur}`, 5 * 60_000);
+    mload(`chart:${t.pool}:${S.m.tf}`, `/api/markets/chart?pool=${t.pool}&tf=${S.m.tf}&chain=${tc}`);
+    if (tc === 'solana') mload(`top:${t.pool}:${S.m.dur}`, `/api/markets/top-traders?pool=${t.pool}&duration=${S.m.dur}`, 5 * 60_000);
   }
   const back = `<button class="btn ghost" id="mk-back" style="margin-bottom:12px">← Markets</button>`;
   if (!tk) { el.innerHTML = back + '<div class="card"><div class="empty"><span class="spinner" style="display:inline-block"></span></div></div>'; return bindBack(el); }
@@ -2020,10 +2029,10 @@ function renderToken(el) {
     <div class="card tok-h">
       <div class="row" style="gap:14px">${tokenThumb(t.image, t.symbol).replace('tthumb', 'tthumb lg')}<div><h2 style="margin:0">${esc(t.symbol)} <span class="muted" style="font-weight:500;font-size:15px">${esc(t.name)}</span></h2><div class="row" style="gap:12px"><b class="num" style="font-size:24px">${priceFmt(t.priceUsd)}</b>${chg(t.change?.h24)}<span class="muted small">24h</span></div></div></div>
       <div class="row">
-        <button class="btn" id="mk-order">Place an order</button>
-        <button class="btn ${t.watched ? '' : 'primary'}" id="mk-watch">${t.watched ? '★ Watching' : '☆ Watch'}</button>
-        <a class="btn" href="https://dexscreener.com/solana/${esc(t.pool)}" target="_blank" rel="noopener">Dexscreener</a>
-        <a class="btn" href="https://solscan.io/token/${esc(t.mint)}" target="_blank" rel="noopener">Solscan</a>
+        ${tc === 'solana' ? `<button class="btn" id="mk-order">Place an order</button>
+        <button class="btn ${t.watched ? '' : 'primary'}" id="mk-watch">${t.watched ? '★ Watching' : '☆ Watch'}</button>` : '<span class="chip" title="Orders and the watchlist are Solana-only for now">Base</span>'}
+        <a class="btn" href="https://dexscreener.com/${tc}/${esc(t.pool)}" target="_blank" rel="noopener">Dexscreener</a>
+        ${tc === 'base' ? `<a class="btn" href="https://basescan.org/token/${esc(t.mint)}" target="_blank" rel="noopener">Basescan</a>` : `<a class="btn" href="https://solscan.io/token/${esc(t.mint)}" target="_blank" rel="noopener">Solscan</a>`}
       </div>
       <div class="verdict ${t.filterVerdict ? 'no' : 'yes'}">${t.filterVerdict ? `✗ Copybot's filters would skip it: ${esc(t.filterVerdict)}` : "✓ Passes Copybot's market filters"}</div>
     </div>
@@ -2042,14 +2051,14 @@ function renderToken(el) {
     </div>
     <div class="card" style="margin-top:16px"><div class="card-h"><h2>Top traders</h2><span class="muted small">Most profitable wallets on this token, from DexCheck</span><span class="spacer"></span>
       <div class="seg">${['1d', '7d', '30d'].map((k) => `<button data-dur="${k}" class="${S.m.dur === k ? 'on' : ''}">${k}</button>`).join('')}</div></div>
-      ${!top ? '<div class="empty"><span class="spinner" style="display:inline-block"></span></div>' : top.needsKey ? `<div class="card-b row" style="justify-content:space-between"><span class="muted">See who's actually making money on this token, and copy them in one click. Needs a free DexCheck API key.</span><button class="btn sm primary" onclick="go('settings')">Add DexCheck key</button></div>` : top.error ? errBox(top) :
+      ${tc !== 'solana' ? '<div class="card-b muted">Top traders are Solana-only for now.</div>' : !top ? '<div class="empty"><span class="spinner" style="display:inline-block"></span></div>' : top.needsKey ? `<div class="card-b row" style="justify-content:space-between"><span class="muted">See who's actually making money on this token, and copy them in one click. Needs a free DexCheck API key.</span><button class="btn sm primary" onclick="go('settings')">Add DexCheck key</button></div>` : top.error ? errBox(top) :
         walletTable((top.data || []).map((w) => ({ ...w, label: `<span class="num ${cls(w.profitUsd)}">${w.profitUsd == null ? '—' : (w.profitUsd >= 0 ? '+' : '−') + usdC(Math.abs(w.profitUsd))}</span> <span class="muted small">ROI ${w.roiPct == null ? '—' : w.roiPct.toFixed(0) + '%'} · ${w.buys ?? 0} buys / ${w.sells ?? 0} sells</span>` })), 'Profit')}
     </div>`;
   bindBack(el);
   el.querySelectorAll('[data-tf]').forEach((b) => (b.onclick = () => { S.m.tf = b.dataset.tf; render(); }));
   el.querySelectorAll('[data-dur]').forEach((b) => (b.onclick = () => { S.m.dur = b.dataset.dur; render(); }));
-  $('#mk-order').onclick = () => { S.orderMint = t.mint; go('orders'); };
-  $('#mk-watch').onclick = async () => {
+  const mo = $('#mk-order'); if (mo) mo.onclick = () => { S.orderMint = t.mint; go('orders'); };
+  if ($('#mk-watch')) $('#mk-watch').onclick = async () => {
     const r = await act(() => api('PUT', '/api/markets/watchlist', { mint, watch: !t.watched }), t.watched ? 'Removed from watchlist' : 'Added to watchlist');
     if (r) { t.watched = r.watched; delete S.m.data['pools:watch']; render(); }
   };
@@ -2375,6 +2384,7 @@ const FIELDS = [
     { k: 'scanner.trackSignals', label: 'Track every signal', type: 'toggle', help: 'While the bot runs, note every coin the scanner would flag (even with Trade coins off) and check later how it did. This builds the track record on the Scanner page.' },
     { k: 'scanner.rules', label: 'Buying rules', type: 'select', options: [['normal', 'Normal'], ['strict', 'Pickier (bigger move, more volume)'], ['loose', 'Looser (smaller moves)']], help: 'Use "Test on the past" on the Scanner page to see which works best right now.' },
     { k: 'scanner.newCoins', label: 'New coins', type: 'toggle', help: '1 hour to 7 days old. Bigger moves, more risk.' },
+    { k: 'scanner.baseCoins', label: 'Base coins too', type: 'toggle', help: 'Also scan trending coins on Base (paper mode only for now). Same rules and safety checks, plus GoPlus honeypot and tax checks.' },
     { k: 'scanner.oldCoins', label: 'Older coins', type: 'toggle', help: 'Over 7 days old, with deep liquidity. Smaller moves, steadier.' },
     { k: 'scanner.buySol', label: 'Amount per coin', unit: 'SOL' },
     { k: 'scanner.budgetSol', label: 'Scanner budget', unit: 'SOL', help: 'Most SOL in scanner coins at once. Also counts toward "Max SOL in open positions".' },

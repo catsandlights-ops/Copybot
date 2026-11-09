@@ -15,6 +15,8 @@ const UA = 'Copybot (+https://github.com/catsandlights-ops/Copybot)';
 
 /** A chain's facts (network ids, native coin, main USD pool). */
 const M = (chain: ChainId) => getChain(chain).meta;
+/** EVM addresses are case-insensitive (Dexscreener mixes case, GeckoTerminal is lowercase); Solana's are not. */
+const sameAddr = (a: unknown, b: unknown) => typeof a === 'string' && typeof b === 'string' && (a === b || (a.startsWith('0x') && a.toLowerCase() === b.toLowerCase()));
 
 // ---------------- small cache with in-flight de-duplication ----------------
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -84,7 +86,7 @@ const image = (v: unknown): string | null => {
   }
 };
 // Any address format of a chain Copybot knows (each chain's adapter defines its own).
-const addr = (v: unknown): string | null => (chainIds().some((c) => getChain(c).meta.isAddress(v)) ? (v as string) : null);
+const addr = (v: unknown): string | null => (chainIds().some((c) => getChain(c).meta.isAddress(v)) ? ((v as string).startsWith('0x') ? (v as string).toLowerCase() : (v as string)) : null);
 
 // ---------------- overview: BTC / ETH / SOL ----------------
 export function overview() {
@@ -179,7 +181,7 @@ function pairSummary(p: DsPair) {
 export function token(mint: string, chain: ChainId = DEFAULT_CHAIN) {
   return cached(`token:${mint}`, 30_000, async () => {
     const d = await getJson(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
-    const pairs: DsPair[] = (d?.pairs ?? []).filter((p: DsPair) => p.chainId === M(chain).dexscreenerId && p.baseToken?.address === mint);
+    const pairs: DsPair[] = (d?.pairs ?? []).filter((p: DsPair) => p.chainId === M(chain).dexscreenerId && sameAddr(p.baseToken?.address, mint));
     if (!pairs.length) return null;
     pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0) || (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0));
     const known = pairs.filter((p) => typeof p.liquidity?.usd === 'number');
@@ -200,9 +202,10 @@ export function tokens(mints: string[], chain: ChainId = DEFAULT_CHAIN) {
     const d = await getJson(`https://api.dexscreener.com/latest/dex/tokens/${list.join(',')}`);
     const best = new Map<string, DsPair>();
     for (const p of d?.pairs ?? []) {
-      if (p.chainId !== M(chain).dexscreenerId || !list.includes(p.baseToken?.address)) continue;
-      const cur = best.get(p.baseToken.address);
-      if (!cur || (p.liquidity?.usd ?? 0) > (cur.liquidity?.usd ?? 0)) best.set(p.baseToken.address, p);
+      const key = list.find((m) => sameAddr(m, p.baseToken?.address));
+      if (p.chainId !== M(chain).dexscreenerId || !key) continue;
+      const cur = best.get(key);
+      if (!cur || (p.liquidity?.usd ?? 0) > (cur.liquidity?.usd ?? 0)) best.set(key, p);
     }
     return list.map((m) => (best.has(m) ? pairSummary(best.get(m)) : { mint: m, symbol: '?', name: 'No market data', priceUsd: null }));
   });

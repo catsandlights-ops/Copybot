@@ -807,7 +807,7 @@ export class BotEngine extends EventEmitter {
    * A coin the market scanner picked: buy it with the scanner's own size and budget, through the
    * same limits and safety checks as a copied buy. Returns why it wasn't bought, or null.
    */
-  scannerBuy(sig: { mint: string; symbol: string; why: string }): Promise<string | null> {
+  scannerBuy(sig: { mint: string; symbol: string; why: string; chain?: ChainId }): Promise<string | null> {
     return new Promise((resolve) => {
       this.enqueue(async () => {
         const out = await this.scannerBuyNow(sig).catch((e) => (e as Error).message);
@@ -817,10 +817,12 @@ export class BotEngine extends EventEmitter {
     });
   }
 
-  private async scannerBuyNow(sig: { mint: string; symbol: string; why: string }): Promise<string | null> {
+  private async scannerBuyNow(sig: { mint: string; symbol: string; why: string; chain?: ChainId }): Promise<string | null> {
     const sc = this.cfg.scanner;
+    const chain = getChain(sig.chain ?? 'solana');
     if (!this.running || !sc.tradeCoins) return 'the scanner is off';
-    this.log(`Market scanner: ${sig.symbol || short(sig.mint)} is ${sig.why}`, 'signal');
+    this.log(`Market scanner: ${sig.symbol || short(sig.mint)}${chain.meta.id === 'solana' ? '' : ` (${chain.meta.name})`} is ${sig.why}`, 'signal');
+    if (this.cfg.mode === 'live' && !chain.liveTrading) return `${chain.meta.name} runs in paper mode only for now`;
     if (this.state.positions[sig.mint]) return 'already holding';
     if (this.cfg.risk.moodFilter && this.mood.level === 'bad') return `market mood is bad (${this.mood.why})`;
     const positions = Object.values(this.state.positions);
@@ -835,10 +837,10 @@ export class BotEngine extends EventEmitter {
       const bal = await this.chain.balance(this.ctx(), this.kp.publicKey.toBase58());
       if (bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
     }
-    const checked = await this.tokenChecks(sig.mint, sol, false);
+    const checked = await this.tokenChecks(sig.mint, sol, false, false, chain);
     if (typeof checked === 'string') return checked;
     if (!this.running || !this.cfg.scanner.tradeCoins) return 'the scanner was turned off';
-    await this.trader.buy(sig.mint, checked.check.decimals, checked.check.buyQuote, SCANNER_SOURCE);
+    await this.trader.buy(sig.mint, checked.check.decimals, checked.check.buyQuote, SCANNER_SOURCE, undefined, chain);
     return null;
   }
 

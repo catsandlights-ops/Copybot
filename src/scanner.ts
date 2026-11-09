@@ -11,6 +11,7 @@
 import type { PoolRow } from './markets';
 
 export type CoinSignal = {
+  chain?: 'solana' | 'base';
   mint: string;
   pool: string;
   symbol: string;

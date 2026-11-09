@@ -26,7 +26,7 @@ import { buildBackup, checkBackup, restoreBackup } from './backup';
 import { liveChecklist, overallVerdict, sourceReport } from './readiness';
 import { runChecks, summary as statusSummary, type Check, type CheckResult } from './status';
 import { baseRpc } from './chains/base';
-import { getChain as getChainAdapter } from './chains';
+import { getChain as getChainAdapter, isChainId as isChainIdFn } from './chains';
 import { getQuote } from './jupiter';
 import { downsample, pushPoint, runningTotal, since, type Pt } from './series';
 import { exitConfigFor } from './config';
@@ -590,7 +590,7 @@ const scanExits = (): ScanExits => {
 function noteSignal(s: CoinSignal, now: number) {
   // One entry per coin per 6 hours, like the scanner's own cooldown.
   if (!s.priceUsd || signalLog.some((r) => r.mint === s.mint && now - r.at < 6 * 3_600_000)) return null;
-  const rec: SignalRec = { chain: engine.chain.meta.id, mint: s.mint, symbol: s.symbol, kind: s.kind, at: now, priceUsd: s.priceUsd, why: s.why, bought: false, exits: scanExits() };
+  const rec: SignalRec = { chain: s.chain ?? 'solana', mint: s.mint, symbol: s.symbol, kind: s.kind, at: now, priceUsd: s.priceUsd, why: s.why, bought: false, exits: scanExits() };
   signalLog.push(rec);
   return rec;
 }
@@ -604,7 +604,7 @@ async function checkSignals() {
     const now = Date.now();
     const due = signalLog.filter((r) => !r.outcome?.done && now - r.at >= 3_600_000 && (r.checks ?? 0) < 30).slice(0, 4);
     for (const r of due) {
-      const h = await markets.priceHistory(r.mint, r.at, now).catch(() => null);
+      const h = await markets.priceHistory(r.mint, r.at, now, r.chain ?? 'solana').catch(() => null);
       r.checks = (r.checks ?? 0) + 1;
       if (!h) continue;
       r.outcome = replayExit(r.priceUsd, r.at + 60_000, h.candles, r.exits);
@@ -659,9 +659,16 @@ async function scanCoins() {
       return;
     }
     const skip = new Set([...Object.keys(engine.state.positions), ...scanTried.keys(), ...engine.cfg.safety.blacklist]);
-    const signals = coinSignals(rows, now, { rules: sc.rules, newCoins: sc.newCoins, oldCoins: sc.oldCoins, minLiquidityUsd: engine.cfg.filters.minLiquidityUsd, skip });
+    const opts = { rules: sc.rules, newCoins: sc.newCoins, oldCoins: sc.oldCoins, minLiquidityUsd: engine.cfg.filters.minLiquidityUsd, skip };
+    const signals: (CoinSignal & { chain: 'solana' | 'base' })[] = coinSignals(rows, now, opts).map((x) => ({ ...x, chain: 'solana' as const }));
+    // Base coins too, when turned on (paper mode only for now).
+    if (sc.baseCoins && (engine.cfg.mode === 'paper' || getChainAdapter('base').liveTrading)) {
+      const baseRows = await markets.scoutPools('base').catch(() => []);
+      signals.push(...coinSignals(baseRows, now, opts).map((x) => ({ ...x, chain: 'base' as const })));
+      signals.sort((a, b) => b.score - a.score);
+    }
     lastScan = { ...lastScan, at: now, signals: signals.slice(0, 8), error: null };
-    refreshSparks(signals.slice(0, 5).map((s) => s.mint)).then(() => broadcast('scanner', scannerView())).catch(() => {});
+    refreshSparks(signals.slice(0, 5).map((s) => ({ mint: s.mint, chain: s.chain }))).then(() => broadcast('scanner', scannerView())).catch(() => {});
     const notes = new Map<string, SignalRec>();
     for (const s of signals.slice(0, 8)) {
       const rec = noteSignal(s, now);
@@ -676,7 +683,7 @@ async function scanCoins() {
     if (room) {
       for (const s of signals.slice(0, 2)) {
         scanTried.set(s.mint, now);
-        const why = await engine.scannerBuy({ mint: s.mint, symbol: s.symbol, why: s.why });
+        const why = await engine.scannerBuy({ mint: s.mint, symbol: s.symbol, why: s.why, chain: s.chain });
         const rec = notes.get(s.mint);
         if (rec) {
           rec.bought = !why;
@@ -1142,11 +1149,11 @@ setInterval(() => {
 
 // Price lines for the scanner's top coins (6 hours of 5-minute closes), refreshed at most every 5 minutes.
 const sparkCache = new Map<string, { at: number; pts: Pt[] }>();
-async function refreshSparks(mints: string[]) {
-  for (const m of mints.slice(0, 5)) {
+async function refreshSparks(coins: { mint: string; chain?: import('./chains').ChainId }[]) {
+  for (const { mint: m, chain } of coins.slice(0, 5)) {
     const hit = sparkCache.get(m);
     if (hit && Date.now() - hit.at < 5 * 60_000) continue;
-    const h = await markets.priceHistory(m, Date.now() - 6 * 3_600_000, Date.now()).catch(() => null);
+    const h = await markets.priceHistory(m, Date.now() - 6 * 3_600_000, Date.now(), chain ?? 'solana').catch(() => null);
     sparkCache.set(m, { at: Date.now(), pts: h ? h.candles.map((k) => [k.t, k.c] as Pt) : [] });
   }
   while (sparkCache.size > 60) sparkCache.delete(sparkCache.keys().next().value!);
@@ -1475,6 +1482,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const live = engine.orderPrices.get(mint) ?? [];
     const lastCandle = c.pts[c.pts.length - 1]?.[0] ?? 0;
     return send(res, 200, { points: [...downsample(c.pts, 200), ...live.filter((p) => p[0] > lastCandle)] });
+  }
+
+  if (route === 'POST /api/wallets/base-check') {
+    const a = String((await readBody(req)).address ?? '').toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(a)) throw new HttpError(400, 'Not a Base address');
+    const k = await baseRpc.accountKind(a).catch(() => null);
+    if (!k) return send(res, 200, { level: 'unknown', text: "Couldn't check this address right now; it was added anyway." });
+    if (k.contract) return send(res, 200, { level: 'info', text: 'This is a smart-contract wallet. Copybot copies the tokens moving in and out of it, which works.' });
+    if (k.sent === 0) return send(res, 200, { level: 'warn', text: "This address has never sent a transaction itself. If it's a trader's wallet, double-check it on Basescan: you may want the address that actually trades." });
+    return send(res, 200, { level: 'ok', text: `A regular wallet with ${k.sent.toLocaleString()} transactions sent.` });
   }
 
   if (route === 'POST /api/status/check') return send(res, 200, await checkStatus());
@@ -1829,18 +1846,20 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         return send(res, e.needsKey ? 200 : 502, { error: e.message ?? 'Market data is unavailable right now.', needsKey: !!e.needsKey });
       }
     };
+    const mch: import('./chains').ChainId = isChainIdFn(q.get('chain')) ? (q.get('chain') as import('./chains').ChainId) : 'solana';
     switch (route) {
+      // Which chain the Markets page is looking at (Solana unless it says Base).
       case 'GET /api/markets/overview':
         return reply(() => markets.overview());
       case 'GET /api/markets/pools': {
         const kind = q.get('kind') === 'new' ? 'new' : 'trending';
-        return reply(() => markets.pools(kind));
+        return reply(() => markets.pools(kind, mch));
       }
       case 'GET /api/markets/token': {
         const mint = q.get('mint');
-        if (!isAddress(mint)) throw new HttpError(400, 'Not a valid token address');
+        if (!getChainAdapter(mch).meta.isAddress(mint)) throw new HttpError(400, 'Not a valid token address');
         return reply(async () => {
-          const t = await markets.token(mint);
+          const t = await markets.token(mint, mch);
           if (!t) return null;
           // Would Copybot's own token filters let it buy this right now?
           const solUsd = await getSolUsd().catch(() => null);
@@ -1855,11 +1874,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       }
       case 'GET /api/markets/chart': {
         const pool = q.get('pool'), tf = q.get('tf') ?? '1h';
-        if (!isAddress(pool) || !markets.isTimeframe(tf)) throw new HttpError(400, 'Invalid chart request');
-        return reply(() => markets.chart(pool, tf));
+        if (!getChainAdapter(mch).meta.isAddress(pool) || !markets.isTimeframe(tf)) throw new HttpError(400, 'Invalid chart request');
+        return reply(() => markets.chart(pool, tf, mch));
       }
       case 'GET /api/markets/search':
-        return reply(() => markets.search(String(q.get('q') ?? '')));
+        return reply(() => markets.search(String(q.get('q') ?? ''), mch));
       case 'GET /api/markets/news':
         return reply(() => markets.news());
       case 'GET /api/markets/whales':
