@@ -30,7 +30,7 @@ import { runBacktest } from './backtest';
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
-import { passesBasics, pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
+import { passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -262,7 +262,7 @@ let walletReviewBusy = false;
 const scoutView = (r: ScoutReport): ai.CandidateView => ({
   address: r.wallet,
   source: 'scout',
-  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, topTraderOn: r.topTraderOn, notes: r.notes },
+  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, caughtRecentPumpOn: r.pumpOn ?? [], topTraderOn: r.topTraderOn, notes: r.notes },
 });
 
 /** Wallets the AI may add: the ones the user analyzed or discovered, plus the latest scout results. */
@@ -346,6 +346,22 @@ let lastScout: ScoutResult | null = (() => {
 })();
 let scoutRunning = false;
 
+// Tokens scanned by recent searches go to the back of the line next time, so searches vary.
+const SCOUT_HISTORY = 'data/scout-history.json';
+function recentScoutMints(): Set<string> {
+  try {
+    const l = JSON.parse(fs.readFileSync(SCOUT_HISTORY, 'utf8'));
+    return new Set(Array.isArray(l) ? l.filter((m) => typeof m === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+function rememberScoutMints(mints: string[]) {
+  const l = [...mints, ...recentScoutMints()].filter((m, i, a) => a.indexOf(m) === i).slice(0, 18);
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(SCOUT_HISTORY, JSON.stringify(l));
+}
+
 function startScout(auto: boolean) {
   if (scoutRunning || jobs.some((j) => j.kind === 'scout' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'The wallet scout is already running.');
   scoutRunning = true;
@@ -361,19 +377,28 @@ function startScout(auto: boolean) {
 async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   const notes: string[] = [];
   const at = Date.now();
-  progress('Looking for tokens that pumped recently…');
-  const rows = [...(await markets.pools('trending').catch(() => [])), ...(await markets.pools('new').catch(() => []))];
-  const tokens = pickTokens(rows, at, 5);
-  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 24h with real liquidity, 3h to 7 days old). Try again later.');
+  progress('Looking for tokens that are moving: trending, new launches and top volume…');
+  const rows = await markets.scoutPools();
+  const tokens = pickTokens(rows, at, 6, recentScoutMints());
+  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 6 or 24 hours with real liquidity, 1 hour to 14 days old). Try again later.');
   const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
 
+  // 1. "Caught the pump": recent big buyers now well in profit (every token, fast).
+  const pump = new Map<string, string[]>();
+  for (const [i, t] of tokens.entries()) {
+    progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding buyers who caught the move…`);
+    const trades = await markets.poolTrades(t.pool, 300).catch(() => []);
+    for (const w of pumpBuyers(trades, t.priceUsd, 40).keys()) pump.set(w, [...(pump.get(w) ?? []), t.symbol]);
+  }
+  // 2. True early buyers, for tokens quiet enough to read back to their launch.
   const conn = makeConnection();
   const perMint = new Map<string, Map<string, number>>();
-  for (const [i, t] of tokens.entries()) {
-    progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding early buyers…`);
+  const quiet = tokens.filter((t) => t.quiet).slice(0, 3);
+  for (const [i, t] of quiet.entries()) {
+    progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol})…`);
     perMint.set(
       t.mint,
-      await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol} is a very busy token, so its "early buyers" here are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
+      await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol}: its "early buyers" are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol}): ${m}`)),
     );
   }
   const top = new Map<string, string[]>();
@@ -385,7 +410,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     }
   }
   const mine = new Set(engine.cfg.wallets.map((w) => w.address));
-  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 12);
+  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 15, pump);
   if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
 
   const reports: ScoutReport[] = [];
@@ -393,7 +418,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     const swaps = await fetchSwaps(conn, c.wallet, 500, (n, t) => {
       if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
     }).catch(() => null);
-    if (swaps) reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn });
+    if (swaps) reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
   }
   reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
 
@@ -437,6 +462,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     }
   }
   const result: ScoutResult = { at, tokens, reports, picks, pickedBy, summary, added, notes };
+  rememberScoutMints(tokens.map((t) => t.mint));
   lastScout = result;
   fs.mkdirSync('data', { recursive: true });
   fs.writeFileSync(SCOUT_FILE, JSON.stringify(result));

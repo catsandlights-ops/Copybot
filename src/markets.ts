@@ -96,7 +96,7 @@ export type PoolRow = {
   name: string;
   image: string | null;
   priceUsd: number | null;
-  change: { h1: number | null; h24: number | null };
+  change: { h1: number | null; h6?: number | null; h24: number | null };
   volume24h: number | null;
   liquidityUsd: number | null;
   marketCapUsd: number | null;
@@ -121,7 +121,7 @@ function mapPools(d: any): PoolRow[] {
       name: text(t.name, 60),
       image: image(t.image_url),
       priceUsd: num(a.base_token_price_usd),
-      change: { h1: num(a.price_change_percentage?.h1), h24: num(a.price_change_percentage?.h24) },
+      change: { h1: num(a.price_change_percentage?.h1), h6: num(a.price_change_percentage?.h6), h24: num(a.price_change_percentage?.h24) },
       volume24h: num(a.volume_usd?.h24),
       liquidityUsd: num(a.reserve_in_usd),
       marketCapUsd: num(a.market_cap_usd) ?? num(a.fdv_usd),
@@ -364,4 +364,41 @@ export async function priceHistory(mint: string, fromMs: number, toMs: number): 
     .filter((k) => k.t + step >= fromMs && k.l > 0)
     .sort((a, b) => a.t - b.t);
   return candles.length ? { step, candles } : null;
+}
+
+// ---------------- wallet scout sources ----------------
+/** Many places to look for tokens that are moving: trending over 1h/6h/24h, new launches, top volume. */
+export function scoutPools(): Promise<PoolRow[]> {
+  return cached('scout:pools', 5 * 60_000, async () => {
+    const paths = [
+      '/networks/solana/trending_pools?include=base_token&duration=1h&page=1',
+      '/networks/solana/trending_pools?include=base_token&duration=6h&page=1',
+      '/networks/solana/trending_pools?include=base_token&duration=24h&page=1',
+      '/networks/solana/new_pools?include=base_token&page=1',
+      '/networks/solana/pools?include=base_token&page=1&sort=h24_volume_usd_desc',
+    ];
+    const out: PoolRow[] = [];
+    for (const p of paths) out.push(...mapPools(await gecko(p).catch(() => null)));
+    return out;
+  });
+}
+
+export type PoolTrade = { kind: 'buy' | 'sell'; wallet: string; t: number; usd: number; priceUsd: number };
+
+/** A pool's latest trades over `minUsd` (up to 300), with the token's USD price on each. */
+export async function poolTrades(pool: string, minUsd = 300): Promise<PoolTrade[]> {
+  const d = await gecko(`/networks/solana/pools/${pool}/trades?trade_volume_in_usd_greater_than=${minUsd}`);
+  const out: PoolTrade[] = [];
+  for (const r of d?.data ?? []) {
+    const a = r.attributes ?? {};
+    const kind = a.kind === 'buy' || a.kind === 'sell' ? a.kind : null;
+    const wallet = addr(a.tx_from_address);
+    const usd = num(a.volume_in_usd);
+    // The token's price: what was received on a buy, what was given on a sell.
+    const priceUsd = num(kind === 'buy' ? a.price_to_in_usd : a.price_from_in_usd);
+    const t = Date.parse(a.block_timestamp);
+    if (!kind || !wallet || usd == null || priceUsd == null || priceUsd <= 0 || !Number.isFinite(t) || a.is_anomalous) continue;
+    out.push({ kind, wallet, t, usd, priceUsd });
+  }
+  return out;
 }
