@@ -21,6 +21,8 @@ import * as remote from './remote';
 import QRCode from 'qrcode';
 import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report';
 import { describeOrder, makeOrder } from './orders';
+import { downsample, pushPoint, runningTotal, since, type Pt } from './series';
+import { exitConfigFor } from './config';
 import { PublicKey } from '@solana/web3.js';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { readSecret } from './env';
@@ -625,6 +627,7 @@ function signalProof() {
     newCoins: stats(done.filter((r) => r.kind === 'new')),
     oldCoins: stats(done.filter((r) => r.kind === 'old')),
     since: signalLog[0]?.at ?? null,
+    curve: downsample(runningTotal(done.map((r) => ({ t: r.outcome!.exitAt, v: (sc.buySol * r.outcome!.pnlPct) / 100 }))), 200),
     recent: signalLog
       .slice(-15)
       .reverse()
@@ -650,6 +653,7 @@ async function scanCoins() {
     const skip = new Set([...Object.keys(engine.state.positions), ...scanTried.keys(), ...engine.cfg.safety.blacklist]);
     const signals = coinSignals(rows, now, { rules: sc.rules, newCoins: sc.newCoins, oldCoins: sc.oldCoins, minLiquidityUsd: engine.cfg.filters.minLiquidityUsd, skip });
     lastScan = { ...lastScan, at: now, signals: signals.slice(0, 8), error: null };
+    refreshSparks(signals.slice(0, 5).map((s) => s.mint)).then(() => broadcast('scanner', scannerView())).catch(() => {});
     const notes = new Map<string, SignalRec>();
     for (const s of signals.slice(0, 8)) {
       const rec = noteSignal(s, now);
@@ -766,7 +770,7 @@ async function runScannerTest(days: number, progress: (p: string) => void): Prom
 
 function scannerView() {
   const rec = walletRecords(engine.readTrades(), engine.cfg.mode)[SCANNER_SOURCE] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 };
-  return { ...lastScan, record: rec, proof: signalProof(), test: lastScannerTest ? scannerTestSummary(lastScannerTest) : null, nextTraderSearch: engine.cfg.scanner.findTraders ? (lastScout?.at ?? 0) + engine.cfg.scanner.traderEveryHours * 3_600_000 : null };
+  return { ...lastScan, sparks: Object.fromEntries(lastScan.signals.map((s) => [s.mint, downsample(sparkCache.get(s.mint)?.pts ?? [], 48)])), record: rec, proof: signalProof(), test: lastScannerTest ? scannerTestSummary(lastScannerTest) : null, nextTraderSearch: engine.cfg.scanner.findTraders ? (lastScout?.at ?? 0) + engine.cfg.scanner.traderEveryHours * 3_600_000 : null };
 }
 
 setInterval(() => scanCoins().catch((e) => engine.log(`Market scanner: ${(e as Error).message}`, 'warn')), 60_000).unref();
@@ -956,6 +960,60 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
 }
 
+// ---------- live portfolio value (sampled every 30 s, kept for 24 hours, per mode) ----------
+const SERIES_FILE = (mode: string) => `data/series-${mode}.json`;
+const portfolio = new Map<string, Pt[]>();
+function portfolioSeries(mode: string): Pt[] {
+  if (!portfolio.has(mode)) {
+    let pts: Pt[] = [];
+    try {
+      const j = JSON.parse(fs.readFileSync(SERIES_FILE(mode), 'utf8'));
+      if (Array.isArray(j)) pts = j.filter((p) => Array.isArray(p) && p.length === 2 && p.every((x: unknown) => typeof x === 'number'));
+    } catch {
+      /* nothing saved yet */
+    }
+    portfolio.set(mode, pts);
+  }
+  return portfolio.get(mode)!;
+}
+/** What everything is worth now: paper wallet (start + closed + open), or live balance + open positions. */
+function portfolioValue(): number | null {
+  const s = engine.snapshot();
+  const open = s.positions.reduce((a: number, p: any) => a + (p.valueSol ?? p.costSol), 0);
+  if (s.paper) return s.paper.startSol + s.realizedPnlSol + s.unrealizedPnlSol;
+  return s.wallet?.balance == null ? null : s.wallet.balance + open;
+}
+let seriesSaved = 0;
+setInterval(() => {
+  if (!engine.running && !Object.keys(engine.state.positions).length) return;
+  const v = portfolioValue();
+  if (v == null) return;
+  const mode = engine.cfg.mode;
+  const now = Date.now();
+  const pts = portfolioSeries(mode);
+  pushPoint(pts, [now, Math.round(v * 1e6) / 1e6], 3000);
+  while (pts.length && pts[0][0] < now - 86_400_000) pts.shift();
+  broadcast('point', { mode, p: pts[pts.length - 1] });
+  if (now - seriesSaved > 120_000) {
+    seriesSaved = now;
+    fs.mkdirSync('data', { recursive: true });
+    fs.writeFileSync(SERIES_FILE(mode), JSON.stringify(pts));
+  }
+}, 30_000).unref();
+
+// Price lines for the scanner's top coins (6 hours of 5-minute closes), refreshed at most every 5 minutes.
+const sparkCache = new Map<string, { at: number; pts: Pt[] }>();
+async function refreshSparks(mints: string[]) {
+  for (const m of mints.slice(0, 5)) {
+    const hit = sparkCache.get(m);
+    if (hit && Date.now() - hit.at < 5 * 60_000) continue;
+    const h = await markets.priceHistory(m, Date.now() - 6 * 3_600_000, Date.now()).catch(() => null);
+    sparkCache.set(m, { at: Date.now(), pts: h ? h.candles.map((k) => [k.t, k.c] as Pt) : [] });
+  }
+  while (sparkCache.size > 60) sparkCache.delete(sparkCache.keys().next().value!);
+}
+const orderCandles = new Map<string, { at: number; pts: Pt[] }>();
+
 // ---------- phone access (a separate door; see remote.ts) ----------
 let remoteCfg = remote.loadRemote();
 const pairing = new remote.Pairing();
@@ -1144,7 +1202,8 @@ function phoneState() {
     panicking: s.panicking,
     orders: engine.orders.filter((o) => o.status === 'active').map((o) => ({ id: o.id, text: describeOrder(o), note: o.note ?? null })),
     wallets: engine.cfg.wallets.filter((w) => w.enabled).length,
-    positions: s.positions.map((p: any) => ({ mint: p.mint, from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt })),
+    positions: s.positions.map((p: any) => ({ mint: p.mint, from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt, trail: downsample(p.trail ?? [], 30) })),
+    series: downsample(since(portfolioSeries(s.mode), Date.now() - 86_400_000), 120),
     logs: engine.logs.slice(-40).map((l) => ({ t: l.t, level: l.level, msg: l.msg })),
     trades: readTrades()
       .filter((t: any) => t.mode === s.mode)
@@ -1200,7 +1259,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const r = profitReport(readTrades(1e9), mode, by);
     const labels = new Map<string, string>([[SCANNER_SOURCE, 'Market scanner'], ...engine.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
     const name = (s: string) => labels.get(s) ?? (s === 'unknown' || s === 'manual' ? s : `${s.slice(0, 4)}…${s.slice(-4)}`);
-    return send(res, 200, { ...r, mode, bySource: r.bySource.map((x) => ({ ...x, name: name(x.source) })) });
+    const curve = downsample(runningTotal(readTrades(1e9).filter((t: any) => t.mode === mode && t.side === 'sell' && typeof t.pnl === 'number').map((t: any) => ({ t: t.t, v: t.pnl }))), 400);
+    return send(res, 200, { ...r, mode, curve, bySource: r.bySource.map((x) => ({ ...x, name: name(x.source) })) });
   }
 
   if (route === 'GET /api/tax') {
@@ -1242,6 +1302,40 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       return res.end(taxCsv(rows));
     }
     return send(res, 200, { year, mode, ...taxSummary(rows), missingDecimals: mints.length - decimals.size });
+  }
+
+  if (route === 'GET /api/series') {
+    const hours = { '1h': 1, '6h': 6, '24h': 24 }[url.searchParams.get('range') ?? '6h'] ?? 6;
+    const mode = engine.cfg.mode;
+    return send(res, 200, { mode, points: downsample(since(portfolioSeries(mode), Date.now() - hours * 3_600_000), 400) });
+  }
+
+  if (route === 'GET /api/position-chart') {
+    const mint = url.searchParams.get('mint');
+    const p = mint ? engine.state.positions[mint] : null;
+    if (!p) throw new HttpError(404, 'That position is closed.');
+    const trades = readTrades(2000)
+      .filter((t: any) => t.mint === mint && t.mode === engine.cfg.mode && t.t >= p.openedAt - 60_000)
+      .map((t: any) => ({ t: t.t, side: t.side, sol: t.sol, pnl: t.pnl ?? null, reason: t.reason ?? null }))
+      .reverse();
+    const ex = exitConfigFor(engine.cfg, p.sources);
+    return send(res, 200, { mint, openedAt: p.openedAt, costSol: p.costSol, trail: p.trail ?? [], peakMultiple: p.peakMultiple ?? 1, steps: p.steps ?? [], trades, exits: { stopLossPct: ex.risk.stopLossPct, takeProfitPct: ex.risk.takeProfitPct, ...ex.exits } });
+  }
+
+  if (route === 'GET /api/orders/chart') {
+    const mint = url.searchParams.get('mint');
+    if (!isAddress(mint)) throw new HttpError(400, 'Not a valid token address');
+    let c = orderCandles.get(mint);
+    if (!c || Date.now() - c.at > 5 * 60_000) {
+      const h = await markets.priceHistory(mint, Date.now() - 86_400_000, Date.now()).catch(() => null);
+      c = { at: Date.now(), pts: h ? h.candles.map((k) => [k.t, k.c] as Pt) : [] };
+      orderCandles.set(mint, c);
+      while (orderCandles.size > 40) orderCandles.delete(orderCandles.keys().next().value!);
+    }
+    // Market candles for context, then the live prices Copybot has seen since (every 15 s).
+    const live = engine.orderPrices.get(mint) ?? [];
+    const lastCandle = c.pts[c.pts.length - 1]?.[0] ?? 0;
+    return send(res, 200, { points: [...downsample(c.pts, 200), ...live.filter((p) => p[0] > lastCandle)] });
   }
 
   if (route === 'GET /api/state') {

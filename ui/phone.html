@@ -55,6 +55,8 @@ button.wide { width: 100%; font-size: 17px; }
 input[type=text] { font: inherit; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); margin: 8px 0 12px; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: calc(100% - 32px); z-index: 9; }
 .toast.err { background: var(--red); color: #fff; }
+.chart { width: 100%; height: 110px; display: block; overflow: visible; }
+.spark { width: 72px; height: 22px; vertical-align: middle; overflow: visible; }
 .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
 .tabs button { flex: 1; min-height: 36px; padding: 6px; font-size: 14px; }
 .tabs button.on { background: var(--accent); color: #fff; }
@@ -95,6 +97,20 @@ async function call(method, path, body) {
   return j;
 }
 
+// ---------------- charts ----------------
+// A simple line: above the starting value in green, below in red, with a faint break-even line.
+function line(pts, cls2, base) {
+  if (!pts || pts.length < 2) return '';
+  const t0 = pts[0][0], t1 = Math.max(pts[pts.length - 1][0], t0 + 1);
+  const b = base ?? pts[0][1];
+  const vs = pts.map((p) => p[1]).concat([b]);
+  let lo = Math.min(...vs), hi = Math.max(...vs); if (hi - lo < 1e-12) { hi += 1; lo -= 1; }
+  const Y = (v) => ((1 - (v - lo) / (hi - lo)) * 90 + 5).toFixed(1);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${(((p[0] - t0) / (t1 - t0)) * 100).toFixed(1)},${Y(p[1])}`).join('');
+  const col = pts[pts.length - 1][1] >= b ? 'var(--green)' : 'var(--red)';
+  return `<svg class="${cls2}" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="100" y1="${Y(b)}" y2="${Y(b)}" stroke="var(--border)" stroke-width="1" vector-effect="non-scaling-stroke"/><path d="${d}L100,${Y(b)}L0,${Y(b)}Z" fill="${col}" opacity=".1"/><path d="${d}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+
 // ---------------- pairing ----------------
 function showUnpaired(why) {
   stopPolling();
@@ -131,7 +147,7 @@ function render() {
   const g = S.guard || {};
   const sc = S.scanner;
   const posHtml = S.positions.length ? S.positions.map((p) => `<div class="pos-item">
-      <div class="row between"><span class="mono">${short(p.mint)}</span><b class="${cls(p.pnlPct)}">${pct(p.pnlPct)}</b></div>
+      <div class="row between"><span class="mono">${short(p.mint)}</span><span class="row" style="gap:10px">${line(p.trail, 'spark', 1)}<b class="${cls(p.pnlPct)}">${pct(p.pnlPct)}</b></span></div>
       <div class="row between muted" style="font-size:13px"><span>${esc((p.from || []).join(', '))} · ${ago(p.openedAt)}</span><span>${p.costSol.toFixed(3)} → ${p.valueSol == null ? '—' : p.valueSol.toFixed(3)} SOL</span></div>
       <div class="row" style="margin-top:8px"><button class="sm" data-sell="${esc(p.mint)}" data-f="0.5">Sell 50%</button><button class="sm stop" data-sell="${esc(p.mint)}" data-f="1">Sell all</button></div></div>`).join('')
     : '<div class="muted">No open positions.</div>';
@@ -143,6 +159,7 @@ function render() {
     ${g.blocked ? `<div class="banner">New buys paused: ${esc(g.blocked)} <button class="sm" id="resume" style="margin-top:6px">Resume buying today</button></div>` : ''}
     <button class="wide ${S.running ? 'stop' : 'primary'}" id="runbtn" ${busy ? 'disabled' : ''}>${S.running ? 'Stop bot' : `Start bot${live ? ' (LIVE)' : ''}`}</button>
     ${S.positions.length || S.running ? `<button class="wide" id="panic" style="margin-top:8px;background:var(--red-bg);color:var(--red)" ${busy || S.panicking ? 'disabled' : ''}>${S.panicking ? 'Selling everything…' : 'Sell everything &amp; stop'}</button>` : ''}
+    ${S.series && S.series.length > 1 ? (() => { const a = S.series[0][1], b = S.series[S.series.length - 1][1]; return `<div class="card" style="margin-top:12px"><div class="row between"><h2 style="margin:0">${S.paper ? 'Paper wallet' : 'Wallet'} value · 24 h</h2><span class="${cls(b - a)}" style="font-size:13px;font-weight:600">${sol(b - a)} SOL</span></div><div style="margin-top:8px">${line(S.series, 'chart')}</div><div class="row between muted" style="font-size:12px"><span>${hhmm(S.series[0][0])}</span><span>${b.toFixed(3)} SOL now</span></div></div>`; })() : ''}
     <div class="card stats" style="margin-top:12px">
       <div class="stat"><div class="k">Realized profit</div><div class="v ${cls(S.realizedPnlSol)}">${sol(S.realizedPnlSol)}</div><div class="k">SOL, closed trades</div></div>
       <div class="stat"><div class="k">Open profit</div><div class="v ${cls(S.unrealizedPnlSol)}">${sol(S.unrealizedPnlSol)}</div><div class="k">SOL if sold now</div></div>

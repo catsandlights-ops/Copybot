@@ -3,6 +3,7 @@ import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { Config, exitConfigFor, loadConfig, ORDER_SOURCE, SCANNER_SOURCE, walletRules } from './config';
 import { afterAttempt, describeOrder, MAX_ACTIVE_ORDERS, orderDue, type Order } from './orders';
 import * as markets from './markets';
+import { downsample, pushPoint, type Pt } from './series';
 import { overHeld } from './scanner';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
@@ -246,7 +247,11 @@ export class BotEngine extends EventEmitter {
     const prices = new Map<string, number | null>();
     for (let i = 0; i < mints.length; i += 30) {
       const list = await markets.tokens(mints.slice(i, i + 30)).catch(() => []);
-      for (const t of list as { mint: string | null; priceUsd: number | null }[]) if (t.mint) prices.set(t.mint, t.priceUsd ?? null);
+      for (const t of list as { mint: string | null; priceUsd: number | null }[]) {
+        if (!t.mint) continue;
+        prices.set(t.mint, t.priceUsd ?? null);
+        if (t.priceUsd) this.orderPrices.set(t.mint, pushPoint(this.orderPrices.get(t.mint) ?? [], [Date.now(), t.priceUsd], 480));
+      }
     }
     let changed = false;
     for (const o of active) {
@@ -825,13 +830,24 @@ export class BotEngine extends EventEmitter {
         const q = await quoteSell(p.mint, BigInt(p.amountRaw), this.cfg.safety.slippageBps);
         if (!q) continue;
         const valueSol = Number(q.outAmount) / 1e9;
-        this.values[p.mint] = { valueSol, pnlPct: (valueSol / p.costSol - 1) * 100, at: Date.now() };
+        const now = Date.now();
+        this.values[p.mint] = { valueSol, pnlPct: (valueSol / p.costSol - 1) * 100, at: now };
+        // Live chart: value as a multiple of what it cost (1 = break-even).
+        if (p.costSol > 0) p.trail = pushPoint(p.trail ?? [], [now, Math.round((valueSol / p.costSol) * 10_000) / 10_000], 300);
       } catch {
         /* ignore */
       }
     }
+    if (Date.now() - this.trailSaved > 60_000 && Object.keys(this.state.positions).length) {
+      this.trailSaved = Date.now();
+      saveState(this.state, this.cfg.mode);
+    }
     this.emit('status');
   }
+  private trailSaved = 0;
+
+  /** Live prices seen for orders' tokens (every 15 s while the bot runs), for the order charts. */
+  orderPrices = new Map<string, Pt[]>();
 
   private async balanceLoop(gen: number) {
     while (gen === this.gen) {
@@ -854,7 +870,7 @@ export class BotEngine extends EventEmitter {
   }
 
   snapshot() {
-    const positions = Object.values(this.state.positions).map((p) => ({ ...p, ...this.values[p.mint], label: p.sources.map((s) => this.labels.get(s) ?? short(s)) }));
+    const positions = Object.values(this.state.positions).map((p) => ({ ...p, ...this.values[p.mint], trail: downsample(p.trail ?? [], 40), label: p.sources.map((s) => this.labels.get(s) ?? short(s)) }));
     const unrealized = positions.reduce((a, p) => a + (p.valueSol !== undefined ? p.valueSol - p.costSol : 0), 0);
     return {
       running: this.running,

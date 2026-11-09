@@ -75,6 +75,9 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **DCA:** buy a fixed amount every 15 minutes to a week, a set number of times, optionally only under a price cap.
 - Every buy goes through your limits and safety checks. Orders run while the bot runs; paper and live orders are kept apart.
 
+### Live graphs
+- Wallet value over the last hour, 6 or 24 hours (sampled every 30 seconds and kept across restarts), a trend line per open position with a click-through live chart showing its exits and your buys and sells, each order's price against its target, the scanner's results and rising coins, profit per wallet, a running total on the report, and the same on the phone. Hover for exact values.
+
 ### Panic button, reports and taxes
 - **Sell everything & stop** from the Dashboard or your phone, plus an optional **panic limit** that does it automatically when today's closed and open result reaches a loss you set.
 - **Profit report** by day, week or month, with best and worst trades and results per wallet.

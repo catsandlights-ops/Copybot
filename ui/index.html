@@ -207,6 +207,26 @@ button.wz-choice:hover { border-color: var(--accent); }
 .chg td { padding: 5px 4px; border-top: 1px solid var(--border); }
 .chg td:nth-child(2), .chg td:nth-child(3) { text-align: right; white-space: nowrap; }
 .bt-curve { padding: 8px 18px 16px; }
+.lc { position: relative; margin: 6px 0 0 0; outline: none; }
+.lc svg, .bt-curve .lc svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.lc .lc-base { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.lc-empty { padding: 30px 0; text-align: center; font-size: 13px; }
+.lc-axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.lc-y { position: absolute; left: 4px; font-size: 11px; color: var(--muted); background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 0 3px; border-radius: 4px; pointer-events: none; }
+.lc-yt { top: 4%; transform: translateY(-50%); } .lc-yb { top: 96%; transform: translateY(-50%); }
+.lc-ref { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--muted); opacity: .75; pointer-events: none; }
+.lc-ref.neg { border-color: var(--red); } .lc-ref.pos { border-color: var(--green); } .lc-ref.warn { border-color: var(--amber); }
+.lc-ref span { position: absolute; right: 4px; top: -16px; font-size: 11px; color: var(--muted); background: var(--panel); padding: 0 4px; border-radius: 4px; white-space: nowrap; }
+.lc-end, .lc-dot, .lc-mark { position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px var(--panel); pointer-events: none; }
+.lc-mark { width: 12px; height: 12px; background: var(--accent); pointer-events: auto; cursor: default; }
+.lc-mark.sell { background: var(--text); }
+.lc-x { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--muted); opacity: .5; pointer-events: none; }
+.lc-tip { position: absolute; z-index: 3; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px 9px; font-size: 12.5px; box-shadow: 0 6px 18px rgba(0,0,0,.12); pointer-events: none; white-space: nowrap; }
+.lc-tip b { font-variant-numeric: tabular-nums; }
+.spark { width: 84px; height: 24px; display: inline-block; vertical-align: middle; overflow: visible; }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-left: 4px; vertical-align: middle; animation: livepulse 2s infinite; }
+@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 .bt-curve svg { width: 100%; height: 220px; display: block; }
 .bt-axis { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; margin-top: 6px; }
 .bt-form { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
@@ -850,13 +870,14 @@ function renderDashboard(el) {
   const expPct = Math.min(100, (st.exposureSol / cfg.risk.maxTotalExposureSol) * 100 || 0);
 
   const positions = n ? `<div class="tbl-wrap"><table>
-      <thead><tr><th>Token</th><th>Copied from</th><th class="r">Cost</th><th class="r">Value</th><th class="r">PnL</th><th>Exit plan</th><th class="r">Held</th><th></th></tr></thead>
+      <thead><tr><th>Token</th><th>Copied from</th><th class="r">Cost</th><th class="r">Value</th><th class="r">PnL</th><th title="Since you bought; click for the live chart">Trend</th><th>Exit plan</th><th class="r">Held</th><th></th></tr></thead>
       <tbody>${st.positions.map((p) => `<tr>
         <td>${tokenLink(p.mint)}</td>
         <td class="muted">${esc(p.label.join(', '))}</td>
         <td class="r num">${sol(p.costSol)}</td>
         <td class="r num">${p.valueSol != null ? sol(p.valueSol) : '<span class="muted">…</span>'}</td>
         <td class="r num ${cls(p.pnlPct)}">${pct(p.pnlPct)}</td>
+        <td><a href="#" data-pchart="${esc(p.mint)}" title="Open the live chart">${spark(p.trail, 1, 'Value since you bought')}</a></td>
         <td class="plan">${exitPlan(p)}</td>
         <td class="r muted num">${ago(p.openedAt)}</td>
         <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button></td>
@@ -877,6 +898,7 @@ function renderDashboard(el) {
             <div class="s" style="margin-top:4px">copying ${enabled.length} wallet${enabled.length === 1 ? '' : 's'} · <a href="#" id="paper-reset">Reset</a></div></div>`; })()
         : `<div class="card stat"><div class="k">${ICON.key}Copying</div><div class="v num">${enabled.length} <small style="font-size:13px" class="muted">wallet${enabled.length === 1 ? '' : 's'}</small></div><div class="s">${todays.length} trade${todays.length === 1 ? '' : 's'} today</div></div>`}
     </div>
+    ${portfolioCard()}
     ${pnlChart()}
     <div class="grid two">
       <div class="card"><div class="card-h"><h2>Open positions</h2><span class="spacer"></span>${n ? '<button class="btn sm ghost" id="refresh-pos">Refresh prices</button>' : ''}${n || S.status.running ? `<button class="btn sm stop" id="panic-btn" ${S.status.panicking ? 'disabled' : ''} title="Sell every open position and stop the bot">${S.status.panicking ? 'Selling everything…' : 'Sell everything &amp; stop'}</button>` : ''}</div>${positions}</div>
@@ -884,6 +906,8 @@ function renderDashboard(el) {
         <div class="feed" id="feed">${feedHtml()}</div></div>
     </div>`;
   el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
+  el.querySelectorAll('[data-pchart]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); openPositionChart(a.dataset.pchart); }));
+  bindPortfolio();
   const pr = $('#paper-reset'); if (pr) pr.onclick = (e) => { e.preventDefault(); resetPaper(); };
   el.querySelectorAll('[data-pnl-range]').forEach((b) => (b.onclick = () => { S.pnlRange = b.dataset.pnlRange; render(); }));
   const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
@@ -896,6 +920,145 @@ function renderDashboard(el) {
     if (r) toast(r.failed.length ? `Sold ${r.sold}; ${r.failed.length} couldn't be sold (see activity)` : `Sold ${r.sold} position${r.sold === 1 ? '' : 's'}. The bot is stopped.`, !!r.failed.length);
   };
 }
+
+// ---------------- live charts ----------------
+// One line chart (with a hover crosshair and tooltip) and a tiny sparkline, used everywhere.
+// Lines are drawn in a stretched SVG; dots, labels and the tooltip are HTML on top, so they stay round and crisp.
+const CH = {}; let chSeq = 0;
+function lineChart(pts, o = {}) {
+  if (!pts || pts.length < 2) return `<div class="lc-empty muted">${o.empty || 'Collecting data… the line appears after a minute or two.'}</div>`;
+  const id = 'lc' + ++chSeq, H = o.h || 180;
+  const t0 = o.from ?? pts[0][0], t1 = Math.max(o.to ?? pts[pts.length - 1][0], t0 + 1);
+  const base = o.base === 'first' ? pts[0][1] : o.base ?? null;
+  const refs = (o.refs || []).filter((r) => Number.isFinite(r.v));
+  const vals = pts.map((p) => p[1]).concat(refs.map((r) => r.v), base != null ? [base] : []);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < 1e-12) { const d = Math.abs(hi) * 0.01 || 0.01; lo -= d; hi += d; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const X = (t) => ((t - t0) / (t1 - t0)) * 100, Y = (v) => (1 - (v - lo) / (hi - lo)) * 100;
+  const last = pts[pts.length - 1];
+  const up = base == null ? true : last[1] >= base;
+  const col = base == null ? 'var(--accent)' : up ? 'var(--green)' : 'var(--red)';
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(2)},${Y(p[1]).toFixed(2)}`).join('');
+  const floor = base != null ? Y(base) : 100;
+  const fmt = o.fmt || ((v) => v.toFixed(3));
+  const tfmt = o.tfmt || ((t) => (t1 - t0 > 86400000 ? dateTime(t) : time(t).slice(0, 5)));
+  CH[id] = { pts, t0, t1, lo, hi, fmt, tfmt, base, unit: o.unit || '', marks: o.marks || [] };
+  const refHtml = refs.map((r) => `<div class="lc-ref ${r.tone || ''}" style="top:${Y(r.v).toFixed(2)}%"><span>${esc(r.label)}</span></div>`).join('');
+  const markHtml = (o.marks || []).filter((m) => m.t >= t0 && m.t <= t1).map((m) => {
+    const near = pts.reduce((a, p) => (Math.abs(p[0] - m.t) < Math.abs(a[0] - m.t) ? p : a), pts[0]);
+    return `<i class="lc-mark ${m.kind}" style="left:${X(m.t).toFixed(2)}%;top:${Y(m.v ?? near[1]).toFixed(2)}%" title="${esc(m.label)}"></i>`;
+  }).join('');
+  return `<div class="lc" id="${id}" style="height:${H}px" tabindex="0" role="img" aria-label="${esc(o.label || 'Chart')}: ${esc(fmt(pts[0][1]))} to ${esc(fmt(last[1]))}">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      ${base != null ? `<line x1="0" x2="100" y1="${floor.toFixed(2)}" y2="${floor.toFixed(2)}" class="lc-base"/>` : ''}
+      <path d="${d}L${X(last[0]).toFixed(2)},${floor.toFixed(2)}L${X(pts[0][0]).toFixed(2)},${floor.toFixed(2)}Z" fill="${col}" opacity=".1"/>
+      <path d="${d}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    ${refHtml}${markHtml}
+    <i class="lc-end" style="left:${X(last[0]).toFixed(2)}%;top:${Y(last[1]).toFixed(2)}%;background:${col}"></i>
+    <span class="lc-y lc-yt">${esc(fmt(hi - pad))}</span><span class="lc-y lc-yb">${esc(fmt(lo + pad))}</span>
+    <i class="lc-x" hidden></i><i class="lc-dot" hidden style="background:${col}"></i><div class="lc-tip" hidden></div>
+  </div>
+  <div class="lc-axis"><span>${esc(tfmt(t0))}</span><span>${esc(tfmt(t1))}</span></div>`;
+}
+function spark(pts, base, title = '') {
+  if (!pts || pts.length < 2) return '<span class="spark muted">–</span>';
+  const t0 = pts[0][0], t1 = Math.max(pts[pts.length - 1][0], t0 + 1);
+  const vs = pts.map((p) => p[1]).concat(base != null ? [base] : []);
+  let lo = Math.min(...vs), hi = Math.max(...vs); if (hi - lo < 1e-12) { hi += 1; lo -= 1; }
+  const last = pts[pts.length - 1][1], b = base ?? pts[0][1];
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${(((p[0] - t0) / (t1 - t0)) * 100).toFixed(1)},${((1 - (p[1] - lo) / (hi - lo)) * 92 + 4).toFixed(1)}`).join('');
+  const by = ((1 - (b - lo) / (hi - lo)) * 92 + 4).toFixed(1);
+  return `<svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="${esc(title)}"><title>${esc(title)}</title><line x1="0" x2="100" y1="${by}" y2="${by}" class="lc-base"/><path d="${d}" fill="none" stroke="${last >= b ? 'var(--green)' : 'var(--red)'}" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>`;
+}
+// Hover: the crosshair snaps to the nearest point in time; the tooltip shows its value.
+function chartHover(e) {
+  const el = e.target.closest?.('.lc');
+  document.querySelectorAll('.lc.hov').forEach((x) => { if (x !== el) { x.classList.remove('hov'); x.querySelectorAll('.lc-x,.lc-dot,.lc-tip').forEach((n) => (n.hidden = true)); } });
+  if (!el || !CH[el.id]) return;
+  const c = CH[el.id], r = el.getBoundingClientRect();
+  const t = c.t0 + Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (c.t1 - c.t0);
+  let p = c.pts[0];
+  for (const q of c.pts) if (Math.abs(q[0] - t) < Math.abs(p[0] - t)) p = q;
+  const x = ((p[0] - c.t0) / (c.t1 - c.t0)) * 100, y = (1 - (p[1] - c.lo) / (c.hi - c.lo)) * 100;
+  const [xl, dot, tip] = ['.lc-x', '.lc-dot', '.lc-tip'].map((s) => el.querySelector(s));
+  el.classList.add('hov');
+  xl.hidden = dot.hidden = tip.hidden = false;
+  xl.style.left = dot.style.left = x + '%'; dot.style.top = y + '%';
+  const mark = c.marks.find((m) => Math.abs(m.t - p[0]) <= (c.t1 - c.t0) / 60);
+  tip.textContent = '';
+  const v = document.createElement('b'); v.textContent = c.fmt(p[1]) + (c.unit ? ' ' + c.unit : ''); tip.appendChild(v);
+  if (c.base != null && c.base !== 0) { const ch = document.createElement('span'); const dv = p[1] - c.base; ch.textContent = ` ${dv >= 0 ? '+' : '−'}${c.fmt(Math.abs(dv)).replace(/^[+−-]/, '')}`; ch.className = dv >= 0 ? 'pos' : 'neg'; tip.appendChild(ch); }
+  const tl = document.createElement('div'); tl.className = 'muted'; tl.textContent = c.tfmt(p[0]); tip.appendChild(tl);
+  if (mark) { const ml = document.createElement('div'); ml.textContent = mark.label; tip.appendChild(ml); }
+  tip.style.left = Math.min(Math.max(x, 12), 88) + '%';
+  tip.style.top = (y > 45 ? y - 4 : y + 8) + '%';
+  tip.style.transform = `translate(-50%, ${y > 45 ? '-100%' : '0'})`;
+}
+document.addEventListener('pointermove', chartHover);
+document.addEventListener('pointerleave', () => chartHover({ target: document.body }), true);
+
+// ----- portfolio value (live) -----
+function loadSeries() {
+  const range = S.seriesRange || '6h';
+  S.seriesFor = `${S.config.mode}|${range}`;
+  api('GET', `/api/series?range=${range}`).then((r) => { S.series = r; const b = $('#pf-chart'); if (b && S.page === 'dashboard') b.outerHTML = portfolioCard(); bindPortfolio(); }).catch(() => {});
+}
+function portfolioCard() {
+  const range = S.seriesRange || '6h';
+  if (S.seriesFor !== `${S.config.mode}|${range}`) setTimeout(loadSeries, 0);
+  const pts = S.series && S.series.mode === S.config.mode ? S.series.points : [];
+  const lastV = pts.length ? pts[pts.length - 1][1] : null, chg = pts.length > 1 ? lastV - pts[0][1] : null;
+  const seg = [['1h', '1 hour'], ['6h', '6 hours'], ['24h', '24 hours']].map(([v, l]) => `<button data-pf-range="${v}" class="${range === v ? 'on' : ''}">${l}</button>`).join('');
+  return `<div class="card" id="pf-chart" style="margin-bottom:16px"><div class="card-h"><div><h2>${S.config.mode === 'paper' ? 'Paper wallet' : 'Wallet'} value <span class="live-dot" title="Updates every 30 seconds"></span></h2>
+      <div class="muted" style="font-size:12.5px">${lastV != null ? `<b class="num" style="color:var(--text)">${sol(lastV, 3)} SOL</b>${chg != null ? ` · <span class="${cls(chg)}">${signed(chg, 3)}</span> in this period` : ''}` : 'Everything you hold, including open positions at today\'s prices. Sampled every 30 seconds while the bot runs.'}</div></div>
+      <span class="spacer"></span><div class="seg">${seg}</div></div>
+    <div class="bt-curve">${lineChart(pts, { base: 'first', h: 170, unit: 'SOL', label: 'Wallet value', fmt: (v) => v.toFixed(3), from: Date.now() - { '1h': 1, '6h': 6, '24h': 24 }[range] * 3600000, to: Date.now(), empty: S.status.running || S.status.positions.length ? 'Collecting data… the first points appear within a minute.' : 'Start the bot to see your wallet value live.' })}</div></div>`;
+}
+function bindPortfolio() { document.querySelectorAll('[data-pf-range]').forEach((b) => (b.onclick = () => { S.seriesRange = b.dataset.pfRange; const c = $('#pf-chart'); if (c) c.outerHTML = portfolioCard(); bindPortfolio(); })); }
+
+// ----- one position, live -----
+async function openPositionChart(mint) {
+  let stop = false;
+  const draw = async () => {
+    if (stop) return;
+    let d;
+    try { d = await api('GET', '/api/position-chart?mint=' + encodeURIComponent(mint)); } catch (e) { if (!$('#pc-body')) return; $('#pc-body').innerHTML = `<div class="muted">${esc(e.message)}</div>`; return; }
+    const box = $('#pc-body'); if (!box) return;
+    const x = d.exits, pts = d.trail.map(([t, m]) => [t, (m - 1) * 100]);
+    const refs = [{ v: -x.stopLossPct, label: `stop-loss −${x.stopLossPct}%`, tone: 'neg' }];
+    if (x.recoverCostAtPct > 0 && !d.steps.includes('recover')) refs.push({ v: x.recoverCostAtPct, label: `take back cost +${x.recoverCostAtPct}%`, tone: 'pos' });
+    if (x.tp1AtPct > 0 && !d.steps.includes('tp1')) refs.push({ v: x.tp1AtPct, label: `take-profit 1 +${x.tp1AtPct}%`, tone: 'pos' });
+    if (x.takeProfitPct > 0) refs.push({ v: x.takeProfitPct, label: `sell all +${x.takeProfitPct}%`, tone: 'pos' });
+    const peakGain = (d.peakMultiple - 1) * 100;
+    if (x.trailingStopPct > 0 && peakGain >= x.trailingAfterPct) refs.push({ v: (d.peakMultiple * (1 - x.trailingStopPct / 100) - 1) * 100, label: 'trailing stop', tone: 'warn' });
+    // Keep far-off targets from squashing the line: show the ones within reach of what the price has done.
+    const span = Math.max(30, ...pts.map((p) => Math.abs(p[1]))) * 2.2;
+    const shown = refs.filter((r) => Math.abs(r.v) <= span);
+    const marks = d.trades.map((t) => ({ t: t.t, kind: t.side, label: t.side === 'buy' ? `Bought ${sol(t.sol, 3)} SOL` : `Sold for ${sol(t.sol, 3)} SOL${t.pnl != null ? ` (${signed(t.pnl, 3)})` : ''}${t.reason ? ': ' + t.reason : ''}` }));
+    const lastPct = pts.length ? pts[pts.length - 1][1] : null;
+    box.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:6px"><span class="muted" style="font-size:12.5px">Cost ${sol(d.costSol, 3)} SOL · held ${ago(d.openedAt)} · updates every ${S.config.monitor.exitCheckIntervalSec} s</span>${lastPct != null ? `<b class="num ${cls(lastPct)}">${pct(lastPct)}</b>` : ''}</div>
+      ${lineChart(pts, { base: 0, h: 240, from: Math.min(d.openedAt, pts[0]?.[0] ?? d.openedAt), to: Date.now(), label: 'Gain or loss', fmt: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%`, refs: shown, marks, empty: 'Collecting data… the line appears after the next price check.' })}
+      <div class="muted" style="font-size:12px;margin-top:8px">The line is this position's gain or loss since you bought (0% = break-even). Coloured lines are its exits${refs.length > shown.length ? '; targets far above are left off so the line stays readable' : ''}. Dots mark your buys and sells.</div>`;
+  };
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:760px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">${short(mint)} <span class="live-dot"></span></h3><button class="btn sm" data-a="close">Close</button></div><div id="pc-body" style="margin-top:12px"><div class="muted">Loading…</div></div></div></div>`;
+  const timer = setInterval(draw, Math.max(10, S.config.monitor.exitCheckIntervalSec) * 1000);
+  const close = () => { stop = true; clearInterval(timer); $('#modal-root').innerHTML = ''; };
+  $('#modal-root [data-a=close]').onclick = close;
+  $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) close(); };
+  draw();
+}
+
+// ----- order price charts -----
+S.orderCharts = {};
+function loadOrderChart(mint) {
+  const c = S.orderCharts[mint];
+  if (c && (c.loading || Date.now() - c.at < 30000)) return;
+  S.orderCharts[mint] = { ...(c || {}), loading: true };
+  api('GET', '/api/orders/chart?mint=' + encodeURIComponent(mint)).then((r) => { S.orderCharts[mint] = { at: Date.now(), pts: r.points }; if (S.page === 'orders') paintOrderLists(); }).catch(() => { S.orderCharts[mint] = { at: Date.now(), pts: [] }; });
+}
+
 /** Realized profit over time from your own sells (current mode), as a chart card on the Dashboard. */
 function pnlChart() {
   const range = S.pnlRange || '7d', now = Date.now();
@@ -1044,7 +1207,7 @@ function healthCard() {
 function walletStats() {
   const mode = S.config.mode, weekAgo = Date.now() - 7 * 86400_000;
   const out = {}, lastBuy = {};
-  const get = (a) => (out[a] ??= { buys: 0, sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [] });
+  const get = (a) => (out[a] ??= { buys: 0, sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [], curve: [] });
   for (const t of [...S.trades].reverse()) { // oldest first
     if (t.mode !== mode) continue;
     if (t.side === 'buy') {
@@ -1056,7 +1219,7 @@ function walletStats() {
     const srcs = t.sources || (lastBuy[t.mint] ? [lastBuy[t.mint]] : []);
     for (const a of srcs) {
       const share = (t.pnl || 0) / srcs.length, w = get(a);
-      w.sells++; w.pnl += share; if (share > 0) w.wins++; if (t.t >= weekAgo) w.week += share;
+      w.sells++; w.pnl += share; if (share > 0) w.wins++; if (t.t >= weekAgo) w.week += share; w.curve.push([t.t, w.pnl]);
     }
   }
   return out;
@@ -1088,7 +1251,7 @@ function renderWallets(el) {
             <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
             <td><input class="label-input" data-label="${i}" value="${esc(w.label || '')}" placeholder="Add a nickname"></td>
             <td>${walletLink(w.address)}${healthChip(w.address)}${w.trialStage !== undefined ? `<div class="notes"><span class="note" title="New wallets start small. After ${S.config.trial.winsToStepUp} profitable copies it moves up to ${w.trialStage === 0 ? 'half' : 'full'} size.">On trial · ${w.trialStage === 0 ? '¼' : '½'} size</span></div>` : ''}${!w.enabled && w.pausedReason ? `<div class="notes"><span class="note bad" title="Turn it back on to resume; its count starts again.">Auto-paused: ${esc(w.pausedReason)}</span></div>` : ''}</td>
-            <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
+            <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.curve?.length > 1 ? `<div>${spark([[st.curve[0][0] - 1, 0], ...st.curve], 0, 'Your profit from this wallet over time')}</div>` : ''}${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
             <td class="r num">${st.sells ? `${Math.round((st.wins / st.sells) * 100)}%<div class="muted" style="font-size:11px">${st.wins} of ${st.sells}</div>` : '—'}</td>
             <td class="r num ${gap == null ? 'muted' : gap > 10 ? 'neg' : ''}" title="${gap == null ? 'Measured on your next copied trades' : `Median of ${st.gaps.length} trades${lag != null ? `, ${lag.toFixed(1)} s behind them` : ''}`}">${gap == null ? '—' : `${gap > 0 ? '−' : '+'}${Math.abs(gap).toFixed(1)}%`}</td>
             <td class="r num muted">${held || '—'}</td>
@@ -1581,6 +1744,7 @@ function reportHtml() {
         ${r.rows.filter((x) => x.sells).slice(0, 14).map((x) => `<tr><td>${label(x.key)}</td><td class="r num">${x.sells}</td><td class="r num">${x.sells ? Math.round((x.wins / x.sells) * 100) + '%' : '–'}</td><td class="r num ${cls(x.pnlSol)}">${x.sells ? signed(x.pnlSol, 3) : '–'}</td><td><div style="height:8px;border-radius:4px;background:${x.pnlSol >= 0 ? 'var(--green)' : 'var(--red)'};width:${Math.round((Math.abs(x.pnlSol) / maxAbs) * 100)}%;opacity:.7"></div></td></tr>`).join('')}
       </tbody></table></div>
       <div class="stack" style="gap:14px">
+        ${r.curve?.length > 1 ? `<div><div style="font-weight:600;font-size:13px">Running total</div>${lineChart([[r.curve[0][0] - 1, 0], ...r.curve], { base: 0, h: 120, unit: 'SOL', label: 'Running total profit', fmt: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}` })}</div>` : ''}
         <div><div class="muted" style="font-size:12.5px">All ${mode} trades</div><div style="font-size:22px;font-weight:700" class="num ${cls(r.totals.pnlSol)}">${signed(r.totals.pnlSol, 3)} SOL</div><div class="muted" style="font-size:12.5px">${r.totals.sells} sells · ${r.totals.sells ? Math.round((r.totals.wins / r.totals.sells) * 100) : 0}% in profit · ${sol(r.totals.boughtSol, 2)} SOL bought</div></div>
         ${r.best.length ? `<div><div style="font-weight:600;font-size:13px">Best trades</div>${r.best.map(hi).join('')}</div>` : ''}
         ${r.worst.length ? `<div><div style="font-weight:600;font-size:13px">Worst trades</div>${r.worst.map(hi).join('')}</div>` : ''}
@@ -1695,7 +1859,9 @@ function paintOrderLists() {
   const when = (o) => o.kind === 'dca' && o.status === 'active' ? `next ${o.nextAt <= Date.now() ? (S.status.running ? 'now' : 'when the bot starts') : 'in ' + ago(Date.now() - (o.nextAt - Date.now()))}` : o.expiresAt && o.status === 'active' ? `expires in ${ago(Date.now() - (o.expiresAt - Date.now()))}` : '';
   const badge = { filled: 'buy', cancelled: 'paper', failed: 'sell', expired: 'paper' };
   box.innerHTML = `<div class="card"><div class="card-h"><h2>Open orders</h2><span class="spacer"></span><span class="muted" style="font-size:12.5px">${open.length ? (S.status.running ? 'checking prices every 15 seconds' : '<b>start the bot</b> for these to run') : ''}</span></div>
-      ${open.length ? open.map((o) => `<div class="row" style="justify-content:space-between;padding:10px 16px;border-top:1px solid var(--border)"><div><div>${what(o)}</div><div class="muted" style="font-size:12.5px">${[when(o), o.note].filter(Boolean).map(esc).join(' · ')}</div></div><button class="btn sm" data-cancel="${esc(o.id)}">Cancel</button></div>`).join('') : '<div class="card-b muted">No open orders.</div>'}</div>
+      ${open.length ? open.map((o) => { loadOrderChart(o.mint); const c = S.orderCharts[o.mint]; const target = o.kind === 'dca' ? o.maxPriceUsd : o.priceUsd; const now = c?.pts?.length ? c.pts[c.pts.length - 1][1] : null;
+        return `<div style="padding:10px 16px;border-top:1px solid var(--border)"><div class="row" style="justify-content:space-between"><div><div>${what(o)}</div><div class="muted" style="font-size:12.5px">${[when(o), o.note, now && target ? `now ${orderPrice(now)}, ${Math.abs((target / now - 1) * 100).toFixed(1)}% ${target < now ? 'below' : 'above'}` : ''].filter(Boolean).map(esc).join(' · ')}</div></div><button class="btn sm" data-cancel="${esc(o.id)}">Cancel</button></div>
+          ${c?.pts ? lineChart(c.pts, { h: 110, label: 'Price', fmt: (v) => orderPrice(v), refs: target ? [{ v: target, label: (o.kind === 'dca' ? 'your cap ' : 'your target ') + orderPrice(target), tone: o.kind === 'sell' ? 'pos' : 'warn' }] : [], empty: 'No price history for this token yet.' }) : '<div class="lc-empty muted">Loading price…</div>'}</div>`; }).join('') : '<div class="card-b muted">No open orders.</div>'}</div>
     ${done.length ? `<div class="card"><div class="card-h"><h2>Finished orders</h2></div>${done.map((o) => `<div class="row" style="justify-content:space-between;padding:8px 16px;border-top:1px solid var(--border);font-size:13.5px"><div>${what(o)}<div class="muted" style="font-size:12.5px">${esc(o.note || '')} · ${dateTime(o.updatedAt)}</div></div><span class="tag ${badge[o.status]}">${o.status}</span></div>`).join('')}</div>` : ''}`;
   box.querySelectorAll('[data-cancel]').forEach((b) => (b.onclick = async () => { const r = await act(() => api('DELETE', '/api/orders?id=' + encodeURIComponent(b.dataset.cancel)), 'Order cancelled'); if (r) { S.status = r; renderChrome(); paintOrderLists(); } }));
 }
@@ -2012,7 +2178,7 @@ function renderScanner(el) {
   const pending = !running ? 'Start the bot and the scanner starts with it.' : '';
   const sigRow = (s) => `<tr><td><a href="#" data-mint="${esc(s.mint)}"><b>${esc(s.symbol || short(s.mint))}</b></a> <span class="chip">${s.kind === 'old' ? 'older coin' : 'new coin'}</span></td>
     <td class="r num pos">${pct(s.change1hPct)}</td><td class="r num">${s.buySellRatio.toFixed(1)}×</td><td class="r num">${s.volumeSurge.toFixed(1)}×</td>
-    <td class="r num">$${Math.round(s.liquidityUsd).toLocaleString()}</td><td class="r muted">${s.ageHours < 48 ? `${s.ageHours} h` : `${Math.round(s.ageHours / 24)} d`}</td></tr>`;
+    <td class="r num">$${Math.round(s.liquidityUsd).toLocaleString()}</td><td class="r muted">${s.ageHours < 48 ? `${s.ageHours} h` : `${Math.round(s.ageHours / 24)} d`}</td><td>${spark(x.sparks?.[s.mint], null, 'Price over the last 6 hours')}</td></tr>`;
   const scoutJ = scoutJob();
   el.innerHTML = `
     <div class="grid two" style="margin-bottom:16px">
@@ -2036,7 +2202,7 @@ function renderScanner(el) {
     ${proofCardHtml(x)}
     <div class="card"><div class="card-h"><h2>Coins rising right now</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${x.at ? `checked ${ago(x.at)} ago` : sc.tradeCoins || sc.trackSignals ? (running ? 'first check within a minute' : 'starts with the bot') : 'turn on Trade coins or Track every signal'}</span></div>
       ${x.error ? `<div class="banner warn" style="margin:0 16px 12px"><div>${esc(x.error)}</div></div>` : ''}
-      ${x.signals.length ? `<div class="tbl-wrap"><table><thead><tr><th>Coin</th><th class="r">Last hour</th><th class="r" title="Buys vs sells in the last hour">Buys vs sells</th><th class="r" title="Last hour's volume vs its usual hourly volume">Volume</th><th class="r">Liquidity</th><th class="r">Age</th></tr></thead><tbody>${x.signals.map(sigRow).join('')}</tbody></table></div>
+      ${x.signals.length ? `<div class="tbl-wrap"><table><thead><tr><th>Coin</th><th class="r">Last hour</th><th class="r" title="Buys vs sells in the last hour">Buys vs sells</th><th class="r" title="Last hour's volume vs its usual hourly volume">Volume</th><th class="r">Liquidity</th><th class="r">Age</th><th>Last 6 h</th></tr></thead><tbody>${x.signals.map(sigRow).join('')}</tbody></table></div>
         <div class="muted" style="font-size:12px;padding:10px 16px 14px">Best first. A coin shows here when it's up over the last hour but hasn't already run, has more buyers than sellers, more volume than usual, and isn't falling right now. The scanner tries the best one each round (if it has room), and skips coins it tried in the last 6 hours or that fail a safety check.</div>`
         : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>${x.at ? 'Nothing rising the right way right now' : 'No scan yet'}</h3>${x.at ? 'The scanner checks again every minute or so. Quiet markets often have no signals: that\'s the scanner being picky, not broken.' : 'Turn on Trade coins and start the bot.'}</div>`}
     </div>
@@ -2074,6 +2240,7 @@ function proofCardHtml(x) {
     : `<div class="stack" style="gap:6px;font-size:13.5px">
         <div><span class="muted">All signals:</span> ${line(p.all)}</div>
         ${p.bought.signals ? `<div><span class="muted">Ones it bought:</span> ${line(p.bought)}</div>` : ''}
+        ${p.curve?.length > 1 ? lineChart([[p.curve[0][0] - 1, 0], ...p.curve], { base: 0, h: 130, unit: 'SOL', label: 'Signals profit so far', fmt: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(3)}` }) : ''}
         <div class="muted" style="font-size:12.5px">New coins: ${p.newCoins.signals ? `${signed(p.newCoins.totalSol, 3)} SOL over ${p.newCoins.signals}` : '–'} · Older coins: ${p.oldCoins.signals ? `${signed(p.oldCoins.totalSol, 3)} SOL over ${p.oldCoins.signals}` : '–'} · ${p.tracked} tracked since ${dateTime(p.since)}${p.waiting ? `, ${p.waiting} still playing out` : ''}. As if you'd put ${sol(sc.buySol, 3)} SOL in each, with 3% for fees and slippage.</div>
       </div>
       ${p.recent.length ? `<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th>Signal</th><th>When</th><th>Bought?</th><th class="r">Result</th><th>How it ended</th></tr></thead><tbody>${p.recent.map((r) => `<tr><td><a href="#" data-mint="${esc(r.mint)}"><b>${esc(r.symbol || short(r.mint))}</b></a> <span class="chip">${r.kind === 'old' ? 'older' : 'new'}</span></td><td class="muted">${ago(r.at)} ago</td><td>${r.bought ? '<span class="pos">bought</span>' : `<span class="muted" title="${esc(r.skipped || '')}">no${r.skipped ? ': ' + esc(r.skipped.length > 40 ? r.skipped.slice(0, 40) + '…' : r.skipped) : ''}</span>`}</td><td class="r num ${r.outcome ? cls(r.outcome.pnlPct) : ''}">${r.outcome ? pct(r.outcome.pnlPct) : '–'}</td><td class="muted">${r.outcome ? `${esc(r.outcome.reason)}${r.outcome.done ? '' : ' (so far)'} · peak ${pct(r.outcome.peakPct)}` : Date.now() - r.at < 3600000 ? 'checked after 1 hour' : 'checking…'}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
@@ -2515,6 +2682,12 @@ function connectEvents() {
   es.addEventListener('remote', (e) => {
     const r = JSON.parse(e.data); S.remote = r; paintRemote();
     if (r.paired) { if (S.pairClose) S.pairClose(); toast(`Paired: ${r.paired}. You can control Copybot from it now.`); }
+  });
+  es.addEventListener('point', (e) => {
+    const { mode, p } = JSON.parse(e.data);
+    if (!S.series || S.series.mode !== mode) return;
+    const pts = S.series.points; if (!pts.length || p[0] > pts[pts.length - 1][0]) pts.push(p);
+    const c = $('#pf-chart'); if (c && S.page === 'dashboard') { c.outerHTML = portfolioCard(); bindPortfolio(); }
   });
   es.addEventListener('scanner', (e) => { S.scanner = JSON.parse(e.data); renderChrome(); if (S.page === 'scanner' && !S.dirty) render(); });
   es.addEventListener('trades-reset', () => load());

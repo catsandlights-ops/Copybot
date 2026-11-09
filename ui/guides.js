@@ -11,7 +11,7 @@ window.GUIDE_CATS = {
 window.GUIDES = [
   {
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
-    teaser: 'Phone access, a market scanner, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
+    teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
 <h3>Phone access</h3>
 <p>Check your profit and positions, start and stop the bot, and sell from your phone, at home over Wi-Fi or anywhere with the free Tailscale app. Set it up in <b>Settings → Phone access</b>. Your phone can't change settings or touch your keys and wallets. <a href="#" data-guide="phone">Set it up →</a></p>
@@ -25,6 +25,8 @@ window.GUIDES = [
 <p>The Scanner page now shows a <b>live track record</b>: every coin it flags (bought or not) is checked later against the real price. <b>Test on the past</b> replays its rules on the last 1 to 3 days with different buying rules and exits, and lets you switch to the best one in a click.</p>
 <h3>Your own orders</h3>
 <p>A new <b>Orders</b> page: buy a coin when it drops to a price, sell when it reaches a target, or buy a little every few hours (DCA). Every buy goes through your limits and safety checks. Use <b>Place an order</b> on any coin in Markets.</p>
+<h3>Live graphs</h3>
+<p>Charts that update by themselves: your <b>wallet value</b> on the Dashboard (last hour, 6 or 24 hours), a trend line next to every open position (click it for a live chart with its stop-loss, targets and your buys and sells), each open <b>order's price against its target</b>, the scanner's results and the coins rising now, a profit line per <b>wallet</b>, a running total on the Trades report, and the same on your phone. Hover any chart to read exact values.</p>
 <h3>Panic button</h3>
 <p><b>Sell everything &amp; stop</b> on the Dashboard and on your phone. Optionally set a <b>panic limit</b> (Settings → Limits) so Copybot does it by itself if today's total loss gets too big.</p>
 <h3>Reports and taxes</h3>

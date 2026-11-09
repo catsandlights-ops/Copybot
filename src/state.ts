@@ -11,6 +11,7 @@ export type Position = {
   steps?: ExitStep[]; // staged exits already taken
   peakMultiple?: number; // highest value / cost seen (for the trailing stop)
   peakLiquidityUsd?: number; // highest pool liquidity seen while held (for rug protection)
+  trail?: [number, number][]; // [time, value / cost] while held, for the live chart (thinned as it grows)
 };
 
 export type State = { positions: Record<string, Position>; realizedPnlSol: number; guard?: GuardState };
