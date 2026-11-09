@@ -59,16 +59,6 @@ async function fees(): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: big
   return { maxFeePerGas: baseFee * 2n + maxPriorityFeePerGas, maxPriorityFeePerGas };
 }
 
-async function waitReceipt(hash: string, timeoutMs = 60_000): Promise<any> {
-  const until = Date.now() + timeoutMs;
-  while (Date.now() < until) {
-    const rc = await baseRpc.call<any>('eth_getTransactionReceipt', [hash]).catch(() => null);
-    if (rc) return rc;
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-  throw new Error(`Base transaction ${hash} wasn't confirmed within ${timeoutMs / 1000} s. It may still go through: check it on Basescan before trading this coin by hand.`);
-}
-
 /** The next transaction number: what the node reports, but never one Copybot already used (nodes can lag). */
 export function nextNonce(pending: number, lastUsed: number | undefined): number {
   return lastUsed == null ? pending : Math.max(pending, lastUsed + 1);
@@ -81,6 +71,53 @@ export function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
   const run = queue.then(fn, fn);
   queue = run.catch(() => undefined);
   return run;
+}
+
+/** Sent, but not confirmed in time; Copybot keeps checking in the background (see lateReceipt). */
+export class PendingTxError extends Error {
+  constructor(readonly pendingHash: string) {
+    super(`Base transaction ${pendingHash} is sent but not confirmed yet. Copybot keeps checking and adds it to your books if it goes through.`);
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Wait for a receipt; null if none arrived in time. */
+async function receipt(hash: string, timeoutMs: number): Promise<any | null> {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    const rc = await baseRpc.call<any>('eth_getTransactionReceipt', [hash]).catch(() => null);
+    if (rc) return rc;
+    await sleep(1500);
+  }
+  return null;
+}
+
+/** Does the network still know this transaction? false = dropped; true or unknown (node error) = assume still pending. */
+async function stillKnown(hash: string): Promise<boolean> {
+  return baseRpc.call<unknown>('eth_getTransactionByHash', [hash]).then((t) => t !== null, () => true);
+}
+
+async function waitReceipt(hash: string, from: string, timeoutMs = 90_000): Promise<any> {
+  const rc = await receipt(hash, timeoutMs);
+  if (rc) return rc;
+  if (!(await stillKnown(hash))) {
+    lastNonce.delete(from.toLowerCase()); // its number is free again: don't leave a gap that blocks every later trade
+    throw new Error(`Base transaction ${hash} was dropped by the network, so nothing happened.`);
+  }
+  throw new PendingTxError(hash);
+}
+
+/** Keep checking a transaction that wasn't confirmed in time: true once it succeeds, false if it failed or vanished. */
+export async function lateReceipt(hash: string, maxMs = 30 * 60_000, everyMs = 10_000): Promise<boolean> {
+  const until = Date.now() + maxMs;
+  while (Date.now() < until) {
+    const rc = await baseRpc.call<any>('eth_getTransactionReceipt', [hash]).catch(() => null);
+    if (rc) return rc.status === '0x1';
+    if (!(await stillKnown(hash))) return false;
+    await sleep(everyMs);
+  }
+  return false;
 }
 
 /** Check, rehearse, sign and send one transaction; wait until it's confirmed. */
@@ -99,7 +136,7 @@ async function sendChecked(account: ReturnType<typeof baseAccount>, req: { to: s
   const signed = await account.signTransaction({ chainId: BASE_CHAIN_ID, type: 'eip1559', to: req.to as `0x${string}`, data: req.data as `0x${string}`, value: req.value, gas, nonce, maxFeePerGas: f.maxFeePerGas, maxPriorityFeePerGas: f.maxPriorityFeePerGas });
   const hash = await baseRpc.call<string>('eth_sendRawTransaction', [signed]);
   lastNonce.set(from.toLowerCase(), nonce);
-  const rc = await waitReceipt(hash);
+  const rc = await waitReceipt(hash, from);
   if (rc.status !== '0x1') throw new Error(`Base transaction ${hash} failed on-chain.`);
   return hash;
 }

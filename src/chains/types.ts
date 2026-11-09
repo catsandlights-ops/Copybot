@@ -65,6 +65,8 @@ export interface ChainAdapter {
   liveOwner?(): string | null;
   /** After a live swap: what was really bought or sold (from the confirmed transaction). */
   readFill?(hash: string, owner: string): Promise<{ tokenRaw: bigint; native: number } | null>;
+  /** A trade sent but not confirmed in time: keep checking; true once it confirms, false if it failed or vanished. */
+  settleLate?(hash: string): Promise<boolean>;
 }
 
 /** Every chain id, for validating stored records (kept here so config can use it without import cycles). */
