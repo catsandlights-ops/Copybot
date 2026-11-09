@@ -99,6 +99,8 @@ One theme that mixes a clean modern layout with rainbow arcade touches, in **lig
 
 ## Getting started
 
+**Fastest way to try it:** install, then press **Start bot**. In paper mode with no wallets, Copybot picks 3 traders who just caught moves on different trending tokens and starts a paper experiment with a pretend 10 SOL wallet (shown on the Dashboard, with a Reset button). Nothing is ever spent. For the full setup:
+
 1. **Install** Copybot (see [Download](#download)).
 2. **Add a fast RPC:** Settings → Connection → paste a free [Helius](https://www.helius.dev) link, then **Test connection**. The free public RPC is rate-limited and misses trades.
 3. **Find wallets** on the Find wallets page (or Markets → top traders) and **Analyze** them before copying.

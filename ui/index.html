@@ -591,21 +591,25 @@ function wizard(step = 0) {
      <p class="muted">Set it up any time in <b>Settings → Phone alerts</b>. It takes about 2 minutes.</p>
      <button class="btn" id="wz-alerts">Set up alerts now</button>`,
     `<div class="wz-hero">${ICON.star}</div><h2>You're ready</h2>
-     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '⚠️ No wallets yet (add them on the Wallets page)'}</li><li>✅ Paper mode: nothing is spent</li></ul>
+     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '💡 No wallets yet: <b>Start a paper experiment</b> and Copybot picks a few active traders for you'}</li><li>✅ Paper mode: nothing is spent</li></ul>
      <p class="muted">Tip: before copying a wallet with real money, run it on the <b>Backtest</b> page. Read <a href="#" data-guide="getting-started" id="wz-guide">Getting started</a> for the rest.</p>`,
   ][step];
   $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal wizard" role="dialog" aria-modal="true" aria-label="Setup">
     <div class="wz-top"><div class="wz-dots">${dots}</div><button class="btn sm ghost" id="wz-skip">Skip setup</button></div>
     <div class="wz-body">${body}</div>
     <div class="row wz-nav">${step ? '<button class="btn" id="wz-back">Back</button>' : ''}<span class="spacer" style="flex:1"></span>
-      ${step < WZ_STEPS.length - 1 ? `<button class="btn primary" id="wz-next">${step === 0 ? 'Let\'s go' : 'Next'}</button>` : `<button class="btn primary" id="wz-start" ${S.config.wallets.filter((w) => w.enabled !== false).length ? '' : 'disabled'}>Start in paper mode</button><button class="btn" id="wz-done">Finish</button>`}</div></div></div>`;
+      ${step < WZ_STEPS.length - 1 ? `<button class="btn primary" id="wz-next">${step === 0 ? 'Let\'s go' : 'Next'}</button>` : `<button class="btn primary" id="wz-start">${S.config.wallets.some((w) => w.enabled !== false) ? 'Start in paper mode' : 'Start a paper experiment'}</button><button class="btn" id="wz-done">Finish</button>`}</div></div></div>`;
   const finish = async () => { $('#modal-root').innerHTML = ''; S.ui = { ...S.ui, setupDone: true }; await act(() => api('PUT', '/api/ui', { setupDone: true })); };
   $('#wz-skip').onclick = finish;
   const nx = $('#wz-next'); if (nx) nx.onclick = () => wizard(step + 1);
   const bk = $('#wz-back'); if (bk) bk.onclick = () => wizard(step - 1);
   const dn = $('#wz-done'); if (dn) dn.onclick = finish;
   const gd = $('#wz-guide'); if (gd) gd.addEventListener('click', finish);
-  const st = $('#wz-start'); if (st) st.onclick = async () => { await finish(); go('dashboard'); await act(() => api('POST', '/api/start'), 'Bot started in paper mode'); };
+  const st = $('#wz-start'); if (st) st.onclick = async () => {
+    await finish(); go('dashboard');
+    if (!S.config.wallets.some((w) => w.enabled !== false)) return quickStart();
+    await act(() => api('POST', '/api/start'), 'Bot started in paper mode');
+  };
   const t = $('#wz-test');
   if (t) t.onclick = async () => {
     const url = $('#wz-rpc').value.trim();
@@ -715,10 +719,44 @@ $('#run-btn').onclick = async () => {
     const ok = await confirmModal({ title: 'Start in LIVE mode?', body: '<p>The bot will spend real SOL from your trading wallet automatically.</p>', confirm: 'Start live trading', danger: true });
     if (!ok) return;
   }
+  // Paper mode with no wallets yet: offer a one-press experiment instead of an error.
+  if (!S.status.running && S.config.mode === 'paper' && !S.config.wallets.some((w) => w.enabled !== false)) return quickStart();
   S.busy = true; renderChrome();
   await act(() => api('POST', S.status.running ? '/api/stop' : '/api/start'));
   S.busy = false; renderChrome();
 };
+
+// ---------------- one-press paper experiment ----------------
+async function quickStart() {
+  const ok = await confirmModal({ title: 'Start a paper experiment?', confirm: 'Start experiment',
+    body: `<p>You haven't picked any wallets yet, so Copybot will pick <b>3 traders who just caught a move</b> on today's trending tokens and copy them in <b>paper mode</b>, with a pretend ${S.config.paper.startSol} SOL wallet.</p>
+      <p class="muted">Nothing is ever spent. It takes about 30 seconds to set up. These traders aren't vetted, so treat it as an experiment: check them later with <b>Check my wallets</b>, or use <b>Find wallets</b> for proven ones.</p>` });
+  if (!ok) return;
+  const j = await act(() => api('POST', '/api/jobs/quickstart'));
+  if (!j) return;
+  upsertJob(j); S.qsJob = j.id;
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:460px;text-align:center"><div class="wz-hero" style="margin:4px auto 10px;width:64px">${ICON.rainbow}</div><h3>Setting up your experiment</h3>
+    <div class="row" style="justify-content:center;gap:10px;margin-top:8px"><span class="spinner"></span><span id="qs-msg" class="muted">Starting…</span></div></div></div>`;
+}
+function quickStartUpdate(j) {
+  if (j.id !== S.qsJob) return;
+  const msg = $('#qs-msg');
+  if (j.status === 'done') {
+    S.qsJob = null; $('#modal-root').innerHTML = '';
+    toast(`Experiment started: copying ${j.result.added.length} trader${j.result.added.length > 1 ? 's' : ''}`);
+    go('dashboard');
+  } else if (j.status === 'error') {
+    S.qsJob = null;
+    $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:460px"><h3>Couldn't start the experiment</h3><p>${esc(j.error)}</p>
+      <div class="row"><span class="spacer" style="flex:1"></span><button class="btn" onclick="document.getElementById('modal-root').innerHTML=''">Close</button><button class="btn primary" onclick="document.getElementById('modal-root').innerHTML='';go('research')">Find wallets</button></div></div></div>`;
+  } else if (msg) msg.textContent = j.progress;
+}
+async function resetPaper() {
+  if (!(await confirmModal({ title: 'Reset paper results?', confirm: 'Reset', danger: true,
+    body: `<p>Your paper wallet goes back to <b>${S.config.paper.startSol} SOL</b>, and paper positions and paper trades are cleared so you can start a fresh experiment.</p><p class="muted">A copy of the old results is kept in the data folder. Live trading is not affected.</p>` }))) return;
+  const r = await act(() => api('POST', '/api/paper/reset'), 'Paper results reset');
+  if (r) load();
+}
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => go(n.dataset.page)));
 async function go(page) {
   if (S.page === 'settings' && page !== 'settings' && S.dirty) {
@@ -819,7 +857,7 @@ function renderDashboard(el) {
         <td class="r muted num">${ago(p.openedAt)}</td>
         <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button></td>
       </tr>`).join('')}</tbody></table></div>`
-    : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn primary" onclick="go('wallets')">Add wallets</button>`}</div>`;
+    : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : S.config.mode === 'paper' ? 'Press <b>Start bot</b> to run a paper experiment: Copybot picks a few active traders for you. Nothing is spent.<div class="press">Press start</div>' : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn ${S.config.mode === 'paper' ? '' : 'primary'}" onclick="go('wallets')">Pick wallets myself</button>`}</div>`;
 
   el.innerHTML = `${banners()}
     <div class="grid stats">
@@ -828,6 +866,11 @@ function renderDashboard(el) {
       <div class="card stat"><div class="k">Open positions</div><div class="v num">${n} <small style="font-size:13px" class="muted">/ ${cfg.risk.maxOpenPositions}</small></div>${hearts(n, cfg.risk.maxOpenPositions)}<div class="s">${sol(st.exposureSol, 3)} of ${cfg.risk.maxTotalExposureSol} SOL in use</div><div class="bar"><i style="width:${expPct}%"></i></div></div>
       ${st.wallet && cfg.mode === 'live'
         ? `<div class="card stat"><div class="k">${ICON.coin}Trading wallet</div><div class="v num">${st.wallet.balance != null ? sol(st.wallet.balance, 3) : '…'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${walletLink(st.wallet.address)}</div></div>`
+        : st.paper ? (() => {
+          const openVal = st.positions.reduce((a, p) => a + (p.valueSol ?? p.costSol), 0), total = st.paper.freeSol + openVal, chg = total - st.paper.startSol;
+          return `<div class="card stat"><div class="k">${ICON.key}Paper wallet</div><div class="v num">${sol(total, 3)} <small style="font-size:13px" class="muted">SOL</small></div>
+            <div class="s"><span class="${cls(chg)}">${signed(chg, 3)}</span> since start (${st.paper.startSol} SOL) · ${sol(Math.max(0, st.paper.freeSol), 3)} free</div>
+            <div class="s" style="margin-top:4px">copying ${enabled.length} wallet${enabled.length === 1 ? '' : 's'} · <a href="#" id="paper-reset">Reset</a></div></div>`; })()
         : `<div class="card stat"><div class="k">${ICON.key}Copying</div><div class="v num">${enabled.length} <small style="font-size:13px" class="muted">wallet${enabled.length === 1 ? '' : 's'}</small></div><div class="s">${todays.length} trade${todays.length === 1 ? '' : 's'} today</div></div>`}
     </div>
     ${pnlChart()}
@@ -837,6 +880,7 @@ function renderDashboard(el) {
         <div class="feed" id="feed">${feedHtml()}</div></div>
     </div>`;
   el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
+  const pr = $('#paper-reset'); if (pr) pr.onclick = (e) => { e.preventDefault(); resetPaper(); };
   el.querySelectorAll('[data-pnl-range]').forEach((b) => (b.onclick = () => { S.pnlRange = b.dataset.pnlRange; render(); }));
   const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
 }
@@ -1147,11 +1191,12 @@ function renderJobs() { const el = $('#jobs'); if (el) { el.innerHTML = jobsHtml
 function jobsHtml() {
   if (!S.jobs.length) return '<div class="empty">Results from discovery and analysis show up here.</div>';
   return S.jobs.map((j) => {
-    const title = j.kind === 'health' ? 'Wallet check' : j.kind === 'compare' ? `Strategies compared · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'optimize' ? `Best settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
+    const title = j.kind === 'quickstart' ? 'Paper experiment setup' : j.kind === 'health' ? 'Wallet check' : j.kind === 'compare' ? `Strategies compared · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'optimize' ? `Best settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
     const head = `<div class="job-h">${j.status === 'running' || j.status === 'queued' ? '<span class="spinner"></span>' : j.status === 'error' ? '<span class="dot bad"></span>' : '<span class="dot ok"></span>'}
       <b style="font-weight:600">${title}</b><span class="muted" style="font-size:12.5px">${esc(j.status === 'error' ? j.error : j.progress)}</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:12px">${time(j.createdAt)}</span></div>`;
     if (j.status !== 'done') return `<div class="job">${head}</div>`;
     if (j.kind === 'scout') return `<div class="job">${head}<div class="muted" style="padding:0 18px 12px;font-size:13px">Results are shown in the Wallet scout card above.</div></div>`;
+    if (j.kind === 'quickstart') return `<div class="job">${head}</div>`;
     if (j.kind === 'health') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" onclick="go('wallets');return false">See it on the Wallets page →</a></div></div>`;
     if (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the results →</a></div></div>`;
     return `<div class="job">${head}${j.kind === 'analyze' ? analyzeTable(j.result) : discoverTable(j.result)}</div>`;
@@ -1830,6 +1875,7 @@ const FIELDS = [
     { k: 'filters.skipIfNoMarketData', label: 'Skip tokens with no market data', type: 'toggle', help: "Brand-new launches may not be listed yet. On = skip them, off = only the other safety checks apply." },
   ]},
   { title: 'Limits', desc: 'Caps that protect your balance.', fields: [
+    { k: 'paper.startSol', label: 'Paper wallet starts with', unit: 'SOL', help: 'Paper mode only: a pretend balance for experiments. Paper buys stop when it runs out. Reset it on the Dashboard.' },
     { k: 'risk.maxOpenPositions', label: 'Max tokens held at once', unit: 'tokens', step: 1 },
     { k: 'risk.maxTotalExposureSol', label: 'Max SOL in open positions', unit: 'SOL' },
     { k: 'risk.skipIfAlreadyHolding', label: "Don't buy more of a token you hold", type: 'toggle' },
@@ -2109,6 +2155,7 @@ function connectEvents() {
   });
   es.addEventListener('connection', (e) => { S.connection = JSON.parse(e.data); renderChrome(); });
   es.addEventListener('scout', (e) => { S.scout = JSON.parse(e.data); });
+  es.addEventListener('trades-reset', () => load());
   es.addEventListener('health', (e) => { S.health = JSON.parse(e.data); if (S.page === 'wallets') render(); });
   es.addEventListener('ai', (e) => {
     const d = JSON.parse(e.data);
@@ -2120,6 +2167,7 @@ function connectEvents() {
   es.addEventListener('job', (e) => {
     const j = JSON.parse(e.data);
     upsertJob(j);
+    if (j.kind === 'quickstart') quickStartUpdate(j);
     if (S.page === 'research') { if (j.kind === 'scout') render(); else renderJobs(); }
     if (S.page === 'backtest' && (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare')) render();
     if (S.page === 'wallets' && j.kind === 'health') render();

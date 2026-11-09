@@ -134,6 +134,8 @@ export type Config = {
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
   /** New wallets start small and grow as they prove themselves; any wallet pauses after a losing streak. */
   trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number };
+  /** Paper mode: a pretend wallet so experiments feel real (buys stop when it runs out). */
+  paper: { startSol: number };
   /** The ready-made strategy last applied ('' = none); the UI shows "modified" once settings differ. */
   strategy: string;
   /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
@@ -187,6 +189,7 @@ export const DEFAULT_CONFIG: Config = {
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
   trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
   strategy: '',
+  paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
@@ -232,6 +235,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'execution.jitoTipLamports': [0, 10_000_000, 'Jito tip', (v) => `${v / 1e9} SOL`],
   'monitor.pollIntervalSec': [1, 300, 'Backup check interval'],
   'monitor.exitCheckIntervalSec': [5, 3_600, 'Stop-loss check interval'],
+  'paper.startSol': [0.1, 100_000, 'Paper wallet start'],
   'trial.winsToStepUp': [1, 50, 'Profitable copies to step up'],
   'trial.pauseAfterLosses': [0, 50, 'Pause a wallet after losses in a row'],
   'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],

@@ -171,6 +171,35 @@ export function walletLifecycle(w: { trialStage?: 0 | 1 }, pnls: number[], t: { 
 }
 
 // ---------------------------------------------------------------------------
+// Paper wallet
+// ---------------------------------------------------------------------------
+
+/** SOL free to spend in the paper wallet: what it started with, plus closed profits, minus what's in open positions. */
+export const paperFreeSol = (startSol: number, realizedPnlSol: number, openCostSol: number) => startSol + realizedPnlSol - openCostSol;
+
+/**
+ * Pick wallets for a quick paper experiment from recent "caught the move" buyers:
+ * wallets seen on the most tokens first, then the biggest gain.
+ */
+export function experimentPicks(caught: Map<string, { tokens: string[]; bestGainPct: number }>, skip: Set<string>, n = 3) {
+  const ranked = [...caught.entries()]
+    .filter(([w]) => !skip.has(w))
+    .sort((a, b) => b[1].tokens.length - a[1].tokens.length || b[1].bestGainPct - a[1].bestGainPct);
+  // Spread the picks over different tokens: skip a trader whose tokens are all already covered,
+  // then fill any empty places from the rest.
+  const picked: typeof ranked = [];
+  const covered = new Set<string>();
+  for (const e of ranked) {
+    if (picked.length >= n) break;
+    if (e[1].tokens.every((t) => covered.has(t))) continue;
+    picked.push(e);
+    e[1].tokens.forEach((t) => covered.add(t));
+  }
+  for (const e of ranked) if (picked.length < n && !picked.includes(e)) picked.push(e);
+  return picked.map(([wallet, v]) => ({ wallet, ...v }));
+}
+
+// ---------------------------------------------------------------------------
 // Wallet health check
 // ---------------------------------------------------------------------------
 

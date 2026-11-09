@@ -10,7 +10,7 @@ import { getHolderStats, HolderStats } from './solscan';
 import { hasSecret, onRpcSwitch, rpcUrl } from './env';
 import { FastStream, heliusWsUrl } from './stream';
 import type { RawTx } from './util';
-import { trialFactor, walletLifecycle } from './rules';
+import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
 import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
@@ -288,6 +288,10 @@ export class BotEngine extends EventEmitter {
     sol *= (w?.sizeMultiplier ?? 1) * trialFactor(w?.trialStage);
     sol = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol));
     if (exposure(state) + sol > r.maxTotalExposureSol) return skip('max total exposure reached');
+    if (cfg.mode === 'paper') {
+      const free = paperFreeSol(cfg.paper.startSol, state.realizedPnlSol, exposure(state));
+      if (free < sol) return skip(`paper wallet has only ${Math.max(0, free).toFixed(3)} SOL left (reset it on the Dashboard)`);
+    }
     if (w && w.maxExposureSol > 0) {
       const used = walletExposureSol(Object.values(state.positions), w.address);
       if (used + sol > w.maxExposureSol) return skip(`${w.label}'s budget is used up (${used.toFixed(3)} of ${w.maxExposureSol} SOL)`);
@@ -605,6 +609,7 @@ export class BotEngine extends EventEmitter {
       unrealizedPnlSol: unrealized,
       exposureSol: exposure(this.state),
       positions,
+      paper: this.cfg.mode === 'paper' ? { startSol: this.cfg.paper.startSol, freeSol: paperFreeSol(this.cfg.paper.startSol, this.state.realizedPnlSol, exposure(this.state)) } : null,
       guard: { blocked: buyBlockReason(this.guard, this.cfg.risk, Date.now()), dayPnlSol: this.guard.dayPnlSol, lossStreak: this.guard.lossStreak },
       wallet: this.kp ? { address: this.kp.publicKey.toBase58(), balance: this.walletBalance } : null,
     };

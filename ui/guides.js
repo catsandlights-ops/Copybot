@@ -36,6 +36,8 @@ window.GUIDES = [
 </ul>
 <h3>Also new</h3>
 <ul>
+<li><b>One-press paper experiment:</b> press <b>Start bot</b> with no wallets in paper mode and Copybot picks 3 traders who just caught moves on different tokens, and starts copying them with a pretend <b>10 SOL paper wallet</b>. Nothing is spent.</li>
+<li><b>Paper wallet:</b> the Dashboard shows your paper balance; paper buys stop when it runs out, and <b>Reset</b> starts a fresh experiment (old results are kept in the data folder).</li>
 <li><b>Profit chart</b> on the Dashboard: your real results over 24 hours, 7 days, 30 days or all time.</li>
 </ul>
 <p class="tip">Start with <b>Check my wallets</b>. If a wallet is losing you money, no strategy will fix it: pause it and let the scout find a better one.</p>`,
@@ -113,7 +115,7 @@ window.GUIDES = [
 <li><b>Add a fast connection.</b> Settings → Connection → paste a free Helius RPC link. See <a href="#" data-guide="rpc">Connect a fast RPC</a>. The free public connection misses trades.</li>
 <li><b>Find wallets worth copying.</b> Use <b>Find wallets</b> or the top traders in <b>Markets</b>, then check each one's record with <b>Analyze</b>. See <a href="#" data-guide="finding-wallets">Finding wallets worth copying</a>.</li>
 <li><b>Add 2–3 wallets</b> on the Wallets page. Spreading across a few traders means one bad week doesn't sink you.</li>
-<li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices but never spends money.</li>
+<li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices, using a pretend 10 SOL wallet, and never spends money. No wallets yet? Press Start anyway and Copybot picks a few active traders for a quick experiment.</li>
 <li><b>Review after a few days.</b> The Wallets scoreboard shows which wallets actually made <i>you</i> money. Pause the ones that didn't.</li>
 </ol>
 <p class="tip">Only go live after paper mode has been profitable for a while, and only with money you can afford to lose. See <a href="#" data-guide="going-live">Going live safely</a>.</p>`,

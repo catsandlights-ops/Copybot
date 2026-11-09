@@ -23,7 +23,7 @@ import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
 import * as markets from './markets';
 import { getSolUsd } from './market';
-import { healthVerdict, marketSkipReason, median, walletRecords } from './rules';
+import { experimentPicks, healthVerdict, marketSkipReason, median, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
@@ -148,7 +148,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare' | 'health';
+  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare' | 'health' | 'quickstart';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -770,6 +770,67 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
       ui: uiPrefs,
     });
+  }
+
+  if (route === 'POST /api/jobs/quickstart') {
+    if (engine.cfg.mode !== 'paper') throw new HttpError(400, 'Quick experiments only run in paper mode.');
+    if (engine.running) throw new HttpError(409, 'The bot is already running.');
+    if (jobs.some((j) => j.kind === 'quickstart' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'Already setting up an experiment.');
+    const job = addJob('quickstart', {}, async (progress) => {
+      progress('Looking at tokens that are moving right now…');
+      const tokens = pickTokens(await markets.scoutPools(), Date.now(), 6, new Set());
+      if (!tokens.length) throw new Error('No tokens are moving enough right now. Try again in a while, or add wallets yourself.');
+      const caught = new Map<string, { tokens: string[]; bestGainPct: number }>();
+      for (const [i, t] of tokens.entries()) {
+        progress(`Finding traders who caught ${t.symbol}'s move (${i + 1}/${tokens.length})…`);
+        const trades = await markets.poolTrades(t.pool, 300).catch(() => []);
+        for (const [w, gain] of pumpBuyers(trades, t.priceUsd, 40)) {
+          const c = caught.get(w) ?? { tokens: [], bestGainPct: 0 };
+          c.tokens.push(t.symbol);
+          c.bestGainPct = Math.max(c.bestGainPct, gain);
+          caught.set(w, c);
+        }
+      }
+      const picks = experimentPicks(caught, new Set(engine.cfg.wallets.map((w) => w.address)), 3);
+      if (!picks.length) throw new Error("Couldn't find active traders right now. Try again in a while, or use Find wallets.");
+      if (engine.cfg.mode !== 'paper') throw new Error('Switched to live mode, so the experiment was cancelled.');
+      progress('Starting the bot in paper mode…');
+      const next = structuredClone(engine.cfg);
+      for (const p of picks) next.wallets.push({ address: p.wallet, label: `experiment-${p.wallet.slice(0, 4)}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
+      const clean = sanitizeConfig(next, false);
+      trialAndResume(clean);
+      await applyChange(() => saveConfig(clean));
+      if (!engine.running) await engine.start();
+      engine.log(`Paper experiment started: copying ${picks.length} trader${picks.length > 1 ? 's' : ''} who caught recent moves (${picks.map((p) => p.tokens.join('/')).join(', ')}).`, 'system');
+      return { added: picks };
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/paper/reset') {
+    if (engine.cfg.mode !== 'paper') throw new HttpError(400, 'Switch to paper mode to reset paper results.');
+    const stamp = Date.now();
+    await applyChange(() => {
+      fs.mkdirSync('data', { recursive: true });
+      // Keep a copy, then start fresh: paper positions, paper P&L and paper trades.
+      if (fs.existsSync('data/state-paper.json')) fs.renameSync('data/state-paper.json', `data/state-paper.reset-${stamp}.json`);
+      if (fs.existsSync('data/trades.jsonl')) {
+        const lines = fs.readFileSync('data/trades.jsonl', 'utf8').split('\n').filter(Boolean);
+        const isPaper = (l: string) => {
+          try {
+            return JSON.parse(l).mode === 'paper';
+          } catch {
+            return false;
+          }
+        };
+        fs.writeFileSync(`data/trades-paper.reset-${stamp}.jsonl`, lines.filter(isPaper).join('\n') + '\n');
+        fs.writeFileSync('data/trades.jsonl.tmp', lines.filter((l) => !isPaper(l)).map((l) => l + '\n').join(''));
+        fs.renameSync('data/trades.jsonl.tmp', 'data/trades.jsonl');
+      }
+    });
+    engine.log(`Paper results reset: the paper wallet is back to ${engine.cfg.paper.startSol} SOL. The old results were kept in the data folder.`, 'system');
+    broadcast('trades-reset', {});
+    return send(res, 200, { ok: true, status: engine.snapshot() });
   }
 
   if (route === 'POST /api/start') {
