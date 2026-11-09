@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
 import { isAddress, sanitizeConfig, saveConfig, SCANNER_SOURCE } from './config';
 import { coinSignals, type CoinSignal } from './scanner';
+import * as remote from './remote';
+import QRCode from 'qrcode';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { readSecret } from './env';
 import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
@@ -782,6 +784,188 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
 }
 
+// ---------- phone access (a separate door; see remote.ts) ----------
+let remoteCfg = remote.loadRemote();
+const pairing = new remote.Pairing();
+let remoteServer: http.Server | null = null;
+let remoteError: string | null = null;
+const PHONE_FILE = () => path.join(path.dirname(UI_FILE), 'phone.html');
+const PHONE_HEADERS = {
+  ...SECURITY_HEADERS,
+  'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: 'self'; manifest-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+};
+const PHONE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#7c3aed"/><path d="M18 40c8-20 22-22 30-24-2 8-4 22-24 30-3 1-6-2-6-6z" fill="#a8e07a"/><path d="M22 44l14-14" stroke="#3f7a3a" stroke-width="4" stroke-linecap="round"/></svg>`;
+const PHONE_MANIFEST = JSON.stringify({ name: 'Copybot', short_name: 'Copybot', start_url: '/', display: 'standalone', background_color: '#0f0b1e', theme_color: '#7c3aed', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] });
+
+function remoteView() {
+  return {
+    enabled: remoteCfg.enabled,
+    port: remoteCfg.port,
+    tailscaleOnly: remoteCfg.tailscaleOnly,
+    listening: !!remoteServer?.listening,
+    error: remoteError,
+    addresses: remote.localAddresses(),
+    devices: remoteCfg.devices.map(({ hash: _h, ...d }) => d),
+  };
+}
+
+/** Open or close the phone door to match the settings. */
+async function applyRemote() {
+  if (remoteServer) {
+    const s = remoteServer;
+    remoteServer = null;
+    s.closeAllConnections?.();
+    await new Promise<void>((r) => s.close(() => r()));
+  }
+  remoteError = null;
+  if (!remoteCfg.enabled) return;
+  const s = http.createServer((req, res) => handleRemoteSafe(req, res));
+  s.requestTimeout = 30_000;
+  await new Promise<void>((resolve) => {
+    s.once('error', (e: any) => {
+      remoteError = e.code === 'EADDRINUSE' ? `Port ${remoteCfg.port} is already in use by another program. Pick another port.` : `Couldn't open phone access: ${e.message}`;
+      engine.log(remoteError, 'warn');
+      resolve();
+    });
+    s.listen(remoteCfg.port, '0.0.0.0', () => {
+      remoteServer = s;
+      engine.log(`Phone access is on (port ${remoteCfg.port}${remoteCfg.tailscaleOnly ? ', Tailscale only' : ''}).`, 'system');
+      resolve();
+    });
+  });
+}
+
+let lastSeenSave = 0;
+async function handleRemoteSafe(req: http.IncomingMessage, res: http.ServerResponse) {
+  try {
+    // Only the home network and Tailscale: never a public internet address.
+    if (!remote.peerAllowed(req.socket.remoteAddress, remoteCfg.tailscaleOnly)) {
+      res.writeHead(403);
+      return res.end();
+    }
+    await handleRemote(req, res);
+  } catch (e) {
+    if (res.headersSent) return;
+    send(res, e instanceof HttpError ? e.code : 500, { error: e instanceof HttpError ? e.message : 'Something went wrong.' });
+  }
+}
+
+async function handleRemote(req: http.IncomingMessage, res: http.ServerResponse) {
+  const url = new URL(req.url || '/', 'http://phone');
+  const route = `${req.method} ${url.pathname}`;
+  if (route === 'GET /') {
+    res.writeHead(200, { ...PHONE_HEADERS, 'content-type': 'text/html; charset=utf-8' });
+    return res.end(fs.readFileSync(PHONE_FILE()));
+  }
+  if (route === 'GET /icon.svg') {
+    res.writeHead(200, { ...PHONE_HEADERS, 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
+    return res.end(PHONE_ICON);
+  }
+  if (route === 'GET /manifest.webmanifest') {
+    res.writeHead(200, { ...PHONE_HEADERS, 'content-type': 'application/manifest+json' });
+    return res.end(PHONE_MANIFEST);
+  }
+  if (route === 'POST /r/pair') {
+    const b = await readBody(req);
+    const r = pairing.redeem(b.code, Date.now());
+    if (r === 'locked') throw new HttpError(429, 'Too many wrong codes. Wait a minute and scan a new QR code.');
+    if (r === 'bad') throw new HttpError(400, 'This pairing code is wrong or has expired. Make a new QR code on the computer.');
+    let added;
+    try {
+      added = remote.addDevice(remoteCfg, b.name, Date.now());
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    remote.saveRemote(remoteCfg);
+    engine.log(`Phone paired: ${added.device.name}.`, 'system');
+    broadcast('remote', { ...remoteView(), paired: added.device.name });
+    return send(res, 200, { key: added.key, name: added.device.name });
+  }
+  if (!url.pathname.startsWith('/r/')) return send(res, 404, { error: 'not found' });
+
+  const device = remote.findDevice(remoteCfg, req.headers['x-copybot-device'] as string | undefined);
+  if (!device) return send(res, 401, { error: 'This phone is not paired (or was removed). Pair it again from Copybot on your computer: Settings → Phone access.' });
+  device.lastSeen = Date.now();
+  if (Date.now() - lastSeenSave > 5 * 60_000) {
+    lastSeenSave = Date.now();
+    remote.saveRemote(remoteCfg);
+  }
+  const from = (what: string) => engine.log(`From ${device.name}: ${what}`, 'system');
+
+  if (route === 'GET /r/state') return send(res, 200, phoneState());
+  if (route === 'POST /r/start') {
+    await engine.start().catch((e) => {
+      throw new HttpError(400, e.message);
+    });
+    from(`started the bot (${engine.cfg.mode} mode)`);
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/stop') {
+    await engine.stop();
+    from('stopped the bot');
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/sell') {
+    const b = await readBody(req);
+    if (!isAddress(b.mint) || !engine.state.positions[b.mint]) throw new HttpError(400, 'No open position for that token');
+    const fraction = b.fraction === 0.5 ? 0.5 : 1;
+    if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
+    from(`sold ${fraction === 1 ? 'all' : 'half'} of ${b.mint.slice(0, 4)}…${b.mint.slice(-4)}`);
+    await engine.manualSell(b.mint, fraction);
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/resume') {
+    engine.resumeBuying();
+    from('resumed buying for today');
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/scanner') {
+    const b = await readBody(req);
+    const next = structuredClone(engine.cfg);
+    for (const k of ['findTraders', 'tradeCoins'] as const) if (typeof b[k] === 'boolean') next.scanner[k] = b[k];
+    trialAndResume(next);
+    await applyChange(() => saveConfig(next));
+    from(`market scanner: find traders ${next.scanner.findTraders ? 'on' : 'off'}, trade coins ${next.scanner.tradeCoins ? 'on' : 'off'}`);
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/unpair') {
+    remoteCfg.devices = remoteCfg.devices.filter((d) => d.id !== device.id);
+    remote.saveRemote(remoteCfg);
+    engine.log(`${device.name} unpaired itself.`, 'system');
+    broadcast('remote', remoteView());
+    return send(res, 200, { ok: true });
+  }
+  return send(res, 404, { error: 'not found' });
+}
+
+/** What the phone sees: no keys, no wallet addresses, no settings beyond the scanner switches. */
+function phoneState() {
+  const s = engine.snapshot();
+  const sc = engine.cfg.scanner;
+  const scan = scannerView();
+  return {
+    version: process.env.COPYBOT_VERSION ?? null,
+    running: s.running,
+    startedAt: s.startedAt,
+    mode: s.mode,
+    realizedPnlSol: s.realizedPnlSol,
+    unrealizedPnlSol: s.unrealizedPnlSol,
+    exposureSol: s.exposureSol,
+    maxExposureSol: engine.cfg.risk.maxTotalExposureSol,
+    paper: s.paper,
+    balance: s.wallet?.balance ?? null,
+    guard: s.guard,
+    wallets: engine.cfg.wallets.filter((w) => w.enabled).length,
+    positions: s.positions.map((p: any) => ({ mint: p.mint, from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt })),
+    logs: engine.logs.slice(-40).map((l) => ({ t: l.t, level: l.level, msg: l.msg })),
+    trades: readTrades()
+      .filter((t: any) => t.mode === s.mode)
+      .slice(0, 20)
+      .map((t: any) => ({ t: t.t, side: t.side, mint: t.mint, sol: t.sol, pnl: t.pnl ?? null, reason: t.reason ?? null })),
+    scanner: { findTraders: sc.findTraders, tradeCoins: sc.tradeCoins, record: scan.record, signals: scan.signals.slice(0, 3).map((x) => ({ symbol: x.symbol, why: x.why })) },
+  };
+}
+
 // ---------- routes ----------
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url || '/', 'http://localhost');
@@ -923,6 +1107,48 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     engine.log(`Paper results reset: the paper wallet is back to ${engine.cfg.paper.startSol} SOL. The old results were kept in the data folder.`, 'system');
     broadcast('trades-reset', {});
     return send(res, 200, { ok: true, status: engine.snapshot() });
+  }
+
+  // ---------- phone access (desktop side) ----------
+  if (route === 'GET /api/remote') return send(res, 200, remoteView());
+  if (route === 'PUT /api/remote') {
+    const b = await readBody(req);
+    if (b.port !== undefined && !remote.validPort(b.port)) throw new HttpError(400, 'Port must be a whole number between 1024 and 65535');
+    const before = JSON.stringify([remoteCfg.enabled, remoteCfg.port, remoteCfg.tailscaleOnly]);
+    if (typeof b.enabled === 'boolean') remoteCfg.enabled = b.enabled;
+    if (typeof b.tailscaleOnly === 'boolean') remoteCfg.tailscaleOnly = b.tailscaleOnly;
+    if (b.port !== undefined) remoteCfg.port = b.port;
+    remote.saveRemote(remoteCfg);
+    if (JSON.stringify([remoteCfg.enabled, remoteCfg.port, remoteCfg.tailscaleOnly]) !== before) {
+      if (!remoteCfg.enabled) pairing.cancelAll();
+      await applyRemote();
+      if (!remoteCfg.enabled) engine.log('Phone access is off.', 'system');
+    }
+    return send(res, 200, remoteView());
+  }
+  if (route === 'POST /api/remote/pair') {
+    if (!remoteServer?.listening) throw new HttpError(400, 'Turn phone access on first.');
+    if (remoteCfg.devices.length >= remote.MAX_DEVICES) throw new HttpError(400, `At most ${remote.MAX_DEVICES} paired devices. Remove one first.`);
+    const { code, expiresAt } = pairing.create(Date.now());
+    const a = remote.localAddresses();
+    const hosts = [...a.tailscale.map((h) => ({ via: 'tailscale', h })), ...(remoteCfg.tailscaleOnly ? [] : a.lan.map((h) => ({ via: 'wifi', h })))];
+    if (!hosts.length) throw new HttpError(400, remoteCfg.tailscaleOnly ? "Tailscale isn't running on this computer. Open Tailscale and sign in, then try again." : "This computer isn't on a network. Connect to Wi-Fi (or start Tailscale) and try again.");
+    const links = await Promise.all(
+      hosts.slice(0, 4).map(async ({ via, h }) => {
+        const link = `http://${h}:${remoteCfg.port}/#pair=${code}`;
+        return { via, host: h, url: link, qr: await QRCode.toString(link, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) };
+      }),
+    );
+    return send(res, 200, { links, expiresAt });
+  }
+  if (route === 'DELETE /api/remote/device') {
+    const id = url.searchParams.get('id');
+    const d = remoteCfg.devices.find((x) => x.id === id);
+    if (!d) throw new HttpError(404, 'No such device');
+    remoteCfg.devices = remoteCfg.devices.filter((x) => x.id !== id);
+    remote.saveRemote(remoteCfg);
+    engine.log(`Removed ${d.name} from phone access.`, 'system');
+    return send(res, 200, remoteView());
   }
 
   if (route === 'POST /api/start') {
@@ -1359,6 +1585,7 @@ export function startServer(port = PORT, openBrowser = true): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, HOST, () => {
+      applyRemote().catch(() => {});
       const actual = (server.address() as { port: number }).port;
       const url = `http://localhost:${actual}/?t=${TOKEN}`;
       if (!process.env.COPYBOT_DESKTOP) console.log(`\n  Copybot is running. If the browser didn't open, go to:\n  ${url}\n  (keep this window open; press Ctrl+C to quit)\n`);

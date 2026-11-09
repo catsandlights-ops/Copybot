@@ -2038,6 +2038,8 @@ function renderSettings(el) {
         <div class="card-b row" style="justify-content:space-between"><span id="upd-text">${updateText()}</span>
           <span class="row">${S.app.update.state === 'ready' ? '<button class="btn primary" id="upd-install2">Restart &amp; update</button>' : ''}<button class="btn" id="upd-check" ${S.app.update.state === 'disabled' ? 'disabled' : ''}>Check for updates</button></span></div></div>
 
+      <div class="card" id="remote-card">${remoteCardHtml()}</div>
+
       <div class="card"><div class="card-h"><h2>Trading mode</h2></div><div class="card-b row" style="justify-content:space-between">
         <div style="max-width:560px" class="muted">${live ? '<b style="color:var(--red)">Live:</b> the bot spends real SOL from your trading wallet.' : '<b style="color:var(--text)">Paper:</b> trades are simulated with real prices. Paper and live positions are tracked separately.'}</div>
         <div class="seg" id="mode-seg"><button data-m="paper" class="${!live ? 'on' : ''}">Paper</button><button data-m="live" class="${live ? 'on live' : ''}">Live</button></div>
@@ -2077,6 +2079,7 @@ function renderSettings(el) {
     </div>
     <div class="savebar" id="savebar" style="display:${S.dirty ? 'flex' : 'none'}"><span>You have unsaved changes</span><span class="spacer"></span><button class="btn sm" id="s-reset">Discard</button><button class="btn sm primary" id="s-save">Save settings</button></div>`;
 
+  bindRemote();
   el.querySelectorAll('[data-k]').forEach((i) => (i.oninput = i.onchange = () => { S.dirty = true; $('#savebar').style.display = 'flex'; }));
   $('#s-reset').onclick = () => { S.dirty = false; render(); };
   $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));
@@ -2112,6 +2115,72 @@ function renderSettings(el) {
     if (r) { S.connection = r; render(); }
   };
 }
+// ----- phone access -----
+function loadRemote() { api('GET', '/api/remote').then((r) => { S.remote = r; paintRemote(); }).catch(() => {}); }
+function paintRemote() { const el = $('#remote-card'); if (el) { el.innerHTML = remoteCardHtml(); bindRemote(); } }
+function remoteCardHtml() {
+  const r = S.remote;
+  const head = `<div class="card-h"><div><h2>Phone access</h2><div class="muted" style="font-size:12.5px">Check on Copybot and control it from your phone: profit, positions and activity; start and stop; sell a position; turn the scanner on and off. Settings, live mode, keys and wallets stay on this computer. <a href="#" data-guide="phone">How it works →</a></div></div><span class="spacer"></span>${r ? `<label class="switch" title="Phone access on/off"><input type="checkbox" id="rm-on" ${r.enabled ? 'checked' : ''}><i></i></label>` : ''}</div>`;
+  if (!r) { setTimeout(loadRemote, 0); return head + '<div class="card-b muted">Loading…</div>'; }
+  const ts = r.addresses.tailscale[0];
+  const status = !r.enabled ? '<span class="tag paper">Off</span>'
+    : r.error ? `<span class="tag sell">Problem</span><span class="neg" style="font-size:13px">${esc(r.error)}</span>`
+    : r.listening ? `<span class="tag buy">On</span><span class="muted" style="font-size:13px">Port ${r.port}${r.tailscaleOnly ? ' · Tailscale only' : ' · home Wi-Fi and Tailscale'}</span>` : '<span class="tag paper">Starting…</span>';
+  const dev = (d) => `<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px solid var(--border)"><span><b>${esc(d.name)}</b> <span class="muted" style="font-size:12.5px">paired ${dateTime(d.createdAt)} · last used ${ago(d.lastSeen)} ago</span></span><button class="btn sm" data-rm-dev="${esc(d.id)}">Remove</button></div>`;
+  return head + `<div class="card-b stack">
+    <div class="row" style="gap:8px">${status}</div>
+    <ol class="steps" style="margin:0">
+      <li><b>Install Tailscale</b> on this computer and on your phone (free, <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>), and sign in with the <b>same account</b> on both. It's a private, encrypted link between your own devices, so your phone can reach Copybot from anywhere and nobody else can. ${ts ? `<span class="pos">✓ Tailscale is running on this computer (${esc(ts)}).</span>` : '<span class="muted">Not detected on this computer yet.</span>'}</li>
+      <li>Turn phone access on (top right).${r.enabled ? ' Windows may ask whether to allow Copybot on networks: choose <b>Allow</b> (private networks).' : ''}</li>
+      <li>Press <b>Pair a phone</b> and scan the QR code with your phone's camera. Then use <b>Add to Home Screen</b> to get a Copybot icon.</li>
+    </ol>
+    <div class="row"><button class="btn primary" id="rm-pair" ${r.listening ? '' : 'disabled'}>Pair a phone</button>
+      <label class="row muted" style="gap:6px;font-size:12.5px"><input type="checkbox" id="rm-tsonly" ${r.tailscaleOnly ? 'checked' : ''}> Tailscale only (ignore home Wi-Fi)</label>
+      <label class="row muted" style="gap:6px;font-size:12.5px">Port <input class="input" id="rm-port" type="number" min="1024" max="65535" value="${r.port}" style="width:90px;height:30px"></label></div>
+    <div><div class="muted" style="font-size:12.5px;margin-bottom:4px">Paired phones (${r.devices.length} of 5)</div>${r.devices.map(dev).join('') || '<div class="muted" style="font-size:13px">None yet.</div>'}</div>
+  </div>`;
+}
+function bindRemote() {
+  const put = async (body, ok) => { const r = await act(() => api('PUT', '/api/remote', body), ok); if (r) S.remote = r; paintRemote(); };
+  const on = $('#rm-on'); if (on) on.onchange = (e) => put({ enabled: e.target.checked }, e.target.checked ? 'Phone access on' : 'Phone access off');
+  const tso = $('#rm-tsonly'); if (tso) tso.onchange = (e) => put({ tailscaleOnly: e.target.checked }, 'Saved');
+  const port = $('#rm-port'); if (port) port.onchange = (e) => put({ port: Number(e.target.value) }, 'Port changed');
+  const pair = $('#rm-pair'); if (pair) pair.onclick = pairPhone;
+  document.querySelectorAll('[data-rm-dev]').forEach((b) => (b.onclick = async () => {
+    if (!(await confirmModal({ title: 'Remove this phone?', body: '<p>It will lose access right away. You can pair it again any time.</p>', confirm: 'Remove', danger: true }))) return;
+    const r = await act(() => api('DELETE', '/api/remote/device?id=' + encodeURIComponent(b.dataset.rmDev)), 'Phone removed');
+    if (r) { S.remote = r; paintRemote(); }
+  }));
+}
+async function pairPhone() {
+  const p = await act(() => api('POST', '/api/remote/pair'));
+  if (!p) return;
+  let pick = 0;
+  const label = (l) => (l.via === 'tailscale' ? 'Tailscale (anywhere)' : 'Home Wi-Fi');
+  const draw = () => {
+    const l = p.links[pick];
+    const left = Math.max(0, Math.round((p.expiresAt - Date.now()) / 1000));
+    $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:420px"><h3>Scan with your phone</h3>
+      ${p.links.length > 1 ? `<div class="seg" style="margin-bottom:10px">${p.links.map((x, i) => `<button data-pick="${i}" class="${i === pick ? 'on' : ''}">${label(x)}${p.links.filter((y) => y.via === x.via).length > 1 ? ' ' + esc(x.host) : ''}</button>`).join('')}</div>` : ''}
+      <div style="background:#fff;padding:10px;border-radius:12px;width:240px;margin:0 auto">${l.qr}</div>
+      <p class="muted" style="font-size:12.5px;text-align:center">${l.via === 'tailscale' ? 'Tailscale must be on, on your phone too.' : 'Your phone must be on the same Wi-Fi as this computer.'} Code works once, for <span id="pair-left">${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</span>.</p>
+      <details><summary class="muted" style="cursor:pointer;font-size:12.5px">Can't scan? Open this link on your phone</summary><div class="mono" style="font-size:11.5px;word-break:break-all;margin-top:6px">${esc(l.url)}</div></details>
+      <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" data-a="close">Close</button></div></div></div>`;
+    $('#modal-root [data-a=close]').onclick = close;
+    $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) close(); };
+    document.querySelectorAll('[data-pick]').forEach((b) => (b.onclick = () => { pick = Number(b.dataset.pick); draw(); }));
+  };
+  const timer = setInterval(() => {
+    const left = Math.round((p.expiresAt - Date.now()) / 1000);
+    const el = $('#pair-left');
+    if (left <= 0) { close(); toast('The pairing code expired. Press "Pair a phone" for a new one.', true); }
+    else if (el) el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  }, 1000);
+  function close() { clearInterval(timer); S.pairClose = null; $('#modal-root').innerHTML = ''; }
+  S.pairClose = close;
+  draw();
+}
+
 function alertsSetupHtml() {
   const c = S.connection;
   const on = (c.hasTelegram && c.telegramChatId) || c.hasDiscord;
@@ -2237,6 +2306,10 @@ function connectEvents() {
   });
   es.addEventListener('connection', (e) => { S.connection = JSON.parse(e.data); renderChrome(); });
   es.addEventListener('scout', (e) => { S.scout = JSON.parse(e.data); });
+  es.addEventListener('remote', (e) => {
+    const r = JSON.parse(e.data); S.remote = r; paintRemote();
+    if (r.paired) { if (S.pairClose) S.pairClose(); toast(`Paired: ${r.paired}. You can control Copybot from it now.`); }
+  });
   es.addEventListener('scanner', (e) => { S.scanner = JSON.parse(e.data); renderChrome(); if (S.page === 'scanner' && !S.dirty) render(); });
   es.addEventListener('trades-reset', () => load());
   es.addEventListener('health', (e) => { S.health = JSON.parse(e.data); if (S.page === 'wallets') render(); });

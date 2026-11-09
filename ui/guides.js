@@ -10,6 +10,34 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'phone', cat: 'features', mins: 3, title: 'Control Copybot from your phone (Tailscale)',
+    teaser: 'Check profit and positions, start and stop, and sell from your phone, at home or anywhere.',
+    body: `
+<p>Copybot keeps running on your computer. Your phone gets a small Copybot screen that talks to it.</p>
+<h3>Set it up once</h3>
+<ol>
+<li><b>Install Tailscale</b> on your computer and on your phone from <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>. It's free. Sign in with the <b>same account</b> on both. Tailscale is a private, encrypted link between your own devices: your phone can reach your computer from anywhere, and nobody else can.</li>
+<li>In Copybot, go to <b>Settings → Phone access</b> and turn it on. If Windows asks whether to allow Copybot on networks, choose <b>Allow</b>.</li>
+<li>Press <b>Pair a phone</b> and scan the QR code with your phone's camera. Give the phone a name and press <b>Pair this phone</b>.</li>
+<li>In your phone's browser menu, choose <b>Add to Home Screen</b>. Now Copybot has its own icon.</li>
+</ol>
+<p>At home, your phone can also connect over the same Wi-Fi without Tailscale (pick <b>Home Wi-Fi</b> above the QR code). Away from home, keep Tailscale switched on, on the phone.</p>
+<h3>What the phone can do</h3>
+<ul>
+<li>See your profit, open positions, trades and live activity.</li>
+<li>Start and stop the bot, sell half or all of a position, and resume buying after the daily loss limit.</li>
+<li>Turn the market scanner's two switches on and off.</li>
+</ul>
+<p>It <b>can't</b> change settings, switch between paper and live, or see or change keys and wallets. Those stay on the computer, so a lost phone can't empty your wallet.</p>
+<h3>Staying safe</h3>
+<ul>
+<li>Each pairing QR code works <b>once</b> and only for 5 minutes. Don't share screenshots of it.</li>
+<li>Copybot only answers your home network and Tailscale. Even if your router were set up to expose it, it refuses connections from the open internet. For the strictest setup, tick <b>Tailscale only</b>.</li>
+<li>Lost a phone? Press <b>Remove</b> next to it in Settings → Phone access. It loses access immediately.</li>
+<li>Your computer has to be on, with Copybot open, for the phone to connect.</li>
+</ul>`,
+  },
+  {
     id: 'scanner', cat: 'features', mins: 4, title: 'The market scanner: finding traders and coins',
     teaser: 'Let Copybot look for opportunities while it runs: winning traders to copy, and rising coins to trade.',
     body: `
