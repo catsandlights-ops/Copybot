@@ -1519,6 +1519,8 @@ const FIELDS = [
   { title: 'Speed', desc: 'Faster fills cost a little more in fees.', fields: [
     { k: 'execution.priorityLevel', label: 'Transaction priority', type: 'select', options: [['medium', 'Normal'], ['high', 'High'], ['veryHigh', 'Very high']] },
     { k: 'execution.priorityFeeMaxLamports', label: 'Max priority fee per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9) },
+    { k: 'execution.jitoTipLamports', label: 'Jito tip per trade', unit: 'SOL', toView: (v) => v / 1e9, fromView: (v) => Math.round(v * 1e9), help: 'Live mode: pay validators running Jito a tip (instead of the priority fee) so your trade lands sooner. 0.0005–0.002 SOL is typical when it\'s busy. 0 = off. Tips only ever go to Jito\'s official tip accounts, capped at this amount.' },
+    { k: 'execution.fastStream', label: 'Fast trade detection (Helius)', type: 'toggle', help: () => `Gets the copied wallet\'s full transaction the moment it happens, instead of being told and then fetching it. Needs a Helius RPC with Enhanced WebSockets on your plan; otherwise Copybot uses the normal method automatically.${S.status?.stream ? ` <b>Status: ${esc(S.status.stream)}</b>` : ''}` },
     { k: 'monitor.pollIntervalSec', label: 'Backup check every', unit: 'sec', step: 1, help: 'Polling backup in case the live feed drops a trade.' },
     { k: 'monitor.exitCheckIntervalSec', label: 'Check stop-loss / take-profit every', unit: 'sec', step: 1 },
   ]},

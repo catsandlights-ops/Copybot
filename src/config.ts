@@ -87,7 +87,12 @@ export type Config = {
     rejectToken2022: boolean;
     blacklist: string[];
   };
-  execution: { priorityLevel: 'medium' | 'high' | 'veryHigh'; priorityFeeMaxLamports: number };
+  execution: {
+    priorityLevel: 'medium' | 'high' | 'veryHigh';
+    priorityFeeMaxLamports: number;
+    jitoTipLamports: number; // 0 = off; otherwise pay this Jito tip instead of a priority fee
+    fastStream: boolean; // Helius enhanced websocket for faster signals (needs a Helius RPC)
+  };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
   /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
   alerts: { trades: boolean; errors: boolean; guard: boolean; autopilot: boolean };
@@ -136,7 +141,7 @@ export const DEFAULT_CONFIG: Config = {
     rejectToken2022: false,
     blacklist: [],
   },
-  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000 },
+  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
@@ -180,6 +185,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'safety.slippageBps': [10, 5_000, 'Max slippage', (v) => `${v / 100}%`],
   'safety.maxRoundTripLossPct': [0.1, 100, 'Max buy-then-sell loss'],
   'execution.priorityFeeMaxLamports': [0, 50_000_000, 'Max priority fee', (v) => `${v / 1e9} SOL`],
+  'execution.jitoTipLamports': [0, 10_000_000, 'Jito tip', (v) => `${v / 1e9} SOL`],
   'monitor.pollIntervalSec': [1, 300, 'Backup check interval'],
   'monitor.exitCheckIntervalSec': [5, 3_600, 'Stop-loss check interval'],
   'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],
@@ -189,7 +195,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],

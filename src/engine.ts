@@ -7,7 +7,9 @@ import { quoteBuy, quoteSell } from './jupiter';
 import { checkToken } from './safety';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
-import { hasSecret, onRpcSwitch } from './env';
+import { hasSecret, onRpcSwitch, rpcUrl } from './env';
+import { FastStream, heliusWsUrl } from './stream';
+import type { RawTx } from './util';
 import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
@@ -43,6 +45,7 @@ export class BotEngine extends EventEmitter {
   private queue: Promise<void> = Promise.resolve();
   private lastRateWarn = 0;
   keyError: string | null = null;
+  private stream: FastStream | null = null;
 
   constructor() {
     super();
@@ -142,12 +145,23 @@ export class BotEngine extends EventEmitter {
     this.exitLoop(gen);
     this.balanceLoop(gen);
     this.aiLoop(gen);
+    const wsu = this.cfg.execution.fastStream ? heliusWsUrl(rpcUrl()) : null;
+    if (wsu) {
+      this.stream = new FastStream(wsu, wallets.map((w) => w.address), (tx) => this.onStreamTx(tx), (s, detail) => {
+        if (s === 'connected') this.log('Fast trade detection is on (Helius stream).', 'system');
+        if (s === 'unavailable') this.log(`Fast trade detection isn't available on your Helius plan (${detail}). Using the normal method.`, 'warn');
+        this.emit('status');
+      });
+      this.stream.start();
+    }
   }
 
   async stop() {
     if (!this.running) return;
     this.gen++;
     this.running = false;
+    this.stream?.stop();
+    this.stream = null;
     for (const id of this.subs) await this.conn.removeOnLogsListener(id).catch(() => {});
     this.subs = [];
     this.log('Bot stopped', 'system');
@@ -192,6 +206,23 @@ export class BotEngine extends EventEmitter {
       throw e;
     }
     if (!tx || !this.running) return;
+    this.onTx(tx, wallet);
+  }
+
+  /** A transaction from the fast stream: already complete, no fetch needed. */
+  private onStreamTx(tx: RawTx) {
+    if (!this.running || this.seen.has(tx.signature) || tx.meta?.err) return;
+    for (const w of this.cfg.wallets) {
+      if (!w.enabled || !tx.accountKeys.includes(w.address)) continue;
+      if (decodeSwap(tx, w.address)) {
+        this.remember(tx.signature);
+        this.onTx(tx, w.address);
+        return;
+      }
+    }
+  }
+
+  private onTx(tx: RawTx, wallet: string) {
     const swap = decodeSwap(tx, wallet);
     if (!swap) return;
     const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
@@ -528,6 +559,7 @@ export class BotEngine extends EventEmitter {
     return {
       running: this.running,
       startedAt: this.startedAt,
+      stream: !this.cfg.execution.fastStream ? null : !heliusWsUrl(rpcUrl()) ? 'needs a Helius RPC' : this.stream ? ({ connecting: 'connecting…', connected: 'on', unavailable: 'not on your Helius plan', reconnecting: 'reconnecting…', off: 'off' } as const)[this.stream.status] : 'starts with the bot',
       mode: this.cfg.mode,
       realizedPnlSol: this.state.realizedPnlSol,
       unrealizedPnlSol: unrealized,
