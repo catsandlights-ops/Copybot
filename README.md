@@ -37,6 +37,9 @@ Mac and Linux: build from source (see [Building it yourself](#building-it-yourse
 - **Stop-loss**, max open positions and max SOL in trades.
 - **Circuit breaker:** no new buys after a 0.3 SOL loss in a day, and a 60-minute pause after 4 losing trades in a row.
 - **Don't chase:** skips a copy if the price is already more than 15% above what the copied wallet paid.
+- **Rug protection:** sells everything at once if a token's liquidity drains 50% from its high, its value crashes 35% within 5 minutes, or sellers outnumber buyers 3 to 1.
+- **Exits per wallet:** give any wallet its own stop-loss, take-profits and trailing stop.
+- **Copy gap:** measures how much worse your fills are than the copied wallet's, per wallet, on your real trades.
 
 ### Safety checks before every buy
 - Skips tokens whose creator can **freeze** your tokens.
@@ -49,8 +52,16 @@ Mac and Linux: build from source (see [Building it yourself](#building-it-yourse
 - **Discover early buyers:** paste tokens that pumped; wallets that were early on several of them rank highest.
 - **Analyze:** a wallet's real on-chain record (win rate, profit, return, trades per day, hold time), with bot and "too fast to copy" warnings.
 - **Copy** good wallets in one click.
-- **Backtest:** replay up to 5 wallets' real trades with your current settings, with an adjustable copy-delay cost (you always buy higher and sell lower than they did) and fees. Shows total profit, win rate, worst dip, a profit chart, per-wallet results, skipped trades and every trade. Exits follow their sells; stop-loss and take-profit steps aren't replayed.
+- **Backtest:** replay up to 5 wallets' real trades with your current settings, with an adjustable copy-delay cost (you always buy higher and sell lower than they did) and fees. Shows total profit, win rate, worst dip, a profit chart, per-wallet results, skipped trades and every trade. Exits follow their sells, and your stop-loss, take-profits and trailing stop are replayed from GeckoTerminal price candles.
 - **Wallet scout** (*Find wallets for me*): Copybot picks tokens that pumped recently, finds their early buyers (plus DexCheck top traders), checks each wallet's real record, and **Claude picks the most suitable ones** and explains why (a rule-based ranking without Claude). With the autopilot managing wallets, it runs once a day and adds its picks, up to your maximum.
+
+### Alerts, speed and reliability
+- **Phone alerts** on Telegram or Discord: trades, problems, the circuit breaker and autopilot decisions, with rate limiting.
+- **Backup RPC** with automatic failover and switch-back.
+- **Jito tips** (live mode) so trades land sooner when the network is busy; tips can only go to Jito's official tip accounts, capped by you.
+- **Fast trade detection** with Helius Enhanced WebSockets, falling back automatically when your plan doesn't include it.
+- **CSV export** of your trades.
+- A short **setup guide** on first launch.
 
 ### Markets hub
 - SOL, BTC and ETH prices; **trending** and **new** Solana pools; token pages with **price charts**, buyers vs sellers and a filter verdict.
@@ -172,7 +183,7 @@ Everything is editable in the app's Settings page; the file is the same thing on
 | Setting | What it does |
 |---|---|
 | `mode` | `"paper"` (simulated) or `"live"` (real money) |
-| `wallets[]` | `address`, `label`, `enabled`, `sizeMultiplier`, `maxExposureSol` (0 = no budget) |
+| `wallets[]` | `address`, `label`, `enabled`, `sizeMultiplier`, `maxExposureSol` (0 = no budget), optional `exits` overrides |
 | `buy.sizing` | `"fixed"` = `fixedSol` every time; `"percent"` = `percentOfTarget`% of what they spent |
 | `buy.minSol` / `maxSol` / `minTargetBuySol` | size limits, and ignore their small test buys |
 | `sell.copySells` | sell the same share of your bag when they sell |
@@ -184,7 +195,9 @@ Everything is editable in the app's Settings page; the file is the same thing on
 | `exits.*` | `recoverCostAtPct`, `tp1AtPct`/`tp1SellPct`, `tp2AtPct`/`tp2SellPct`, `trailingAfterPct`/`trailingStopPct` |
 | `filters.*` | `minLiquidityUsd`, `maxTradePctOfLiquidity`, `minMarketCapUsd`, `maxMarketCapUsd`, `minTokenAgeMin`, `skipIfNoMarketData`, `maxTopHolderPct`, `maxTop10HoldersPct` |
 | `safety.*` | `slippageBps`, `maxRoundTripLossPct`, `rejectFreezeAuthority`, `rejectMintAuthority`, `rejectToken2022`, `blacklist` |
-| `execution.*` | `priorityLevel`, `priorityFeeMaxLamports` |
+| `execution.*` | `priorityLevel`, `priorityFeeMaxLamports`, `jitoTipLamports` (0 = off), `fastStream` |
+| `protect.*` | `liquidityDropPct`, `crashPct`, `crashWindowMin`, `maxSellBuyRatio` (rug protection) |
+| `alerts.*` | `trades`, `errors`, `guard`, `autopilot` (which events go to Telegram/Discord) |
 | `ai.*` | `enabled`, `decideBuys`, `reviewPositions`, `reviewEveryMin`, `manageWallets`, `walletReviewHours`, `maxWallets`, `scoutEveryHours`, `scoutMaxPicks`, `dailyBudgetUsd`, `guidance` |
 
 Set a number to 0 to turn that rule off.

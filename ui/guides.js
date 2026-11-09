@@ -10,8 +10,8 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
-    id: 'whats-new-06', cat: 'news', mins: 2, title: "What's new in Copybot 0.6",
-    teaser: 'Backtesting, the wallet scout, and a Solscan holder check that skips tokens a few wallets control.',
+    id: 'whats-new-06', cat: 'news', mins: 4, title: "What's new in Copybot 0.6",
+    teaser: 'The wallet scout, backtesting, rug protection, phone alerts, faster trades and much more.',
     body: `
 <p>Finding good wallets was the hardest part of copy trading. Now Copybot can do it for you.</p>
 <h3>The wallet scout</h3>
@@ -29,7 +29,26 @@ window.GUIDES = [
 <p>Add a Solscan API key (Settings → Connection) and Copybot checks who owns each token before buying. It skips tokens that one wallet, or a small group, controls. Claude sees the same numbers when it decides. Change the limits in Settings → Token filters.</p>
 <h3>With the autopilot</h3>
 <p>If the autopilot manages your wallets, the scout runs by itself once a day while the bot is running and <b>adds its picks to your copy list</b> (2 per search, never more than your maximum). Change this in Settings → Autopilot.</p>
-<p class="tip">Most wallets that catch one pump don't keep winning, so some searches find nothing good. That's the scout doing its job.</p>`,
+<p class="tip">Most wallets that catch one pump don't keep winning, so some searches find nothing good. That's the scout doing its job.</p>
+<h3>Protecting your trades</h3>
+<ul>
+<li><b>Rug protection</b> (Settings → Rug protection): sells everything at once if a token's liquidity drains, its price crashes within minutes, or sellers swamp buyers.</li>
+<li><b>Exits per wallet:</b> on the Wallets page, press <b>Exits</b> to give a wallet its own stop-loss and take-profits, e.g. tighter for a fast scalper.</li>
+<li><b>Backtests replay your exits too:</b> stop-loss, take-profits and trailing stop, using price history.</li>
+</ul>
+<h3>Knowing what's happening</h3>
+<ul>
+<li><b>Phone alerts</b> on Telegram or Discord for trades, problems, the circuit breaker and autopilot decisions (Settings → Phone alerts).</li>
+<li><b>Copy gap:</b> the Wallets page shows how much worse your price is than each wallet's, measured on your real trades. The Backtest can use your measured number.</li>
+<li><b>Export CSV</b> on the Trades page, for spreadsheets and taxes.</li>
+</ul>
+<h3>Speed and reliability</h3>
+<ul>
+<li><b>Backup RPC:</b> add a second RPC in Settings → Connection and Copybot switches over automatically if your main one fails.</li>
+<li><b>Jito tips</b> (Settings → Speed): in live mode, pay a small tip so trades land sooner when the network is busy.</li>
+<li><b>Fast trade detection</b> with a Helius RPC that includes Enhanced WebSockets: Copybot sees the copied trade without an extra lookup.</li>
+</ul>
+<p>New installs also get a short <b>setup guide</b> on first launch (you can run it again from Settings → Look).</p>`,
   },
   {
     id: 'whats-new-05', cat: 'news', mins: 3, title: "What's new in Copybot 0.5",
