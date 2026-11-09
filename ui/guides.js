@@ -10,6 +10,37 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'whats-new-07', cat: 'news', mins: 4, title: "What's new in Copybot 0.7",
+    teaser: 'Ready-made strategies, smarter wallet picking, a wallet check-up, better backtests and a profit chart.',
+    body: `
+<p>Copybot 0.7 is about trading smarter: picking better wallets, trading them the right way, and knowing which ones to drop.</p>
+<h3>Strategies</h3>
+<ul>
+<li><b>Five ready-made strategies</b> on the new <b>Strategies</b> page: Balanced, Sniper, Whale follower, Momentum and Conservative. Each shows exactly which settings it changes before you switch, and never touches your SOL per buy, limits or safety checks.</li>
+<li><b>A strategy per wallet:</b> press <b>Strategy</b> next to a wallet to give it its own, like Sniper for a fast flipper and Whale follower for a patient big buyer.</li>
+<li><b>Compare strategies:</b> replay the wallets you copy with all five side by side and use the winner. If every strategy loses money, Copybot tells you the wallet is the problem.</li>
+</ul>
+<h3>Picking and keeping good wallets</h3>
+<ul>
+<li><b>Check my wallets</b> (Wallets page): backtests each wallet you copy on its own and marks it <i>worth keeping</i>, <i>losing you money</i> or <i>too few trades</i>, with one-click pause.</li>
+<li><b>The wallet scout looks wider:</b> trending, new and top-volume tokens, different coins each search, and wallets that <b>caught a move</b> on busy tokens.</li>
+<li><b>The scout backtests before it picks:</b> a wallet is only picked if copying it with <i>your</i> settings would have made money, and it suggests a strategy for each pick.</li>
+<li><b>Trial period:</b> new wallets start at ¼ size and grow as they make you money. Any wallet pauses after 5 losing copies in a row (Settings → New wallets).</li>
+</ul>
+<h3>Better backtests</h3>
+<ul>
+<li><b>Backtest by date:</b> the last 24 hours, 3, 7 or 30 days, or your own dates.</li>
+<li><b>Find my best settings:</b> compares 16 stop-loss and take-profit setups on the same trades.</li>
+<li>Backtests now also replay <b>minimum token age</b> and <b>crash protection</b>.</li>
+<li><b>Much faster:</b> wallet history is saved on your computer, so checking the same wallet again only downloads what's new.</li>
+</ul>
+<h3>Also new</h3>
+<ul>
+<li><b>Profit chart</b> on the Dashboard: your real results over 24 hours, 7 days, 30 days or all time.</li>
+</ul>
+<p class="tip">Start with <b>Check my wallets</b>. If a wallet is losing you money, no strategy will fix it: pause it and let the scout find a better one.</p>`,
+  },
+  {
     id: 'whats-new-06', cat: 'news', mins: 4, title: "What's new in Copybot 0.6",
     teaser: 'The wallet scout, backtesting, rug protection, phone alerts, faster trades and much more.',
     body: `
@@ -47,20 +78,6 @@ window.GUIDES = [
 <li><b>Backup RPC:</b> add a second RPC in Settings → Connection and Copybot switches over automatically if your main one fails.</li>
 <li><b>Jito tips</b> (Settings → Speed): in live mode, pay a small tip so trades land sooner when the network is busy.</li>
 <li><b>Fast trade detection</b> with a Helius RPC that includes Enhanced WebSockets: Copybot sees the copied trade without an extra lookup.</li>
-</ul>
-<h3>Smarter wallet picking (0.6.1)</h3>
-<ul>
-<li><b>The scout looks wider:</b> trending, new and top-volume tokens, up to 6 per search, and different coins each time. It also finds wallets that <b>caught a move</b> on busy tokens.</li>
-<li><b>The scout backtests before it picks:</b> a wallet is only picked if copying it with <i>your</i> settings and copy delay would have made money.</li>
-<li><b>Backtest by date:</b> last 24 hours, 3, 7 or 30 days, or your own dates.</li>
-<li><b>Find my best settings</b> (Backtest page): compares 16 stop-loss and take-profit setups on the same trades and lets you use the winner.</li>
-<li><b>Trial period:</b> new wallets start at ¼ size and grow to full size as they make you money. Any wallet is paused after 5 losing copies in a row (Settings → New wallets).</li>
-<li><b>Strategies:</b> five ready-made trading styles (Balanced, Sniper, Whale follower, Momentum, Conservative) on the new Strategies page. Each shows exactly what it changes and never touches your SOL per buy, limits or safety checks.</li>
-<li><b>Backtest strategies:</b> pick a strategy on the Backtest page, or press <b>Compare strategies</b> to replay your wallets with all five and your current settings, ranked side by side. If every strategy loses, Copybot tells you the wallet is the problem.</li>
-<li><b>Strategy per wallet:</b> press <b>Strategy</b> next to a wallet to give it its own preset, like Sniper for a fast flipper. The wallet scout suggests one for each pick.</li>
-<li><b>Check my wallets</b> (Wallets page): backtests every wallet you copy on its own and marks each one worth keeping, losing you money, or too few trades, with one-click pause.</li>
-<li><b>Profit chart</b> on the Dashboard: your real results over 24 hours, 7 days, 30 days or all time.</li>
-<li><b>Faster:</b> wallet history is saved on your computer, so analyzing or backtesting the same wallet again is much quicker.</li>
 </ul>
 <p>New installs also get a short <b>setup guide</b> on first launch (you can run it again from Settings → Look).</p>`,
   },

@@ -241,4 +241,7 @@ test('healthVerdict', async () => {
   assert.equal(healthVerdict({ copied: 3, closed: 2, totalSol: 1 }), 'unclear');
   assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: 0.1 }), 'keep');
   assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: -0.1 }), 'losing');
+  // 642 of 1,500 transactions unreadable: no fair verdict, even with no copies seen.
+  assert.equal(healthVerdict({ copied: 0, closed: 0, totalSol: 0, read: 1500, unreadable: 642 }), 'unclear');
+  assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: 0.1, read: 100, unreadable: 10 }), 'keep');
 });

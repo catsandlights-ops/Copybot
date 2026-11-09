@@ -1120,7 +1120,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         d.cfg.wallets = d.cfg.wallets.map((x) => (x.address === w.address ? { ...x, enabled: true } : x));
         const r = runBacktest(d.swaps, d.cfg, d.opts, d.marks, d.prices);
         const copied = r.trades.filter((t) => t.side === 'buy').length;
-        rows.push({ address: w.address, label: w.label, verdict: healthVerdict({ copied, closed: r.closed, totalSol: r.totalSol }), totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, copied, unreadable: d.stats.failed, coveredFrom: d.truncated[0]?.oldestMs ?? null });
+        rows.push({ address: w.address, label: w.label, verdict: healthVerdict({ copied, closed: r.closed, totalSol: r.totalSol, read: d.stats.read, unreadable: d.stats.failed }), totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, copied, unreadable: d.stats.failed, coveredFrom: d.truncated[0]?.oldestMs ?? null });
       }
       lastHealth = { at: Date.now(), period: base.range!, delayPct, wallets: rows };
       fs.mkdirSync('data', { recursive: true });

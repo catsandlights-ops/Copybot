@@ -176,7 +176,9 @@ export function walletLifecycle(w: { trialStage?: 0 | 1 }, pnls: number[], t: { 
 
 export type HealthVerdict = 'keep' | 'losing' | 'unclear' | 'quiet';
 /** From one wallet's backtest with the user's settings: worth keeping, losing money, too few trades, or no trades. */
-export function healthVerdict(r: { copied: number; closed: number; totalSol: number }): HealthVerdict {
+export function healthVerdict(r: { copied: number; closed: number; totalSol: number; read?: number; unreadable?: number }): HealthVerdict {
+  // If a big part of the history couldn't be read, there's no fair verdict.
+  if (r.read && (r.unreadable ?? 0) > r.read * 0.3) return 'unclear';
   if (r.copied === 0) return 'quiet';
   if (r.closed < 3) return 'unclear';
   return r.totalSol > 0 ? 'keep' : 'losing';

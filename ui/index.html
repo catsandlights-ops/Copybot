@@ -222,9 +222,12 @@ button.wz-choice:hover { border-color: var(--accent); }
 .chip { display: inline-block; white-space: nowrap; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); margin: 1px 0; }
 .chip.done { background: var(--green-bg); color: var(--green); }
 .chip.trail { background: var(--amber-bg); color: var(--amber); }
-.input.wallet-num { width: 84px; min-width: 76px; height: 30px; text-align: right; flex: none; }
+.input.wallet-num { width: 68px; min-width: 60px; height: 30px; text-align: right; flex: none; padding: 0 8px; }
+.wallets-tbl th, .wallets-tbl td { padding-left: 8px; padding-right: 8px; }
+.wallets-tbl th:first-child, .wallets-tbl td:first-child { padding-left: 18px; }
+.wallets-tbl .note { font-size: 11px; }
 .wallet-row .note { white-space: nowrap; }
-.wallet-row .label-input { min-width: 120px; }
+.wallet-row .label-input { min-width: 104px; }
 
 /* forms */
 .field { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
@@ -739,7 +742,7 @@ function render() {
   ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
-    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-06">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
+    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-07">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
     $('#upd-dismiss').onclick = () => { S.updateNoticeDismissed = true; render(); };
   }
   const u = S.app.update;
@@ -950,7 +953,7 @@ function walletExitsModal(i) {
   };
 }
 function healthJob() { return S.jobs.find((j) => j.kind === 'health' && (j.status === 'queued' || j.status === 'running')); }
-const HEALTH_LABEL = { keep: ['good', '✅ Worth keeping'], losing: ['bad', '❌ Losing you money'], unclear: ['', '⚠️ Too few trades'], quiet: ['', '💤 No copies'] };
+const HEALTH_LABEL = { keep: ['good', '✅ Worth keeping'], losing: ['bad', '❌ Losing you money'], unclear: ['', '⚠️ Not enough to judge'], quiet: ['', '💤 No copies'] };
 function healthChip(addr) {
   const h = S.health?.wallets.find((x) => x.address === addr);
   if (!h) return '';
@@ -969,7 +972,7 @@ function healthCard() {
   return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Wallet check · ${dateFmt(h.period.from)} to ${dateFmt(h.period.to)}</h2>
       <div class="muted" style="font-size:12.5px">Each wallet backtested on its own with your settings and a ${(+h.delayPct).toFixed(1)}% copy delay. Checked ${ago(h.at)} ago.</div></div><span class="spacer"></span>
       ${losers.length > 1 ? `<button class="btn sm danger" id="health-pause-all">Pause all ${losers.length} losing</button>` : ''}</div>
-    <div class="card-b row" style="gap:8px;padding-top:0">${n('keep') ? `<span class="note good">${n('keep')} worth keeping</span>` : ''}${n('losing') ? `<span class="note bad">${n('losing')} losing money</span>` : ''}${n('unclear') ? `<span class="note">${n('unclear')} too few trades</span>` : ''}${n('quiet') ? `<span class="note">${n('quiet')} no copies</span>` : ''}</div>
+    <div class="card-b row" style="gap:8px;padding-top:0">${n('keep') ? `<span class="note good">${n('keep')} worth keeping</span>` : ''}${n('losing') ? `<span class="note bad">${n('losing')} losing money</span>` : ''}${n('unclear') ? `<span class="note">${n('unclear')} not enough to judge</span>` : ''}${n('quiet') ? `<span class="note">${n('quiet')} no copies</span>` : ''}</div>
     <div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th>Verdict</th><th class="r">Profit for you</th><th class="r">Win rate</th><th class="r">Copied buys</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function walletStats() {
@@ -1009,7 +1012,7 @@ function renderWallets(el) {
     <div class="card">
       <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm primary" id="health-go" ${healthJob() ? 'disabled' : ''}>${healthJob() ? 'Checking…' : 'Check my wallets'}</button> ` : ''}${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
       ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
-      <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
+      <div class="tbl-wrap"><table class="wallets-tbl"><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r" title="SOL limit for this wallet's open positions (0 = no limit)">Budget</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
           const held = S.status.positions.filter((p) => p.sources.includes(w.address)).length;
           const st = stats[w.address] || { sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [] };
@@ -1020,13 +1023,12 @@ function renderWallets(el) {
             <td><input class="label-input" data-label="${i}" value="${esc(w.label || '')}" placeholder="Add a nickname"></td>
             <td>${walletLink(w.address)}${healthChip(w.address)}${w.trialStage !== undefined ? `<div class="notes"><span class="note" title="New wallets start small. After ${S.config.trial.winsToStepUp} profitable copies it moves up to ${w.trialStage === 0 ? 'half' : 'full'} size.">On trial · ${w.trialStage === 0 ? '¼' : '½'} size</span></div>` : ''}${!w.enabled && w.pausedReason ? `<div class="notes"><span class="note bad" title="Turn it back on to resume; its count starts again.">Auto-paused: ${esc(w.pausedReason)}</span></div>` : ''}</td>
             <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
-            <td class="r num">${st.sells ? Math.round((st.wins / st.sells) * 100) + '%' : '—'}</td>
-            <td class="r num muted">${st.sells || '—'}</td>
+            <td class="r num">${st.sells ? `${Math.round((st.wins / st.sells) * 100)}%<div class="muted" style="font-size:11px">${st.wins} of ${st.sells}</div>` : '—'}</td>
             <td class="r num ${gap == null ? 'muted' : gap > 10 ? 'neg' : ''}" title="${gap == null ? 'Measured on your next copied trades' : `Median of ${st.gaps.length} trades${lag != null ? `, ${lag.toFixed(1)} s behind them` : ''}`}">${gap == null ? '—' : `${gap > 0 ? '−' : '+'}${Math.abs(gap).toFixed(1)}%`}</td>
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;
