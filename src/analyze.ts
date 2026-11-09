@@ -49,7 +49,9 @@ export async function fetchSwaps(
   let before: string | undefined;
   let scanned = 0;
   let reachedStart = false;
-  while (sigs.length < maxTxs) {
+  // Bots can send hundreds of thousands of (mostly failed) transactions; never read further back than this.
+  const maxScan = Math.max(maxTxs * 10, 50_000);
+  while (sigs.length < maxTxs && scanned < maxScan) {
     const page = await withRetry(() => conn.getSignaturesForAddress(pk, { limit: byDate ? 1000 : Math.min(1000, maxTxs - sigs.length), before }));
     if (!page.length) {
       reachedStart = true;

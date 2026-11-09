@@ -213,3 +213,14 @@ test('replays minimum token age and crash protection from price history', () => 
   assert.match(s.reason!, /dump protection: fell 45%/);
   assert.ok(Math.abs(s.pnl! + 0.045) < 1e-9); // sold at 0.55x, better than their 0.3x
 });
+
+test('fetchSwaps by date stops scanning a wallet that spams failed transactions', async () => {
+  const { fetchSwaps } = await import('./analyze');
+  // 200,000 failed transactions in the window: nothing to read, but the scan must stop.
+  let calls = 0;
+  const conn = { getSignaturesForAddress: async () => (calls++, Array.from({ length: 1000 }, (_, i) => ({ signature: `f${calls}-${i}`, blockTime: 9_999 * 60, err: { x: 1 } }))) } as any;
+  const stats: any = { read: 0, failed: 0 };
+  await fetchSwaps(conn, 'So11111111111111111111111111111111111111112', 5000, undefined, { tries: 1, stats, since: 1 });
+  assert.equal(calls, 50);
+  assert.equal(stats.truncated, true);
+});
