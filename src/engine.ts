@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { Config, exitConfigFor, loadConfig } from './config';
+import { Config, exitConfigFor, loadConfig, walletRules } from './config';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { quoteBuy, quoteSell } from './jupiter';
@@ -278,7 +278,8 @@ export class BotEngine extends EventEmitter {
     const holding = state.positions[s.mint];
     if (holding && r.skipIfAlreadyHolding) return skip('already holding');
     if (!holding && Object.keys(state.positions).length >= r.maxOpenPositions) return skip('max open positions reached');
-    if (s.quote === 'SOL' && s.quoteAmount < cfg.buy.minTargetBuySol) return skip(`their buy is below ${cfg.buy.minTargetBuySol} SOL`);
+    const rules = walletRules(cfg, s.wallet);
+    if (s.quote === 'SOL' && s.quoteAmount < rules.minTargetBuySol) return skip(`their buy is below ${rules.minTargetBuySol} SOL`);
 
     // Size: base amount × this wallet's multiplier, then the min/max limits.
     const w = cfg.wallets.find((x) => x.address === s.wallet);
@@ -332,7 +333,8 @@ export class BotEngine extends EventEmitter {
 
     // Don't chase: compare our price with what the copied wallet paid.
     const driftOf = (q: { outAmount: string }, lam: bigint) => (s.quote === 'SOL' ? priceDriftPct(s.quoteAmount, s.tokenAmount, lam, BigInt(q.outAmount)) : null);
-    const chased = (drift: number | null) => (r.maxPriceDriftPct > 0 && drift != null && drift > r.maxPriceDriftPct ? `price is already ${drift.toFixed(0)}% above their entry (max ${r.maxPriceDriftPct}%)` : null);
+    const maxDrift = rules.risk.maxPriceDriftPct;
+    const chased = (drift: number | null) => (maxDrift > 0 && drift != null && drift > maxDrift ? `price is already ${drift.toFixed(0)}% above their entry (max ${maxDrift}%)` : null);
     let drift = driftOf(check.buyQuote, lamports);
     const chasing = chased(drift);
     if (chasing) return skip(chasing);

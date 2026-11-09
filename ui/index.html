@@ -837,8 +837,10 @@ function renderDashboard(el) {
 }
 /** What the staged exits have done for a position, and what happens next. */
 function exitPlan(p) {
-  const { stopLossPct, ...ov } = S.config.wallets.find((w) => w.address === p.sources?.[0])?.exits || {};
-  const x = { ...S.config.exits, ...ov }, done = new Set(p.steps || []);
+  const ww = S.config.wallets.find((w) => w.address === p.sources?.[0]);
+  const st = (S.strategies || []).find((x) => x.id === ww?.strategy);
+  const { stopLossPct, ...ov } = ww?.exits || {};
+  const x = { ...S.config.exits, ...(st?.patch.exits || {}), ...ov }, done = new Set(p.steps || []);
   const chips = [];
   const step = (id, on, label) => { if (on) chips.push(`<span class="chip ${done.has(id) ? 'done' : ''}">${done.has(id) ? '✓ ' : ''}${label}</span>`); };
   step('recover', x.recoverCostAtPct > 0, `cost back +${x.recoverCostAtPct}%`);
@@ -849,7 +851,8 @@ function exitPlan(p) {
     const floor = ((p.peakMultiple || 1) * (1 - x.trailingStopPct / 100) - 1) * 100;
     chips.push(`<span class="chip trail" title="Peak +${peakGain.toFixed(0)}%. Sells everything if it falls to ${pct(floor)}.">trailing: sells below ${pct(floor)}</span>`);
   }
-  if (Object.keys(ov).length || stopLossPct !== undefined) chips.push('<span class="chip" title="This wallet has its own exit settings (Wallets page)">wallet\'s own exits</span>');
+  if (st) chips.push(`<span class="chip" title="This wallet uses its own strategy (Wallets page)">${esc(st.name)}</span>`);
+  else if (Object.keys(ov).length || stopLossPct !== undefined) chips.push('<span class="chip" title="This wallet has its own exit settings (Wallets page)">wallet\'s own exits</span>');
   return chips.join(' ') || '<span class="muted">stop-loss only</span>';
 }
 
@@ -885,25 +888,47 @@ const EXIT_FIELDS = [
   ['trailingStopPct', 'Trailing stop', '% drop', 'exits.trailingStopPct'],
 ];
 /** Edit one wallet's own exit settings. Blank = use the global setting. */
+/** The rules a wallet trades with in the UI: global, then its strategy, then its own exit overrides. */
+function walletBase(w, strategyId) {
+  const st = (S.strategies || []).find((x) => x.id === strategyId);
+  return {
+    'risk.stopLossPct': st?.patch.risk.stopLossPct ?? S.config.risk.stopLossPct,
+    ...Object.fromEntries(Object.entries({ ...S.config.exits, ...(st?.patch.exits || {}) }).map(([k, v]) => [`exits.${k}`, v])),
+  };
+}
+/** A wallet's own strategy and exit settings. Blank = use the strategy's (or your normal) setting. */
 function walletExitsModal(i) {
   const w = S.config.wallets[i], o = w.exits || {};
-  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:560px"><h3>Exits for ${esc(w.label)}</h3>
-    <p class="muted" style="margin-top:0">Used for positions copied from this wallet. Leave a box empty to use your normal setting (shown in grey). Useful for a fast scalper vs a long holder.</p>
-    <div class="stack" style="gap:8px">${EXIT_FIELDS.map(([k, label, unit, path]) => `<label class="row" style="justify-content:space-between;gap:12px"><span>${label}</span>
-      <span class="with-unit" style="width:190px"><input type="number" min="0" step="any" data-ex="${k}" value="${o[k] ?? ''}" placeholder="${esc(getP(S.config, path))}"><span>${unit}</span></span></label>`).join('')}</div>
+  const draw = (strategyId) => {
+    const base = walletBase(w, strategyId);
+    return EXIT_FIELDS.map(([k, label, unit, path]) => `<label class="row" style="justify-content:space-between;gap:12px"><span>${label}</span>
+      <span class="with-unit" style="width:190px"><input type="number" min="0" step="any" data-ex="${k}" value="${o[k] ?? ''}" placeholder="${esc(base[path])}"><span>${unit}</span></span></label>`).join('');
+  };
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:560px"><h3>Strategy and exits for ${esc(w.label)}</h3>
+    <p class="muted" style="margin-top:0">Give this wallet its own strategy, e.g. Sniper for a fast flipper and Whale follower for a patient big buyer. It sets this wallet's exits, stop-loss, minimum buy size and "don't chase". Your SOL per buy, limits and token filters stay the same for all wallets.</p>
+    <label class="row" style="justify-content:space-between;gap:12px;margin-bottom:12px"><b>Strategy for this wallet</b>
+      <select class="input" id="ws-strat" style="width:190px;height:34px"><option value="">Same as everyone (${esc((S.strategies || []).find((x) => x.id === stratActive())?.name || 'your settings')})</option>${(S.strategies || []).map((x) => `<option value="${esc(x.id)}" ${w.strategy === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    <details ${Object.keys(o).length ? 'open' : ''}><summary style="cursor:pointer;font-weight:600;margin-bottom:8px">Fine-tune its exits <span class="muted" style="font-weight:400">(optional; empty boxes use the strategy's values shown in grey)</span></summary>
+      <div class="stack" style="gap:8px" id="ws-fields">${draw(w.strategy || '')}</div></details>
     <div class="row" style="margin-top:16px"><button class="btn ghost" data-a="reset">Use normal settings</button><span class="spacer" style="flex:1"></span><button class="btn" data-a="no">Cancel</button><button class="btn primary" data-a="yes">Save</button></div></div></div>`;
   const close = () => { $('#modal-root').innerHTML = ''; };
-  const save = async (exits) => {
-    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits } : x));
-    if (await saveWallets(wallets, 'Exit settings saved')) close();
+  const save = async (exits, strategy) => {
+    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits, strategy: strategy || undefined } : x));
+    if (await saveWallets(wallets, 'Saved')) close();
+  };
+  $('#ws-strat').onchange = (e) => {
+    // Keep what the user typed; only the grey placeholders change.
+    const typed = Object.fromEntries([...document.querySelectorAll('[data-ex]')].map((i) => [i.dataset.ex, i.value]));
+    $('#ws-fields').innerHTML = draw(e.target.value);
+    for (const inp of document.querySelectorAll('[data-ex]')) inp.value = typed[inp.dataset.ex] ?? '';
   };
   $('#modal-root [data-a=no]').onclick = close;
   $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) close(); };
-  $('#modal-root [data-a=reset]').onclick = () => save(undefined);
+  $('#modal-root [data-a=reset]').onclick = () => save(undefined, undefined);
   $('#modal-root [data-a=yes]').onclick = () => {
     const exits = {};
     for (const inp of document.querySelectorAll('[data-ex]')) if (inp.value !== '') exits[inp.dataset.ex] = Number(inp.value);
-    save(Object.keys(exits).length ? exits : undefined);
+    save(Object.keys(exits).length ? exits : undefined, $('#ws-strat').value);
   };
 }
 function walletStats() {
@@ -959,7 +984,7 @@ function renderWallets(el) {
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits ? 'primary' : ''}" data-exits="${i}" title="${w.exits ? 'This wallet has its own exit settings' : 'Use different exit settings for this wallet'}">Exits${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;

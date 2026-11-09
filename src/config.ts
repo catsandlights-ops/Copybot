@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { PublicKey } from '@solana/web3.js';
+import { strategyById } from './presets';
 
 /** sizeMultiplier scales every buy copied from this wallet; maxExposureSol caps SOL in its positions (0 = no cap). */
 export type ExitOverrides = Partial<{
@@ -24,6 +25,7 @@ export type WalletCfg = {
   sizeMultiplier: number;
   maxExposureSol: number;
   exits?: ExitOverrides;
+  strategy?: string; // a ready-made strategy just for this wallet (its exit overrides still win)
   trialStage?: 0 | 1;
   since?: number;
   pausedReason?: string;
@@ -39,12 +41,34 @@ const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
   trailingStopPct: 'exits.trailingStopPct',
 };
 
-/** Exit settings for a position: the opening wallet's overrides on top of the global ones. */
-export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
-  const o = cfg.wallets.find((w) => w.address === sources[0])?.exits;
-  if (!o || !Object.keys(o).length) return cfg;
-  const { stopLossPct, ...exits } = o;
-  return { risk: { ...cfg.risk, ...(stopLossPct !== undefined ? { stopLossPct } : {}) }, exits: { ...cfg.exits, ...exits } };
+/**
+ * The rules for one wallet: global settings, then the wallet's own strategy (its exits, stop-loss,
+ * minimum buy size and "don't chase"), then the wallet's own exit overrides.
+ */
+export function walletRules(cfg: Pick<Config, 'risk' | 'exits' | 'wallets' | 'buy'>, address: string | undefined): { risk: Config['risk']; exits: Config['exits']; minTargetBuySol: number } {
+  const w = cfg.wallets.find((x) => x.address === address);
+  let risk = cfg.risk;
+  let exits = cfg.exits;
+  let minTargetBuySol = cfg.buy.minTargetBuySol;
+  const s = w?.strategy ? strategyById(w.strategy) : null;
+  if (s) {
+    risk = { ...risk, ...s.patch.risk };
+    exits = { ...exits, ...s.patch.exits };
+    if (s.patch.buy?.minTargetBuySol !== undefined) minTargetBuySol = s.patch.buy.minTargetBuySol;
+  }
+  const o = w?.exits;
+  if (o && Object.keys(o).length) {
+    const { stopLossPct, ...ex } = o;
+    if (stopLossPct !== undefined) risk = { ...risk, stopLossPct };
+    exits = { ...exits, ...ex };
+  }
+  return { risk, exits, minTargetBuySol };
+}
+
+/** Exit settings for a position: those of the wallet that opened it (see walletRules). */
+export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'> & Partial<Pick<Config, 'buy'>>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
+  const r = walletRules({ ...cfg, buy: cfg.buy ?? ({ minTargetBuySol: 0 } as Config['buy']) }, sources[0]);
+  return { risk: r.risk, exits: r.exits };
 }
 
 export type Config = {
@@ -320,6 +344,7 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       sizeMultiplier: num(w.sizeMultiplier, 0.1, 10, 1, 'Size multiplier'),
       maxExposureSol: num(w.maxExposureSol, 0, 10_000, 0, 'Wallet budget'),
       ...(Object.keys(exits).length ? { exits } : {}),
+      ...(typeof w.strategy === 'string' && strategyById(w.strategy) ? { strategy: w.strategy } : {}),
       ...(w.trialStage === 0 || w.trialStage === 1 ? { trialStage: w.trialStage } : {}),
       ...(typeof w.since === 'number' && Number.isFinite(w.since) && w.since > 0 ? { since: w.since } : {}),
       ...(typeof w.pausedReason === 'string' && w.pausedReason && w.enabled === false ? { pausedReason: w.pausedReason.replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, 120) } : {}),

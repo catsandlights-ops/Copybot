@@ -95,3 +95,22 @@ test('when every strategy loses, the verdict says so instead of naming a winner'
   assert.ok(c.results.every((r) => r.totalSol < 0));
   assert.equal(c.verdict, 'all-lose');
 });
+
+test('a wallet can have its own strategy; its exit overrides still win; others use the global rules', async () => {
+  const { walletRules, exitConfigFor } = await import('./config');
+  const W1 = 'So11111111111111111111111111111111111111112', W2 = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const c = sanitizeConfig({ wallets: [{ address: W1, label: 'fast', strategy: 'sniper', exits: { tp2AtPct: 120 } }, { address: W2, label: 'normal' }, { address: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', label: 'bad', strategy: 'nonsense' }] }, true);
+  assert.equal(c.wallets[0].strategy, 'sniper');
+  assert.equal(c.wallets[2].strategy, undefined); // unknown strategies are dropped
+  const r1 = walletRules(c, W1);
+  assert.equal(r1.risk.stopLossPct, 25); // from Sniper
+  assert.equal(r1.risk.maxPriceDriftPct, 8);
+  assert.equal(r1.exits.tp1AtPct, 40);
+  assert.equal(r1.exits.tp2AtPct, 120); // the wallet's own override wins
+  const r2 = walletRules(c, W2);
+  assert.equal(r2.risk.stopLossPct, DEFAULT_CONFIG.risk.stopLossPct);
+  assert.equal(r2.minTargetBuySol, DEFAULT_CONFIG.buy.minTargetBuySol);
+  assert.equal(exitConfigFor(c, [W1]).risk.stopLossPct, 25);
+  // Money settings are never per-wallet-strategy.
+  assert.equal(r1.risk.maxTotalExposureSol, c.risk.maxTotalExposureSol);
+});

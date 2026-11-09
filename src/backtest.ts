@@ -12,7 +12,7 @@
  *
  * Pure: no network. The server fetches the swaps, candles and current prices.
  */
-import { exitConfigFor, type Config } from './config';
+import { exitConfigFor, walletRules, type Config } from './config';
 import type { Swap } from './decode';
 import type { Candle } from './markets';
 import { buyBlockReason, ExitStep, freshGuard, GuardState, planExit, recordSell } from './rules';
@@ -157,7 +157,7 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
       const held = positions.get(s.mint);
       if (held && r.skipIfAlreadyHolding) { skip('already holding'); continue; }
       if (!held && positions.size >= r.maxOpenPositions) { skip('max open positions'); continue; }
-      if (s.quoteAmount < cfg.buy.minTargetBuySol) { skip('their buy too small'); continue; }
+      if (s.quoteAmount < walletRules(cfg, s.wallet).minTargetBuySol) { skip('their buy too small'); continue; }
       let sol = cfg.buy.sizing === 'percent' ? (s.quoteAmount * cfg.buy.percentOfTarget) / 100 : cfg.buy.fixedSol;
       sol = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol * (w?.sizeMultiplier ?? 1)));
       if (exposure + sol > r.maxTotalExposureSol) { skip('max SOL in trades'); continue; }

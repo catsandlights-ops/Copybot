@@ -34,7 +34,7 @@ export function optimizeExits(swaps: Swap[], cfg: Config, opts: BacktestOpts, ma
     c.risk.takeProfitPct = setup.takeProfitPct;
     c.exits = { ...setup.exits };
     // Per-wallet exit overrides would hide the difference between setups; test the global ones.
-    c.wallets = c.wallets.map(({ exits: _x, ...w }) => w);
+    c.wallets = c.wallets.map(({ exits: _x, strategy: _s, ...w }) => w);
     const r = runBacktest(swaps, c, opts, marks, prices);
     return { setup, totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, maxDrawdownSol: r.maxDrawdownSol, spentSol: r.spentSol };
   });
