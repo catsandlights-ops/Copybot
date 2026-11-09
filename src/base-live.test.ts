@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { approveData, baseAccount, checkBaseTx, KYBER_ROUTER } from './chains/base-live';
+import { approveData, baseAccount, checkBaseTx, KYBER_ROUTER, nextNonce, oneAtATime } from './chains/base-live';
 
 const OWNER = '0x1111111111111111111111111111111111111111';
 const TOKEN = '0x4444444444444444444444444444444444444444';
@@ -39,4 +39,22 @@ test('baseAccount: valid keys only', () => {
   assert.match(a.address, /^0x[0-9a-fA-F]{40}$/);
   assert.equal(baseAccount('11'.repeat(32)).address, a.address);
   assert.throws(() => baseAccount('nope'), /64 hexadecimal/);
+});
+
+test('nextNonce: never reuses a number, even when the node lags', () => {
+  assert.equal(nextNonce(5, undefined), 5);
+  assert.equal(nextNonce(5, 4), 5);
+  assert.equal(nextNonce(5, 7), 8); // node hasn't seen our last two yet
+});
+
+test('oneAtATime: Base trades run one after another, and a failure does not block the next', async () => {
+  const order: string[] = [];
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const a = oneAtATime(async () => { order.push('a start'); await wait(20); order.push('a end'); return 1; });
+  const b = oneAtATime(async () => { order.push('b start'); throw new Error('boom'); });
+  const c = oneAtATime(async () => { order.push('c start'); return 3; });
+  assert.equal(await a, 1);
+  await assert.rejects(b, /boom/);
+  assert.equal(await c, 3);
+  assert.deepEqual(order, ['a start', 'a end', 'b start', 'c start']);
 });

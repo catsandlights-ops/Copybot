@@ -66,7 +66,21 @@ async function waitReceipt(hash: string, timeoutMs = 60_000): Promise<any> {
     if (rc) return rc;
     await new Promise((r) => setTimeout(r, 1500));
   }
-  throw new Error(`Base transaction ${hash} wasn't confirmed within ${timeoutMs / 1000} s; check it on Basescan.`);
+  throw new Error(`Base transaction ${hash} wasn't confirmed within ${timeoutMs / 1000} s. It may still go through: check it on Basescan before trading this coin by hand.`);
+}
+
+/** The next transaction number: what the node reports, but never one Copybot already used (nodes can lag). */
+export function nextNonce(pending: number, lastUsed: number | undefined): number {
+  return lastUsed == null ? pending : Math.max(pending, lastUsed + 1);
+}
+
+const lastNonce = new Map<string, number>();
+let queue: Promise<unknown> = Promise.resolve();
+/** Base trades are sent one at a time, so two at once can't take the same transaction number. */
+export function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(fn, fn);
+  queue = run.catch(() => undefined);
+  return run;
 }
 
 /** Check, rehearse, sign and send one transaction; wait until it's confirmed. */
@@ -81,9 +95,10 @@ async function sendChecked(account: ReturnType<typeof baseAccount>, req: { to: s
   const f = await fees();
   const why = checkBaseTx({ ...req, gas, maxFeePerGas: f.maxFeePerGas }, expect, maxFeeWei);
   if (why) throw new Error(`Base transaction refused before signing: ${why}`);
-  const nonce = Number(await baseRpc.call<string>('eth_getTransactionCount', [from, 'pending']));
+  const nonce = nextNonce(Number(await baseRpc.call<string>('eth_getTransactionCount', [from, 'pending'])), lastNonce.get(from.toLowerCase()));
   const signed = await account.signTransaction({ chainId: BASE_CHAIN_ID, type: 'eip1559', to: req.to as `0x${string}`, data: req.data as `0x${string}`, value: req.value, gas, nonce, maxFeePerGas: f.maxFeePerGas, maxPriorityFeePerGas: f.maxPriorityFeePerGas });
   const hash = await baseRpc.call<string>('eth_sendRawTransaction', [signed]);
+  lastNonce.set(from.toLowerCase(), nonce);
   const rc = await waitReceipt(hash);
   if (rc.status !== '0x1') throw new Error(`Base transaction ${hash} failed on-chain.`);
   return hash;
@@ -93,7 +108,11 @@ async function sendChecked(account: ReturnType<typeof baseAccount>, req: { to: s
  * Execute a Base swap from a KyberSwap quote: approve the exact amount if selling a token,
  * then build, check, rehearse, sign and send the swap. Returns the swap's transaction hash.
  */
-export async function executeBaseSwap(key: string, quote: Quote, slippageBps: number, maxFeeEth: number, weth: string): Promise<string> {
+export function executeBaseSwap(key: string, quote: Quote, slippageBps: number, maxFeeEth: number, weth: string): Promise<string> {
+  return oneAtATime(() => swapNow(key, quote, slippageBps, maxFeeEth, weth));
+}
+
+async function swapNow(key: string, quote: Quote, slippageBps: number, maxFeeEth: number, weth: string): Promise<string> {
   const account = baseAccount(key);
   const owner = account.address.toLowerCase();
   const maxFeeWei = BigInt(Math.round(maxFeeEth * 1e18));
