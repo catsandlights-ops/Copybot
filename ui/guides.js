@@ -13,6 +13,13 @@ window.GUIDES = [
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
+<h3>New in 0.8.3</h3>
+<ul>
+<li><b>Calmer dump protection:</b> lots of small sells only trigger a sale if the price is really falling (5% or more in 5 minutes).</li>
+<li><b>Break-even isn't a loss:</b> trades that lose under 2% no longer count toward "losing trades in a row" pauses.</li>
+<li><b>Safer Base live trading:</b> a trade that's slow to confirm is followed up and added to your books when it lands; one the network drops changes nothing.</li>
+<li><b>A quieter activity log</b>, with plain words when a free network node is busy.</li>
+</ul>
 <h3>New in 0.8.2</h3>
 <ul>
 <li><b>Base everywhere:</b> Find wallets, Analyze, backtests and the wallet check-up now work for Base wallets (add a free Alchemy Base URL in <b>Settings → Connection</b>). Markets and the coin scanner have a <b>Solana / Base</b> switch.</li>
