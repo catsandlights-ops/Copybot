@@ -13,6 +13,7 @@ import { FastStream, heliusWsUrl } from './stream';
 import type { RawTx } from './util';
 import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
+import { panicReason } from './rules';
 import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
@@ -178,6 +179,44 @@ export class BotEngine extends EventEmitter {
     this.subs = [];
     this.log('Bot stopped', 'system');
     this.emit('status');
+  }
+
+  // ---------- panic: sell everything and stop ----------
+  panicking = false;
+
+  /**
+   * Sell every open position in full, then stop the bot. Works whether or not the bot is running.
+   * Each sell is tried twice; anything that still can't be sold is reported (and stays open).
+   */
+  async panic(reason: string): Promise<{ sold: number; failed: string[] }> {
+    if (this.panicking) throw new Error('Already selling everything.');
+    this.panicking = true;
+    this.emit('status');
+    try {
+      this.log(`PANIC: selling everything and stopping (${reason}).`, 'warn');
+      this.emit('guard', `Selling everything and stopping: ${reason}`);
+      // Stop first so nothing new is bought while selling; exits for anything left are retried below.
+      if (this.running) await this.stop();
+      let sold = 0;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        for (const mint of Object.keys(this.state.positions)) {
+          await this.enqueue(async () => {
+            if (!this.state.positions[mint]) return;
+            const pnl = await this.trader.sell(mint, 1, `panic: ${reason}`);
+            if (pnl !== null) sold++;
+          });
+        }
+        if (!Object.keys(this.state.positions).length) break;
+        await sleep(3000);
+      }
+      const failed = Object.keys(this.state.positions);
+      if (failed.length) this.log(`Couldn't sell ${failed.length} position(s): ${failed.map(short).join(', ')}. Sell them by hand on the Dashboard.`, 'error');
+      else this.log(sold ? `Everything sold (${sold} position${sold === 1 ? '' : 's'}). The bot is stopped.` : 'No open positions left to sell. The bot is stopped.', 'system');
+      return { sold, failed };
+    } finally {
+      this.panicking = false;
+      this.emit('status');
+    }
   }
 
   // ---------- circuit breaker ----------
@@ -631,6 +670,13 @@ export class BotEngine extends EventEmitter {
         });
       }
       if (changed) saveState(this.state, this.cfg.mode);
+      // Automatic panic: today's closed + open result past the user's limit.
+      const unrealized = Object.values(this.state.positions).reduce((a, p) => a + (this.values[p.mint] ? this.values[p.mint].valueSol - p.costSol : 0), 0);
+      const why = gen === this.gen && !this.panicking ? panicReason(this.guard.dayPnlSol, unrealized, this.cfg.risk.panicLossSol) : null;
+      if (why) {
+        this.panic(why).catch((e) => this.logError(e));
+        return;
+      }
       await sleep(this.cfg.monitor.exitCheckIntervalSec * 1000);
     }
   }
@@ -699,6 +745,7 @@ export class BotEngine extends EventEmitter {
       positions,
       paper: this.cfg.mode === 'paper' ? { startSol: this.cfg.paper.startSol, freeSol: paperFreeSol(this.cfg.paper.startSol, this.state.realizedPnlSol, exposure(this.state)) } : null,
       guard: { blocked: buyBlockReason(this.guard, this.cfg.risk, Date.now()), dayPnlSol: this.guard.dayPnlSol, lossStreak: this.guard.lossStreak },
+      panicking: this.panicking,
       wallet: this.kp ? { address: this.kp.publicKey.toBase58(), balance: this.walletBalance } : null,
     };
   }

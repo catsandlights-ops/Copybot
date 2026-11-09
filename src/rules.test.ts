@@ -272,3 +272,11 @@ test('experiment picks are spread over different tokens', async () => {
   // Only one token moving: still fills the places.
   assert.equal(experimentPicks(new Map([['a', { tokens: ['X'], bestGainPct: 90 }], ['b', { tokens: ['X'], bestGainPct: 80 }]]), new Set(), 3).length, 2);
 });
+
+test('panicReason: closed + open result past the limit; 0 = off', async () => {
+  const { panicReason } = await import('./rules');
+  assert.equal(panicReason(-0.3, -0.25, 0.5), "today's total is -0.550 SOL (closed -0.300, open -0.250), past your 0.5 SOL panic limit");
+  assert.equal(panicReason(-0.3, -0.1, 0.5), null);
+  assert.equal(panicReason(0.2, -0.6, 0.5), null); // today's profit cushions it
+  assert.equal(panicReason(-5, -5, 0), null);
+});

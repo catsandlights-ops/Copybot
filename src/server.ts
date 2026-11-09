@@ -1083,6 +1083,13 @@ async function handleRemote(req: http.IncomingMessage, res: http.ServerResponse)
     await engine.manualSell(b.mint, fraction);
     return send(res, 200, phoneState());
   }
+  if (route === 'POST /r/panic') {
+    from('pressed Sell everything & stop');
+    const r = await engine.panic(`${device.name} pressed Sell everything`).catch((e) => {
+      throw new HttpError(409, e.message);
+    });
+    return send(res, 200, { ...phoneState(), panic: r });
+  }
   if (route === 'POST /r/resume') {
     engine.resumeBuying();
     from('resumed buying for today');
@@ -1124,6 +1131,7 @@ function phoneState() {
     paper: s.paper,
     balance: s.wallet?.balance ?? null,
     guard: s.guard,
+    panicking: s.panicking,
     wallets: engine.cfg.wallets.filter((w) => w.enabled).length,
     positions: s.positions.map((p: any) => ({ mint: p.mint, from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt })),
     logs: engine.logs.slice(-40).map((l) => ({ t: l.t, level: l.level, msg: l.msg })),
@@ -1325,6 +1333,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       throw new HttpError(400, e.message);
     });
     return send(res, 200, engine.snapshot());
+  }
+
+  if (route === 'POST /api/panic') {
+    if (engine.cfg.mode === 'live' && !engine.kp && Object.keys(engine.state.positions).length) throw new HttpError(400, 'No trading wallet configured');
+    const r = await engine.panic('you pressed Sell everything').catch((e) => {
+      throw new HttpError(409, e.message);
+    });
+    return send(res, 200, { ...r, status: engine.snapshot() });
   }
 
   if (route === 'POST /api/stop') {

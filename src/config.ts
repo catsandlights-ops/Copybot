@@ -98,6 +98,7 @@ export type Config = {
     maxSignalAgeSec: number;
     solReserve: number;
     maxPriceDriftPct: number; // don't chase: skip if our price is this much above the copied wallet's entry (0 = off)
+    panicLossSol: number; // sell everything and stop when today's closed + open result reaches −this (0 = off)
     dailyLossLimitSol: number; // stop new buys for the day after losing this much (0 = off)
     pauseAfterLosses: number; // pause new buys after this many losing sells in a row (0 = off)
     pauseMinutes: number;
@@ -208,6 +209,7 @@ export const DEFAULT_CONFIG: Config = {
     solReserve: 0.05,
     maxPriceDriftPct: 15,
     dailyLossLimitSol: 0.3,
+    panicLossSol: 0,
     pauseAfterLosses: 4,
     pauseMinutes: 60,
   },
@@ -242,6 +244,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'risk.maxOpenPositions': [1, 100, 'Max tokens held at once'],
   'risk.maxTotalExposureSol': [0.001, 10_000, 'Max SOL in open positions'],
   'risk.stopLossPct': [1, 100, 'Stop-loss'],
+  'risk.panicLossSol': [0, 10_000, 'Panic limit'],
   'risk.takeProfitPct': [0, 100_000, 'Sell everything at'],
   'risk.maxSignalAgeSec': [1, 600, 'Ignore trades older than'],
   'risk.solReserve': [0, 100, 'Always keep in wallet'],

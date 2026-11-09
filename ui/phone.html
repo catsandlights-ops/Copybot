@@ -142,6 +142,7 @@ function render() {
     ${offline ? '<div class="banner err">Can\'t reach Copybot. Is your computer on, Copybot open, and (away from home) Tailscale on, on both devices?</div>' : ''}
     ${g.blocked ? `<div class="banner">New buys paused: ${esc(g.blocked)} <button class="sm" id="resume" style="margin-top:6px">Resume buying today</button></div>` : ''}
     <button class="wide ${S.running ? 'stop' : 'primary'}" id="runbtn" ${busy ? 'disabled' : ''}>${S.running ? 'Stop bot' : `Start bot${live ? ' (LIVE)' : ''}`}</button>
+    ${S.positions.length || S.running ? `<button class="wide" id="panic" style="margin-top:8px;background:var(--red-bg);color:var(--red)" ${busy || S.panicking ? 'disabled' : ''}>${S.panicking ? 'Selling everything…' : 'Sell everything &amp; stop'}</button>` : ''}
     <div class="card stats" style="margin-top:12px">
       <div class="stat"><div class="k">Realized profit</div><div class="v ${cls(S.realizedPnlSol)}">${sol(S.realizedPnlSol)}</div><div class="k">SOL, closed trades</div></div>
       <div class="stat"><div class="k">Open profit</div><div class="v ${cls(S.unrealizedPnlSol)}">${sol(S.unrealizedPnlSol)}</div><div class="k">SOL if sold now</div></div>
@@ -167,6 +168,11 @@ function bind() {
     if (S.running && !confirm('Stop the bot? Open positions stay open, but stop-losses and take-profits stop running until you start it again.')) return;
     await action(() => call('POST', S.running ? '/r/stop' : '/r/start'), S.running ? 'Bot stopped' : 'Bot started');
   };
+  const pn = $('#panic'); if (pn) pn.onclick = () => {
+    const n = S.positions.length;
+    if (!confirm(n ? `Sell ALL ${n} open position${n === 1 ? '' : 's'}${S.mode === 'live' ? ' (LIVE, real sells)' : ''} and stop the bot?` : 'Stop the bot?')) return;
+    action(() => call('POST', '/r/panic'), (r) => (r.panic?.failed?.length ? [`Sold ${r.panic.sold}; ${r.panic.failed.length} couldn't be sold. Check the computer.`, true] : ['Sold everything. The bot is stopped.']));
+  };
   const res = $('#resume'); if (res) res.onclick = () => confirm('Let the bot buy again today despite the loss limit?') && action(() => call('POST', '/r/resume'), 'Buying resumed');
   document.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => {
     const f = Number(b.dataset.f);
@@ -188,7 +194,7 @@ function bind() {
 
 async function action(fn, ok) {
   busy = true; render();
-  try { S = await fn(); toast(ok); } catch (e) { if (store.get()) toast(e.message, true); }
+  try { S = await fn(); const m = typeof ok === 'function' ? ok(S) : [ok]; toast(m[0], m[1]); } catch (e) { if (store.get()) toast(e.message, true); }
   busy = false; if (S) render();
 }
 

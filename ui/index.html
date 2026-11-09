@@ -877,7 +877,7 @@ function renderDashboard(el) {
     </div>
     ${pnlChart()}
     <div class="grid two">
-      <div class="card"><div class="card-h"><h2>Open positions</h2><span class="spacer"></span>${n ? '<button class="btn sm ghost" id="refresh-pos">Refresh prices</button>' : ''}</div>${positions}</div>
+      <div class="card"><div class="card-h"><h2>Open positions</h2><span class="spacer"></span>${n ? '<button class="btn sm ghost" id="refresh-pos">Refresh prices</button>' : ''}${n || S.status.running ? `<button class="btn sm stop" id="panic-btn" ${S.status.panicking ? 'disabled' : ''} title="Sell every open position and stop the bot">${S.status.panicking ? 'Selling everything…' : 'Sell everything &amp; stop'}</button>` : ''}</div>${positions}</div>
       <div class="card"><div class="card-h"><h2>Live activity</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${st.running ? 'watching…' : ''}</span></div>
         <div class="feed" id="feed">${feedHtml()}</div></div>
     </div>`;
@@ -885,6 +885,14 @@ function renderDashboard(el) {
   const pr = $('#paper-reset'); if (pr) pr.onclick = (e) => { e.preventDefault(); resetPaper(); };
   el.querySelectorAll('[data-pnl-range]').forEach((b) => (b.onclick = () => { S.pnlRange = b.dataset.pnlRange; render(); }));
   const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
+  const pb = $('#panic-btn'); if (pb) pb.onclick = async () => {
+    const n = S.status.positions.length;
+    if (!(await confirmModal({ title: 'Sell everything and stop?', danger: true, confirm: n ? `Sell all ${n} and stop` : 'Stop the bot',
+      body: `<p>${n ? `Copybot will sell <b>all ${n} open position${n === 1 ? '' : 's'}</b> at the current price, then stop the bot.` : 'There are no open positions; the bot will just stop.'}${S.config.mode === 'live' ? ' <b>These are real sells.</b>' : ''}</p><p class="muted">Anything that can't be sold (no route) stays open and is listed in the activity log.</p>` }))) return;
+    pb.disabled = true; pb.textContent = 'Selling everything…';
+    const r = await act(() => api('POST', '/api/panic'));
+    if (r) toast(r.failed.length ? `Sold ${r.sold}; ${r.failed.length} couldn't be sold (see activity)` : `Sold ${r.sold} position${r.sold === 1 ? '' : 's'}. The bot is stopped.`, !!r.failed.length);
+  };
 }
 /** Realized profit over time from your own sells (current mode), as a chart card on the Dashboard. */
 function pnlChart() {
@@ -1993,6 +2001,7 @@ const FIELDS = [
     { k: 'risk.skipIfAlreadyHolding', label: "Don't buy more of a token you hold", type: 'toggle' },
     { k: 'risk.maxSignalAgeSec', label: 'Ignore trades older than', unit: 'sec', step: 1, help: "If the bot sees a trade late, the price has probably moved." },
     { k: 'risk.solReserve', label: 'Always keep in wallet', unit: 'SOL', help: 'Left untouched to pay transaction fees.' },
+    { k: 'risk.panicLossSol', label: 'Panic limit', unit: 'SOL', help: "Sell everything and stop the bot if today's result (closed trades plus what open positions are worth now) reaches minus this much. Stronger than the daily loss limit, which only stops new buys. 0 = off." },
     { k: 'risk.dailyLossLimitSol', label: 'Daily loss limit', unit: 'SOL', help: 'Stop new buys for the rest of the day after losing this much. Sells and exits keep running. 0 = off.' },
     { k: 'risk.pauseAfterLosses', label: 'Pause after losses in a row', unit: 'trades', step: 1, help: 'A cool-down after a losing streak. 0 = off.' },
     { k: 'risk.pauseMinutes', label: 'Pause length', unit: 'min', step: 1 },

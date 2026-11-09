@@ -239,6 +239,16 @@ export const median = (xs: number[]) => {
 // Circuit breaker: daily loss limit + pause after a losing streak
 // ---------------------------------------------------------------------------
 
+/**
+ * Automatic panic: today's closed-trade result plus what open positions are worth right now,
+ * at or below −limit SOL. 0 = off. Returns the message to act on, or null.
+ */
+export function panicReason(dayPnlSol: number, unrealizedSol: number, limitSol: number): string | null {
+  if (!(limitSol > 0)) return null;
+  const total = dayPnlSol + unrealizedSol;
+  return total <= -limitSol ? `today's total is ${total.toFixed(3)} SOL (closed ${dayPnlSol.toFixed(3)}, open ${unrealizedSol.toFixed(3)}), past your ${limitSol} SOL panic limit` : null;
+}
+
 export type GuardState = { day: string; dayPnlSol: number; lossStreak: number; pausedUntil: number; resumedDay?: string };
 
 export const localDay = (t: number) => {
