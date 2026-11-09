@@ -111,6 +111,7 @@ const series = (startMin: number, rows: [number, number, number][]) => ({
 
 test('stop-loss fires from candles before the wallet sells', () => {
   const c = cfg();
+  c.protect.crashPct = 0; // this test is about the stop-loss
   c.exits = { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
   c.risk.stopLossPct = 40;
   // Price USD 1.0 at the buy, then crashes to 0.5 (−50%), they sell an hour later at 3x.
@@ -128,6 +129,7 @@ test('stop-loss fires from candles before the wallet sells', () => {
 
 test('staged take-profits from candle highs, then their sell closes the rest', () => {
   const c = cfg();
+  c.protect.crashPct = 0;
   c.exits = { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
   c.risk.stopLossPct = 90;
   const prices = new Map([['M', series(-5, [[1, 1, 1], [1, 1, 1], [1, 2.2, 2], [2, 4.5, 4], [3.5, 4, 3.8]])]]);
@@ -188,4 +190,26 @@ test('fetchSwaps by date: only transactions inside the window are read; long win
   assert.equal(capped.read, 100);
   assert.equal(capped.truncated, true);
   srv.close();
+});
+
+test('replays minimum token age and crash protection from price history', () => {
+  const c = cfg();
+  c.exits = { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
+  c.risk.stopLossPct = 95;
+  // Token launched 10 minutes before the buy.
+  const young = { ...series(-5, [[1, 1, 1], [1, 1, 1], [1, 1, 1]]), createdAt: (T0 - 600) * 1000 };
+  c.filters.minTokenAgeMin = 60;
+  c.protect.crashPct = 0;
+  const swaps = [sw({ side: 'buy', mint: 'Y', wallet: A }, 0)];
+  assert.equal(runBacktest(swaps, c, noCost, new Map(), new Map([['Y', young]])).skipped['token too new'], 1);
+  c.filters.minTokenAgeMin = 5;
+  assert.equal(runBacktest(swaps, c, noCost, new Map(), new Map([['Y', young]])).skipped['token too new'], undefined);
+  // Crash: 1.0 → 0.55 inside one 5-minute candle triggers dump protection at 35%.
+  c.filters.minTokenAgeMin = 0;
+  c.protect = { liquidityDropPct: 0, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 0 };
+  const crash = series(-5, [[1, 1, 1], [1, 1, 1], [0.55, 1, 0.6], [0.6, 0.6, 0.6]]);
+  const r = runBacktest([...swaps, sw({ side: 'sell', mint: 'Y', wallet: A, quoteAmount: 0.3, tokenPre: 1_000_000n }, 30)], c, noCost, new Map(), new Map([['Y', crash]]));
+  const s = r.trades.find((t) => t.side === 'sell')!;
+  assert.match(s.reason!, /dump protection: fell 45%/);
+  assert.ok(Math.abs(s.pnl! + 0.045) < 1e-9); // sold at 0.55x, better than their 0.3x
 });

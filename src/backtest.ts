@@ -19,7 +19,8 @@ import { buyBlockReason, ExitStep, freshGuard, GuardState, planExit, recordSell 
 
 /** endAt: value what's still held at this time (a past date range) instead of today. */
 export type BacktestOpts = { delayPct: number; feeSol: number; endAt?: number };
-export type PriceSeries = { step: number; candles: Candle[] };
+/** createdAt: when the token's first pool launched, for the minimum token age filter. */
+export type PriceSeries = { step: number; candles: Candle[]; createdAt?: number | null };
 export type BtTrade = { t: number; side: 'buy' | 'sell'; mint: string; wallet: string; sol: number; pnl?: number; reason?: string };
 export type BtOpen = { mint: string; costSol: number; tokensRaw: number; valueSol: number | null; wallets: string[] };
 export type BtWallet = { wallet: string; signals: number; copied: number; closed: number; wins: number; pnlSol: number };
@@ -120,6 +121,20 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
         if (c.t + series.step > until) break;
         if (c.t + series.step <= p.openedAt) continue;
         const valueAt = (usd: number) => p.tokens * a.solPerRaw * (usd / a.usd!) * (1 - d);
+        // Dump protection: a crash of crashPct% from the highest price within crashWindowMin.
+        const pr = cfg.protect;
+        if (pr.crashPct > 0) {
+          const from = c.t - pr.crashWindowMin * 60_000;
+          let high = c.h;
+          for (let j = i - 1; j >= 0 && series.candles[j].t >= from && series.candles[j].t + series.step > p.openedAt; j--) high = Math.max(high, series.candles[j].h);
+          const drop = (1 - c.l / high) * 100;
+          if (drop >= pr.crashPct) {
+            const v = valueAt(c.l); // sold near the low of the crash candle
+            sell(p, 1, v, c.t + series.step, [...p.wallets][0], `dump protection: fell ${drop.toFixed(0)}% within ${pr.crashWindowMin} min`);
+            exitSells++;
+            break;
+          }
+        }
         // Low first (stop-loss / trailing stop), then the high (take-profits), cautious order.
         for (const usd of [c.l, c.h]) {
           for (let k = 0; k < 3 && positions.has(p.mint); k++) {
@@ -167,6 +182,9 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
         if (used + sol > w.maxExposureSol) { skip('wallet budget used up'); continue; }
       }
       if (cfg.safety.blacklist.includes(s.mint)) { skip('blacklisted'); continue; }
+      // Minimum token age, from when its first pool launched (when price history is loaded).
+      const born = prices.get(s.mint)?.createdAt;
+      if (cfg.filters.minTokenAgeMin > 0 && born && now - born < cfg.filters.minTokenAgeMin * 60_000) { skip('token too new'); continue; }
       const p = held ?? { mint: s.mint, tokens: 0, costSol: 0, wallets: new Set<string>(), openedAt: now, steps: [] };
       p.tokens += sol / (theirPrice * (1 + d));
       p.costSol += sol + opts.feeSol;

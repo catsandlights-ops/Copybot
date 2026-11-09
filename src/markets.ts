@@ -348,10 +348,13 @@ export type Candle = { t: number; l: number; h: number; c: number }; // t = cand
  * Picks 5-minute candles for spans up to ~3 days, then 15-minute, then hourly (1000 candles max).
  * Returns null when the token has no pool or no data.
  */
-export async function priceHistory(mint: string, fromMs: number, toMs: number): Promise<{ step: number; candles: Candle[] } | null> {
+export async function priceHistory(mint: string, fromMs: number, toMs: number): Promise<{ step: number; candles: Candle[]; createdAt: number | null } | null> {
   const pools = await gecko(`/networks/solana/tokens/${mint}/pools?page=1`);
   const pool = addr(pools?.data?.[0]?.attributes?.address);
   if (!pool) return null;
+  // The token's age: its oldest pool (a pump.fun token's bonding curve predates its later pools).
+  const created = (pools?.data ?? []).map((p: any) => Date.parse(p?.attributes?.pool_created_at)).filter((t: number) => Number.isFinite(t) && t > 0);
+  const createdAt = created.length ? Math.min(...created) : null;
   const span = Math.max(0, toMs - fromMs);
   const [tf, agg, step] = span <= 3.3 * 86_400_000 ? ['minute', 5, 300_000] : span <= 10 * 86_400_000 ? ['minute', 15, 900_000] : ['hour', 1, 3_600_000];
   const before = Math.floor(Math.min(Date.now(), toMs + step) / 1000);
@@ -363,7 +366,7 @@ export async function priceHistory(mint: string, fromMs: number, toMs: number): 
     .map(([t, , h, l, c]) => ({ t: t! * 1000, h: h!, l: l!, c: c! }))
     .filter((k) => k.t + step >= fromMs && k.l > 0)
     .sort((a, b) => a.t - b.t);
-  return candles.length ? { step, candles } : null;
+  return candles.length ? { step, candles, createdAt } : null;
 }
 
 // ---------------- wallet scout sources ----------------

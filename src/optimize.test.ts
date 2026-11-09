@@ -24,6 +24,7 @@ test('taking profit early wins when tokens pump then dump before they sell', () 
   const cfg = structuredClone(DEFAULT_CONFIG);
   cfg.wallets = [{ address: A, label: 'a', enabled: true, sizeMultiplier: 1, maxExposureSol: 0, exits: { stopLossPct: 5 } }];
   cfg.buy = { ...cfg.buy, fixedSol: 0.1, minTargetBuySol: 0 };
+  cfg.protect.crashPct = 0; // compare exits only
   cfg.risk.maxOpenPositions = 20;
   cfg.risk.maxTotalExposureSol = 10;
   const mints = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'M10', 'M11', 'M12'];
