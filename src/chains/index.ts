@@ -1,10 +1,11 @@
 /** The chains Copybot can trade on, by id. */
 import { solana } from './solana';
+import { base } from './base';
 import { chainOf, DEFAULT_CHAIN, type ChainAdapter, type ChainId } from './types';
 
 export * from './types';
 
-const CHAINS: Record<ChainId, ChainAdapter> = { solana };
+const CHAINS: Record<ChainId, ChainAdapter> = { solana, base };
 
 export const chainIds = () => Object.keys(CHAINS) as ChainId[];
 export const isChainId = (s: unknown): s is ChainId => typeof s === 'string' && s in CHAINS;

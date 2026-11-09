@@ -50,13 +50,13 @@ export function summarizePairs(mint: string, pairs: Pair[], dexscreenerId = 'sol
   };
 }
 
-export async function getMarketInfo(mint: string): Promise<MarketInfo | null> {
+export async function getMarketInfo(mint: string, dexscreenerId = 'solana'): Promise<MarketInfo | null> {
   const hit = cache.get(mint);
   if (hit && Date.now() - hit.at < TTL) return hit.info;
   const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`, { signal: AbortSignal.timeout(6_000) });
   if (!res.ok) throw new Error(`market data unavailable (${res.status})`);
   const body = (await res.json()) as { pairs?: Pair[] | null };
-  const info = summarizePairs(mint, Array.isArray(body.pairs) ? body.pairs : []);
+  const info = summarizePairs(mint, Array.isArray(body.pairs) ? body.pairs : [], dexscreenerId);
   cache.set(mint, { at: Date.now(), info });
   if (cache.size > 500) cache.delete(cache.keys().next().value!);
   return info;

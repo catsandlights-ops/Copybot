@@ -11,7 +11,7 @@ const SOL_ADDR = '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
 
 test('chain registry: Solana is the default, and the fallback for unknown or missing chains', () => {
   assert.equal(DEFAULT_CHAIN, 'solana');
-  assert.deepEqual(chainIds(), ['solana']);
+  assert.deepEqual(chainIds(), ['solana', 'base']);
   assert.deepEqual([...KNOWN_CHAINS], chainIds());
   assert.equal(getChain().meta.id, 'solana');
   assert.equal(getChain({}).meta.id, 'solana'); // a record from before chains
@@ -19,13 +19,14 @@ test('chain registry: Solana is the default, and the fallback for unknown or mis
   assert.equal(chainOf(undefined), 'solana');
   assert.equal(chainOf({ chain: 'solana' }), 'solana');
   assert.equal(isChainId('solana'), true);
-  assert.equal(isChainId('base'), false);
+  assert.equal(isChainId('base'), true);
+  assert.equal(isChainId('ethereum'), false);
 });
 
 test('every chain adapter fills in the whole plug', () => {
   for (const id of chainIds()) {
     const c = getChain(id);
-    for (const fn of ['decodeSwap', 'quoteBuy', 'quoteSell', 'executeSwap', 'checkToken', 'balance', 'nativeUsd'] as const) assert.equal(typeof c[fn], 'function', `${id}.${fn}`);
+    for (const fn of ['decodeSwap', 'quoteBuy', 'quoteSell', 'executeSwap', 'checkToken', 'balance', 'nativeUsd', 'nativeToSol', 'solToNativeRaw'] as const) assert.equal(typeof c[fn], 'function', `${id}.${fn}`);
     const m = c.meta;
     assert.equal(m.id, id);
     assert.ok(m.name && m.native.symbol && m.native.decimals > 0 && m.geckoNetwork && m.dexscreenerId && m.nativeUsdPool && m.keySecret);

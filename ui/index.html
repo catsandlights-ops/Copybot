@@ -657,8 +657,12 @@ function wizard(step = 0) {
 }
 
 const copyBtn = (v) => `<button class="copy" title="Copy" data-copy="${esc(v)}">${ICON_COPY}</button>`;
-const tokenLink = (m) => `<span class="addr"><a class="mono" href="https://dexscreener.com/solana/${esc(m)}" target="_blank" rel="noopener">${short(m)}</a>${copyBtn(m)}</span>`;
-const walletLink = (w) => `<span class="addr"><a class="mono" href="https://solscan.io/account/${esc(w)}" target="_blank" rel="noopener">${short(w)}</a>${copyBtn(w)}</span>`;
+// Base (and other EVM chains) use 0x… addresses; everything else is Solana.
+const isEvm = (a) => /^0x[0-9a-fA-F]{40}$/.test(String(a || ''));
+const chainOfW = (w) => w.chain || (isEvm(w.address) ? 'base' : 'solana');
+const solanaWallets = (ws) => ws.filter((w) => chainOfW(w) === 'solana');
+const tokenLink = (m) => `<span class="addr"><a class="mono" href="https://dexscreener.com/${isEvm(m) ? 'base' : 'solana'}/${esc(m)}" target="_blank" rel="noopener">${short(m)}</a>${isEvm(m) ? ' <span class="chip">Base</span>' : ''}${copyBtn(m)}</span>`;
+const walletLink = (w) => `<span class="addr"><a class="mono" href="${isEvm(w) ? `https://basescan.org/address/${esc(w)}` : `https://solscan.io/account/${esc(w)}`}" target="_blank" rel="noopener">${short(w)}</a>${copyBtn(w)}</span>`;
 
 // ---------------- api ----------------
 // The app opens this page as /?t=<session token>. Keep the token for this tab only and
@@ -1239,15 +1243,15 @@ function renderWallets(el) {
   el.innerHTML = `
     <div class="card" style="margin-bottom:16px"><div class="card-b">
       <form class="row" id="add-wallet">
-        <input class="input mono" style="flex:3;min-width:220px" name="address" placeholder="Wallet address to copy" autocomplete="off" required>
+        <input class="input mono" style="flex:3;min-width:220px" name="address" placeholder="Wallet address to copy (Solana, or Base 0x…)" autocomplete="off" required>
         <input class="input" style="flex:1;min-width:140px" name="label" placeholder="Nickname (optional)" autocomplete="off">
         <button class="btn primary">Add wallet</button>
       </form>
-      <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a></div>
+      <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a> · <b>New:</b> Base wallets (addresses starting with 0x) can be copied in <b>paper mode</b>. Analyze, backtests and the check-up are Solana-only for now.</div>
     </div></div>
     ${healthCard()}
     <div class="card">
-      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm primary" id="health-go" ${healthJob() ? 'disabled' : ''}>${healthJob() ? 'Checking…' : 'Check my wallets'}</button> ` : ''}${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
+      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm primary" id="health-go" ${healthJob() ? 'disabled' : ''}>${healthJob() ? 'Checking…' : 'Check my wallets'}</button> ` : ''}${solanaWallets(ws).length ? `<button class="btn sm" data-backtest="${esc(solanaWallets(ws).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${solanaWallets(ws).length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
       ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
       <div class="tbl-wrap"><table class="wallets-tbl"><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r" title="SOL limit for this wallet's open positions (0 = no limit)">Budget</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
@@ -1265,16 +1269,19 @@ function renderWallets(el) {
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> ${chainOfW(w) === 'solana' ? `<button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button>` : '<span class="chip" title="Base wallet: copied in paper mode">Base</span>'} <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;
   $('#add-wallet').onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
-    const address = f.get('address').trim();
+    let address = f.get('address').trim();
+    const chain = isEvm(address) ? 'base' : 'solana';
+    if (chain === 'base') address = address.toLowerCase();
     if (ws.some((w) => w.address === address)) return toast('That wallet is already in the list', true);
-    if (await saveWallets([...ws, { address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], 'Wallet added')) e.target.reset();
+    if (chain === 'base' && S.config.mode === 'live') toast('Base wallets only run in paper mode for now: it will be watched when you switch to paper.', true);
+    if (await saveWallets([...ws, { chain, address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], chain === 'base' ? 'Base wallet added (paper mode)' : 'Wallet added')) e.target.reset();
   };
   el.querySelectorAll('[data-exits]').forEach((b) => (b.onclick = () => walletExitsModal(Number(b.dataset.exits))));
   const hg = $('#health-go');
@@ -1299,7 +1306,7 @@ function renderWallets(el) {
       saveWallets(ws.filter((_, i) => i != b.dataset.remove), 'Wallet removed');
   }));
   el.querySelectorAll('[data-analyze]').forEach((b) => (b.onclick = () => startAnalyze([b.dataset.analyze])));
-  const aa = $('#analyze-all'); if (aa) aa.onclick = () => startAnalyze(ws.map((w) => w.address));
+  const aa = $('#analyze-all'); if (aa) aa.onclick = () => startAnalyze(solanaWallets(ws).map((w) => w.address));
 }
 async function saveWallets(wallets, msg) {
   const r = await act(() => api('PUT', '/api/config', { ...S.config, wallets }), msg);
@@ -1474,13 +1481,13 @@ function renderStrategies(el) {
     <div class="strat-grid">${list.map(card).join('')}</div>
     <div class="banner info" style="margin-top:16px"><div><b>Not sure?</b> Press <b>Compare on my wallets</b>: it replays the wallets you copy with every strategy over your chosen period (last 7 days by default) and ranks them.</div></div>`;
   $('#st-compare').onclick = () => {
-    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    const wallets = solanaWallets(S.config.wallets).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
     if (!wallets.length) return toast('Add wallets to copy first, or compare any wallets from the Backtest page', true);
     startCompare(wallets);
   };
   el.querySelectorAll('[data-use-strat]').forEach((b) => (b.onclick = () => useStrategy(b.dataset.useStrat)));
   el.querySelectorAll('[data-bt-strat]').forEach((b) => (b.onclick = () => {
-    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    const wallets = solanaWallets(S.config.wallets).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
     if (!wallets.length) return toast('Add wallets to copy first, or run a backtest with any wallets on the Backtest page', true);
     startBacktest(wallets, null, S.btDelay ?? 5, b.dataset.btStrat);
   }));
@@ -1627,7 +1634,7 @@ function optResult(j) {
 function renderBacktest(el) {
   const list = S.jobs.filter((j) => j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare');
   const j = list.find((x) => x.id === S.btJob) || list[0];
-  const mine = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+  const mine = solanaWallets(S.config.wallets).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
   el.innerHTML = `
     <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>What would copying have made?</h2><div class="muted" style="font-size:12.5px">Replays up to 5 wallets' real trades with your current settings (buy size, limits, budgets, copying sells, daily loss limit).</div></div></div>
       <div class="card-b bt-form">
@@ -2447,6 +2454,8 @@ function renderSettings(el) {
           <input class="input mono" id="c-rpc" value="${esc(c.rpcUrl)}" spellcheck="false"></div>
         <div class="field"><div><label class="l" for="c-rpc2">Backup RPC URL <span class="muted">(optional)</span></label><div class="h">Copybot switches to this one automatically if your main RPC keeps failing, and back again after 5 minutes. Use a different provider, e.g. a free <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> endpoint.${c.activeRpc === 'backup' ? ' <b class="neg">The backup is in use right now.</b>' : ''}</div></div>
           <input class="input mono" id="c-rpc2" value="${esc(c.backupRpcUrl || '')}" placeholder="not set" spellcheck="false"></div>
+        <div class="field"><div><label class="l" for="c-baserpc">Base RPC URL <span class="muted">(optional, for Base wallets)</span></label><div class="h">Copybot uses free public Base nodes, which limit how often they can be asked. A free key from <a href="https://www.alchemy.com" target="_blank" rel="noopener">Alchemy</a> or <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> (pick the Base network) gives reliable copying, e.g. <span class="mono">https://base-mainnet.g.alchemy.com/v2/…</span></div></div>
+          <input class="input mono" id="c-baserpc" value="${esc(c.baseRpcUrl || '')}" placeholder="not set (public nodes)" spellcheck="false"></div>
         <div class="field"><div><label class="l" for="c-jupkey">Jupiter API key <span class="muted">(optional)</span></label><div class="h">Only if you've outgrown the free tier. ${c.hasJupiterKey ? '<b>A key is saved.</b>' : ''}</div></div>
           <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
         <div class="field"><div><label class="l" for="c-dexkey">DexCheck API key <span class="muted">(optional)</span></label><div class="h">Turns on whale trades and top traders in Markets. Free at <a href="https://dexcheck.ai/" target="_blank" rel="noopener">dexcheck.ai</a> (API dashboard → Settings → API Keys). ${c.hasDexcheckKey ? `<b>A key is saved${c.dexcheckEncrypted ? ' (encrypted)' : ''}.</b>` : ''}</div></div>
@@ -2485,7 +2494,7 @@ function renderSettings(el) {
   bindAlerts();
   el.querySelectorAll('#mode-seg button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
   $('#c-save').onclick = async () => {
-    const body = { rpcUrl: $('#c-rpc').value, backupRpcUrl: $('#c-rpc2').value };
+    const body = { rpcUrl: $('#c-rpc').value, backupRpcUrl: $('#c-rpc2').value, baseRpcUrl: $('#c-baserpc').value };
     if ($('#c-jupkey').value) body.jupiterKey = $('#c-jupkey').value;
     if ($('#c-dexkey').value) { body.dexcheckKey = $('#c-dexkey').value; S.m.data = {}; }
     if ($('#c-sskey').value) body.solscanKey = $('#c-sskey').value;

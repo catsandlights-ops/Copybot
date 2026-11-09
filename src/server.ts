@@ -21,6 +21,7 @@ import * as remote from './remote';
 import QRCode from 'qrcode';
 import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report';
 import { describeOrder, makeOrder } from './orders';
+import { chainOf } from './chains';
 import { downsample, pushPoint, runningTotal, since, type Pt } from './series';
 import { exitConfigFor } from './config';
 import { PublicKey } from '@solana/web3.js';
@@ -237,6 +238,7 @@ function connectionInfo() {
   return {
     rpcUrl: rpcUrl(),
     backupRpcUrl: backupRpcUrl(),
+    baseRpcUrl: process.env.BASE_RPC_URL?.trim() || '',
     activeRpc: failover.state.active,
     usingPublicRpc: rpcUrl().includes('api.mainnet-beta.solana.com'),
     jupiterUrl: jupUrl(),
@@ -976,8 +978,9 @@ function saveTune() {
   broadcast('autotune', lastTune);
 }
 function runAutoTune(manual = false) {
-  const wallets = engine.cfg.wallets.filter((w) => w.enabled).slice(0, 5).map((w) => w.address);
-  if (!wallets.length) throw new HttpError(400, 'Add wallets to copy first.');
+  // Backtests read Solana history; other chains' wallets aren't included yet.
+  const wallets = engine.cfg.wallets.filter((w) => w.enabled && chainOf(w) === 'solana').slice(0, 5).map((w) => w.address);
+  if (!wallets.length) throw new HttpError(400, 'Add Solana wallets to copy first (the settings check reads Solana history).');
   if (jobs.some((j) => j.kind === 'optimize' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A settings comparison is already running.');
   const now = Date.now();
   const spec = backtestSpec({ wallets, from: now - 7 * 86_400_000, to: now, delayPct: measuredCopyGap() ?? 5 });
@@ -1198,7 +1201,7 @@ async function handleRemote(req: http.IncomingMessage, res: http.ServerResponse)
   }
   if (route === 'POST /r/sell') {
     const b = await readBody(req);
-    if (!isAddress(b.mint) || !engine.state.positions[b.mint]) throw new HttpError(400, 'No open position for that token');
+    if (typeof b.mint !== 'string' || !Object.hasOwn(engine.state.positions, b.mint)) throw new HttpError(400, 'No open position for that token');
     const fraction = b.fraction === 0.5 ? 0.5 : 1;
     if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
     from(`sold ${fraction === 1 ? 'all' : 'half'} of ${b.mint.slice(0, 4)}…${b.mint.slice(-4)}`);
@@ -1603,7 +1606,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/connection') {
     const b = await readBody(req);
-    for (const k of ['rpcUrl', 'backupRpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey', 'solscanKey']) {
+    for (const k of ['rpcUrl', 'backupRpcUrl', 'baseRpcUrl', 'jupiterKey', 'privateKey', 'dexcheckKey', 'anthropicKey', 'solscanKey']) {
       if (b[k] !== undefined && (typeof b[k] !== 'string' || /[\u0000-\u001f\u007f]/.test(b[k].trim()))) throw new HttpError(400, `Invalid ${k}`);
     }
     const env: Record<string, string> = {};
@@ -1617,6 +1620,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       if (u && !isHttpsUrl(u)) throw new HttpError(400, 'Backup RPC URL must be a valid https:// address');
       if (u && u === (env.RPC_URL ?? rpcUrl())) throw new HttpError(400, 'The backup RPC should be a different one from your main RPC');
       env.RPC_URL_BACKUP = u;
+    }
+    if (typeof b.baseRpcUrl === 'string') {
+      const u = b.baseRpcUrl.trim();
+      if (u && !isHttpsUrl(u)) throw new HttpError(400, 'Base RPC URL must be a valid https:// address');
+      env.BASE_RPC_URL = u;
     }
     if (typeof b.jupiterKey === 'string') env.JUPITER_API_KEY = b.jupiterKey.trim();
     let newKey: string | null = null;
@@ -1682,7 +1690,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/sell') {
     const b = await readBody(req);
-    if (!isAddress(b.mint) || !engine.state.positions[b.mint]) throw new HttpError(400, 'No open position for that token');
+    if (typeof b.mint !== 'string' || !Object.hasOwn(engine.state.positions, b.mint)) throw new HttpError(400, 'No open position for that token');
     const fraction = Math.min(1, Math.max(0.01, Number(b.fraction) || 1));
     if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
     await engine.manualSell(b.mint, fraction);
@@ -1959,8 +1967,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/jobs/health') {
     const b = await readBody(req);
-    const wallets = engine.cfg.wallets.slice(0, 15);
-    if (!wallets.length) throw new HttpError(400, 'Add wallets to copy first.');
+    const wallets = engine.cfg.wallets.filter((w) => chainOf(w) === 'solana').slice(0, 15); // the check-up reads Solana history
+    if (!wallets.length) throw new HttpError(400, 'The check-up reads Solana history: add Solana wallets to check.');
     if (jobs.some((j) => j.kind === 'health' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A wallet check is already running.');
     const delayPct = Number.isFinite(Number(b.delayPct)) ? Math.min(50, Math.max(0, Number(b.delayPct))) : measuredCopyGap() ?? 5;
     const base = backtestSpec({ wallets: [wallets[0].address], from: b.from ?? Date.now() - 7 * 86_400_000, to: b.to ?? Date.now(), delayPct });

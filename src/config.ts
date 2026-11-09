@@ -396,11 +396,15 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
   const wallets = Array.isArray(input?.wallets) ? input.wallets : [];
   if (wallets.length > 100) fail('At most 100 wallets');
   const seen = new Set<string>();
-  for (const w of wallets.slice(0, 100)) {
-    if (!isAddress(w?.address)) {
-      fail(`Not a valid Solana address: ${cleanLabel(w?.address)}`);
+  for (let w of wallets.slice(0, 100)) {
+    // Each chain has its own address format: Solana (base58) or Base and other EVM chains (0x…, stored lowercase).
+    const chain = (KNOWN_CHAINS as readonly string[]).includes(w?.chain) ? w.chain : DEFAULT_CHAIN;
+    const evm = chain !== 'solana';
+    if (evm ? !(typeof w?.address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(w.address)) : !isAddress(w?.address)) {
+      fail(`Not a valid ${evm ? 'Base (0x…)' : 'Solana'} address: ${cleanLabel(w?.address)}`);
       continue;
     }
+    if (evm) w = { ...w, address: w.address.toLowerCase() };
     if (seen.has(w.address)) continue;
     seen.add(w.address);
     const num = (v: unknown, min: number, max: number, def: number, name: string) => {
@@ -423,7 +427,7 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       if (exits.tp1AtPct && exits.tp2AtPct && exits.tp2AtPct <= exits.tp1AtPct) fail(`${cleanLabel(w.label) || 'Wallet'}: take-profit 2 must be higher than take-profit 1`);
     }
     out.wallets.push({
-      chain: (KNOWN_CHAINS as readonly string[]).includes(w.chain) ? w.chain : DEFAULT_CHAIN,
+      chain,
       address: w.address,
       label: cleanLabel(w.label) || `trader-${out.wallets.length + 1}`,
       enabled: w.enabled !== false,
