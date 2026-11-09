@@ -17,7 +17,8 @@ import type { Swap } from './decode';
 import type { Candle } from './markets';
 import { buyBlockReason, ExitStep, freshGuard, GuardState, planExit, recordSell } from './rules';
 
-export type BacktestOpts = { delayPct: number; feeSol: number };
+/** endAt: value what's still held at this time (a past date range) instead of today. */
+export type BacktestOpts = { delayPct: number; feeSol: number; endAt?: number };
 export type PriceSeries = { step: number; candles: Candle[] };
 export type BtTrade = { t: number; side: 'buy' | 'sell'; mint: string; wallet: string; sol: number; pnl?: number; reason?: string };
 export type BtOpen = { mint: string; costSol: number; tokensRaw: number; valueSol: number | null; wallets: string[] };
@@ -67,7 +68,9 @@ export function usdAt(series: PriceSeries | undefined, t: number): number | null
 export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, marks: Map<string, number | null> = new Map(), prices: Map<string, PriceSeries> = new Map()): BacktestResult {
   const r = cfg.risk;
   const d = opts.delayPct / 100;
-  const ordered = swaps.filter((s) => s.quote === 'SOL' && s.blockTime && s.tokenAmount > 0n && s.quoteAmount > 0).sort((a, b) => a.blockTime! - b.blockTime!);
+  const ordered = swaps
+    .filter((s) => s.quote === 'SOL' && s.blockTime && s.tokenAmount > 0n && s.quoteAmount > 0 && (opts.endAt === undefined || s.blockTime * 1000 <= opts.endAt))
+    .sort((a, b) => a.blockTime! - b.blockTime!);
   const positions = new Map<string, Pos>();
   const anchors = new Map<string, Anchor>();
   const cursor = new Map<string, number>();
@@ -182,11 +185,17 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
       sell(p, fraction, p.tokens * fraction * theirPrice * (1 - d), now, s.wallet, fraction >= 0.999 ? 'they sold everything' : `they sold ${Math.round(fraction * 100)}%`);
     }
   }
-  advance(Infinity);
+  advance(opts.endAt ?? Infinity);
 
   const open: BtOpen[] = [...positions.values()].map((p) => {
-    const m = marks.get(p.mint);
-    return { mint: p.mint, costSol: p.costSol, tokensRaw: p.tokens, valueSol: m == null ? null : Math.max(0, p.tokens * m * (1 - d) - opts.feeSol), wallets: [...p.wallets] };
+    let perRaw: number | null | undefined;
+    if (opts.endAt !== undefined) {
+      // Value at the end of the period from the candles, anchored on the last real fill.
+      const a = anchors.get(p.mint);
+      const u = usdAt(prices.get(p.mint), opts.endAt);
+      perRaw = a?.usd && u ? a.solPerRaw * (u / a.usd) : null;
+    } else perRaw = marks.get(p.mint);
+    return { mint: p.mint, costSol: p.costSol, tokensRaw: p.tokens, valueSol: perRaw == null ? null : Math.max(0, p.tokens * perRaw * (1 - d) - opts.feeSol), wallets: [...p.wallets] };
   });
   const unrealizedSol = open.every((o) => o.valueSol !== null) ? open.reduce((a, o) => a + (o.valueSol! - o.costSol), 0) : null;
   // Unpriced open positions count as a total loss in the headline number (conservative).

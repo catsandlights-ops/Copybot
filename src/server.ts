@@ -892,14 +892,29 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   if (route === 'POST /api/jobs/backtest') {
     const b = await readBody(req);
     const wallets = addressList(b.wallets, 5, 'wallet address');
-    const txs = Math.min(2000, Math.max(100, Number(b.txs) || 600));
     const delayPct = Math.min(50, Math.max(0, Number.isFinite(Number(b.delayPct)) ? Number(b.delayPct) : 5));
     const replayExits = b.replayExits !== false;
-    const job = addJob('backtest', { wallets, txs, delayPct, replayExits }, async (progress) => {
+    // Period: a date range (from/to, ms) or the last N transactions.
+    const now = Date.now();
+    let range: { from: number; to: number } | null = null;
+    if (b.from !== undefined) {
+      const from = Number(b.from);
+      const to = b.to === undefined || b.to === null ? now : Math.min(now, Number(b.to));
+      if (!Number.isFinite(from) || !Number.isFinite(to)) throw new HttpError(400, 'Pick a start and end date.');
+      if (to <= from) throw new HttpError(400, 'The end date must be after the start date.');
+      if (from < now - 180 * 86_400_000) throw new HttpError(400, 'The start date can be at most 180 days ago.');
+      if (to - from > 90 * 86_400_000) throw new HttpError(400, 'Pick a period of at most 90 days.');
+      range = { from, to };
+    }
+    const txs = range ? 5000 : Math.min(2000, Math.max(100, Number(b.txs) || 600));
+    const endAt = range && range.to < now - 30 * 60_000 ? range.to : undefined; // past period: value holdings at its end
+    const job = addJob('backtest', { wallets, txs: range ? null : txs, from: range?.from ?? null, to: range?.to ?? null, delayPct, replayExits }, async (progress) => {
       const conn = makeConnection();
       const swaps = [];
-      const stats = { read: 0, failed: 0 };
+      const stats: import('./analyze').FetchStats = { read: 0, failed: 0 };
+      const truncated: { wallet: string; oldestMs: number | null }[] = [];
       for (const [i, w] of wallets.entries()) {
+        const ws: import('./analyze').FetchStats = { read: 0, failed: 0 };
         swaps.push(
           ...(await fetchSwaps(
             conn,
@@ -908,39 +923,50 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
             (n, t) => {
               if (n % 25 === 0 || n === t) progress(`Wallet ${i + 1}/${wallets.length}: reading transaction ${n} of ${t}`);
             },
-            { tries: 5, stats },
+            { tries: 5, stats: ws, ...(range ? { since: range.from, until: range.to, onScan: (n: number) => progress(`Wallet ${i + 1}/${wallets.length}: finding transactions in your dates (${n} checked)…`) } : {}) },
           )),
         );
+        stats.read += ws.read;
+        stats.failed += ws.failed;
+        if (ws.truncated) truncated.push({ wallet: w, oldestMs: ws.oldestMs ?? null });
       }
       // Your current settings; wallets you don't copy yet use size ×1 and no budget.
       const cfg = structuredClone(engine.cfg);
       for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
-      const opts = { delayPct, feeSol: 0.0002 };
+      const opts = { delayPct, feeSol: 0.0002, endAt };
       let first = runBacktest(swaps, cfg, opts);
-      // Price candles for the tokens we'd have bought, so stop-loss and take-profits can be replayed.
+      // Price candles: to replay stop-loss and take-profits, and to value what's still held at the end of a past period.
       const prices = new Map<string, import('./backtest').PriceSeries>();
-      if (replayExits) {
-        const bought = [...new Set(swaps.filter((s) => s.side === 'buy' && first.trades.some((t) => t.mint === s.mint)).map((s) => s.mint))];
-        const stillOpen = new Set(first.open.map((o) => o.mint));
-        for (const [i, mint] of bought.slice(0, 40).entries()) {
-          progress(`Loading price history for exits (${i + 1}/${Math.min(40, bought.length)})…`);
-          const times = swaps.filter((s) => s.mint === mint && s.blockTime).map((s) => s.blockTime! * 1000);
-          const from = Math.min(...times);
-          const to = stillOpen.has(mint) ? Date.now() : Math.max(...times) + 3_600_000;
-          const h = await markets.priceHistory(mint, from, to).catch(() => null);
-          if (h) prices.set(mint, h);
-        }
-        first = runBacktest(swaps, cfg, opts, new Map(), prices);
+      const stillOpen = new Set(first.open.map((o) => o.mint));
+      const bought = [...new Set(swaps.filter((s) => s.side === 'buy' && first.trades.some((t) => t.mint === s.mint)).map((s) => s.mint))];
+      const needCandles = (replayExits ? bought : endAt ? bought.filter((m) => stillOpen.has(m)) : []).slice(0, 40);
+      for (const [i, mint] of needCandles.entries()) {
+        progress(`Loading price history (${i + 1}/${needCandles.length})…`);
+        const times = swaps.filter((s) => s.mint === mint && s.blockTime).map((s) => s.blockTime! * 1000);
+        const from = Math.min(...times);
+        const to = stillOpen.has(mint) ? endAt ?? now : Math.max(...times) + 3_600_000;
+        const h = await markets.priceHistory(mint, from, to).catch(() => null);
+        if (h) prices.set(mint, h);
       }
-      // Price what would still be held today.
+      if (needCandles.length) first = runBacktest(swaps, cfg, opts, new Map(), prices);
+      // A period that ends now: price what would still be held at today's prices.
       const marks = new Map<string, number | null>();
-      for (const [i, o] of first.open.slice(0, 25).entries()) {
-        progress(`Pricing open positions (${i + 1}/${Math.min(25, first.open.length)})…`);
-        const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
-        const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
-        marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+      if (!endAt) {
+        for (const [i, o] of first.open.slice(0, 25).entries()) {
+          progress(`Pricing open positions (${i + 1}/${Math.min(25, first.open.length)})…`);
+          const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
+          const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
+          marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+        }
       }
-      return { ...runBacktest(swaps, cfg, opts, marks, prices), unreadable: stats.failed, read: stats.read, settings: { delayPct, txs, sizing: cfg.buy.sizing, fixedSol: cfg.buy.fixedSol, percentOfTarget: cfg.buy.percentOfTarget, copySells: cfg.sell.copySells } };
+      return {
+        ...runBacktest(swaps, cfg, opts, marks, prices),
+        unreadable: stats.failed,
+        read: stats.read,
+        period: range ? { from: range.from, to: range.to, valuedAtEnd: !!endAt } : null,
+        truncated,
+        settings: { delayPct, txs: range ? null : txs, sizing: cfg.buy.sizing, fixedSol: cfg.buy.fixedSol, percentOfTarget: cfg.buy.percentOfTarget, copySells: cfg.sell.copySells },
+      };
     });
     return send(res, 200, job);
   }

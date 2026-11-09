@@ -1085,8 +1085,21 @@ function bindJobs() {
 
 // ----- backtest -----
 const dateFmt = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
-async function startBacktest(wallets, txs, delayPct) {
-  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, txs, delayPct, replayExits: S.btExits !== false }));
+const BT_PERIODS = [['1d', 'Last 24 hours'], ['3d', 'Last 3 days'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom dates…'], ['txs', 'Last N transactions']];
+const isoDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+/** The chosen period as request fields: { from, to } or { txs }. */
+function btPeriodBody() {
+  const p = S.btPeriod || '7d', now = Date.now();
+  if (p === 'txs') return { txs: S.btTxs || 600 };
+  if (p === 'custom') {
+    const from = new Date(`${S.btFrom || isoDay(now - 7 * 864e5)}T00:00:00`).getTime();
+    const to = Math.min(now, new Date(`${S.btTo || isoDay(now)}T23:59:59.999`).getTime());
+    return { from, to };
+  }
+  return { from: now - { '1d': 1, '3d': 3, '7d': 7, '30d': 30 }[p] * 864e5, to: now };
+}
+async function startBacktest(wallets, _txs, delayPct) {
+  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, ...btPeriodBody(), delayPct, replayExits: S.btExits !== false }));
   if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); go('backtest'); }
 }
 document.addEventListener('click', (e) => {
@@ -1121,23 +1134,24 @@ function btResult(j) {
   const copied = r.wallets.reduce((a, w) => a + w.copied, 0);
   const unpriced = r.open.filter((o) => o.valueSol === null).length;
   return `
-    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${r.from ? ` · ${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
-      <div class="muted" style="font-size:12.5px">Your settings: ${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, last ${s.txs} transactions per wallet.</div></div></div></div>
-    ${!r.from ? '<div class="card"><div class="empty"><h3>No SOL swaps found</h3>These wallets have no token trades in the transactions read. Try a longer history.</div></div>' : `
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''} · ${r.period ? `${dateFmt(r.period.from)} to ${dateFmt(r.period.to)}` : r.from ? `${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">Your settings: ${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, ${r.period ? `trades from ${new Date(r.period.from).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} to ${new Date(r.period.to).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : `last ${s.txs} transactions per wallet`}.</div></div></div></div>
+    ${r.truncated?.length ? `<div class="banner warn"><div><b>Very active wallet${r.truncated.length > 1 ? 's' : ''}.</b> ${r.truncated.map((x) => `${esc(short(x.wallet))} had more than 5,000 transactions in these dates, so only back to ${x.oldestMs ? new Date(x.oldestMs).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'part of the period'} was included`).join('; ')}. Pick a shorter period for the full picture.</div></div>` : ''}
+    ${!r.from ? `<div class="card"><div class="empty"><h3>No SOL swaps found</h3>${r.period ? 'These wallets made no token trades in these dates. Try a longer period.' : 'These wallets have no token trades in the transactions read. Try a longer history.'}</div></div>` : `
     <div class="grid stats">
       <div class="card stat"><div class="k">${ICON.coin}Total profit</div><div class="v num ${cls(r.totalSol)}">${signed(r.totalSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${r.roiPct != null ? `${pct(r.roiPct)} on ${sol(r.spentSol, 2)} SOL spent` : ''}</div></div>
       <div class="card stat"><div class="k">${ICON.star}Win rate</div><div class="v num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '–'}</div><div class="s">${r.wins} of ${r.closed} sells in profit</div></div>
       <div class="card stat"><div class="k">${pixelSvg(HEART)}Worst dip</div><div class="v num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">largest drop from a high point</div></div>
       <div class="card stat"><div class="k">${ICON.key}Trades copied</div><div class="v num">${copied}</div><div class="s">${skippedTotal} skipped by your limits</div></div>
     </div>
-    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Profit over time</h2><span class="spacer"></span><span class="muted" style="font-size:12px">closed trades only · realized ${signed(r.realizedSol, 3)} SOL</span></div><div class="bt-curve">${curveSvg(r.curve, r.from, r.to)}</div></div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Profit over time</h2><span class="spacer"></span><span class="muted" style="font-size:12px">closed trades only · realized ${signed(r.realizedSol, 3)} SOL</span></div><div class="bt-curve">${curveSvg(r.curve, r.period?.from ?? r.from, r.period?.to ?? r.to)}</div></div>
     <div class="grid two" style="margin-bottom:16px">
       <div class="card"><div class="card-h"><h2>By wallet</h2></div><div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th class="r">Their buys</th><th class="r">Copied</th><th class="r">Win rate</th><th class="r">Profit</th><th></th></tr></thead><tbody>
         ${r.wallets.map((w) => `<tr><td>${wname(w.wallet)}</td><td class="r num">${w.signals}</td><td class="r num">${w.copied}</td><td class="r num">${w.closed ? Math.round((w.wins / w.closed) * 100) + '%' : '–'}</td><td class="r num ${cls(w.pnlSol)}">${signed(w.pnlSol, 3)}</td>
           <td class="r">${inList(w.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(w.wallet)}">Copy</button>`}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><div class="card-h"><h2>Skipped and still open</h2></div><div class="card-b stack">
         <div class="row" style="gap:6px">${skippedTotal ? Object.entries(r.skipped).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip">${esc(k)} <b>${n}</b></span>`).join('') : '<span class="muted">Nothing was skipped.</span>'}</div>
-        <div class="muted" style="font-size:13px">${r.open.length ? `${r.open.length} position${r.open.length > 1 ? 's' : ''} would still be open: cost ${sol(r.open.reduce((a, o) => a + o.costSol, 0), 3)} SOL${r.unrealizedSol != null ? `, worth ${signed(r.unrealizedSol, 3)} SOL vs cost at today's prices` : `. ${unpriced} couldn't be priced today (likely dead) and count as a total loss`}.` : 'No positions would still be open.'}</div>
+        <div class="muted" style="font-size:13px">${r.open.length ? `${r.open.length} position${r.open.length > 1 ? 's' : ''} would still be open: cost ${sol(r.open.reduce((a, o) => a + o.costSol, 0), 3)} SOL${r.unrealizedSol != null ? `, worth ${signed(r.unrealizedSol, 3)} SOL vs cost at ${r.period?.valuedAtEnd ? `prices on ${dateFmt(r.period.to)}` : 'today\'s prices'}` : `. ${unpriced} couldn't be priced ${r.period?.valuedAtEnd ? `for ${dateFmt(r.period.to)}` : 'today'} (no price history, often a dead token) and count as a total loss`}.` : 'No positions would still be open.'}</div>
         ${r.best ? `<div class="muted" style="font-size:13px">Best trade <b class="pos">${signed(r.best.pnl, 3)}</b> · worst <b class="${cls(r.worst.pnl)}">${signed(r.worst.pnl, 3)}</b> SOL</div>` : ''}
       </div></div>
     </div>
@@ -1158,24 +1172,33 @@ function renderBacktest(el) {
         <div class="stack"><textarea class="input mono" id="bt-wallets" rows="4" placeholder="Wallet addresses, one per line (up to 5)">${esc(S.btWallets || '')}</textarea>
           <div class="row"><button class="btn sm ghost" id="bt-mine" ${mine.length ? '' : 'disabled'}>Use the wallets I copy</button></div></div>
         <div class="stack">
-          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Period <select class="input" id="bt-period" style="width:auto;height:32px">${BT_PERIODS.map(([v, l]) => `<option value="${v}" ${(S.btPeriod || '7d') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <div class="row muted" id="bt-dates" style="gap:8px;font-size:13px;justify-content:space-between;display:${S.btPeriod === 'custom' ? 'flex' : 'none'}">From <input class="input" type="date" id="bt-from" style="width:auto;height:32px" min="${isoDay(Date.now() - 180 * 864e5)}" max="${isoDay(Date.now())}" value="${S.btFrom || isoDay(Date.now() - 7 * 864e5)}"> to <input class="input" type="date" id="bt-to" style="width:auto;height:32px" min="${isoDay(Date.now() - 180 * 864e5)}" max="${isoDay(Date.now())}" value="${S.btTo || isoDay(Date.now())}"></div>
+          <label class="row muted" id="bt-txs-row" style="gap:8px;font-size:13px;justify-content:space-between;display:${S.btPeriod === 'txs' ? 'flex' : 'none'}">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
           <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Copy-delay cost <span class="with-unit" style="width:120px"><input type="number" id="bt-delay" min="0" max="50" step="0.5" value="${S.btDelay ?? 5}"><span>%</span></span></label>
           <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.${(() => { const g = measuredGap(); return g.n >= 5 ? ` <b>Your measured gap: ${g.median.toFixed(1)}%</b> over ${g.n} trades. <a href="#" id="bt-use-gap">Use it</a>` : ''; })()}</div>
-          <label class="row muted" style="gap:8px;font-size:13px"><input type="checkbox" id="bt-exits" ${S.btExits === false ? '' : 'checked'}> Replay my stop-loss and take-profits (slower: loads price history, ~5 s per token)</label>
+          <label class="muted" style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer"><input type="checkbox" id="bt-exits" style="flex:none;margin-top:3px" ${S.btExits === false ? '' : 'checked'}><span>Replay my stop-loss and take-profits (slower: loads price history, ~5 s per token)</span></label>
           <button class="btn primary" id="bt-go">Run backtest</button>
         </div>
       </div></div>
-    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
+    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
     ${!j ? `<div class="card"><div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No backtests yet</h3>Enter wallets above, or press <b>Backtest</b> next to any wallet on the Wallets or Find wallets pages.</div></div>`
       : j.status === 'done' ? btResult(j)
       : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
       : `<div class="card"><div class="empty"><span class="spinner"></span><h3 style="margin-top:12px">Running the backtest…</h3>${esc(j.progress)}</div></div>`}`;
+  $('#bt-period').onchange = (e) => {
+    S.btPeriod = e.target.value;
+    $('#bt-dates').style.display = S.btPeriod === 'custom' ? 'flex' : 'none';
+    $('#bt-txs-row').style.display = S.btPeriod === 'txs' ? 'flex' : 'none';
+  };
   const ug = $('#bt-use-gap');
   if (ug) ug.onclick = (e) => { e.preventDefault(); $('#bt-delay').value = Math.max(0, +measuredGap().median.toFixed(1)); };
   $('#bt-mine').onclick = () => { $('#bt-wallets').value = mine.join('\n'); };
   $('#bt-go').onclick = () => {
     const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     S.btTxs = Number($('#bt-txs').value); S.btDelay = Number($('#bt-delay').value); S.btExits = $('#bt-exits').checked;
+    S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value;
+    if (S.btPeriod === 'custom' && S.btFrom > S.btTo) return toast('The start date must be before the end date', true);
     startBacktest(wallets, S.btTxs, S.btDelay);
   };
   el.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.add, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list')));

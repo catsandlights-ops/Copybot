@@ -149,3 +149,43 @@ test('usdAt finds the covering candle and ignores stale data', async () => {
   assert.equal(usdAt(s, -1), null);
   assert.equal(usdAt(s, 60_000 + 3 * 60_000), null);
 });
+
+test('a past period stops at its end and values what is still held at that date', () => {
+  const c = cfg();
+  c.exits = { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
+  c.risk.stopLossPct = 95;
+  // Bought at USD 1.0; at the end of the period (40 min) the price is 2.0; they sell at 5x later, outside the period.
+  const prices = new Map([['M', series(-5, [[1, 1, 1], [1, 1, 1], [1, 1.5, 1.5], [1.5, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]])]]);
+  const swaps = [sw({ side: 'buy', mint: 'M', wallet: A }, 0), sw({ side: 'sell', mint: 'M', wallet: A, quoteAmount: 5, tokenPre: 1_000_000n }, 90)];
+  const endAt = (T0 + 40 * 60) * 1000;
+  const r = runBacktest(swaps, c, { ...noCost, endAt }, new Map([['M', 9e-6]]), prices);
+  assert.equal(r.closed, 0); // their 5x sell is after the period
+  assert.equal(r.open.length, 1);
+  assert.ok(Math.abs(r.open[0].valueSol! - 0.2) < 1e-9); // 2x at the period's end, not today's mark
+  assert.ok(Math.abs(r.totalSol - 0.1) < 1e-9);
+});
+
+test('fetchSwaps by date: only transactions inside the window are read; long windows are capped', async () => {
+  const http = await import('node:http');
+  const srv = http.createServer((_q, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"jsonrpc":"2.0","id":1,"result":null}'); });
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok));
+  process.env.RPC_URL = `http://127.0.0.1:${(srv.address() as any).port}`;
+  const { fetchSwaps } = await import('./analyze');
+  // 2,500 signatures, one per minute going back from t=10,000 min.
+  const all = Array.from({ length: 2500 }, (_, i) => ({ signature: `s${i}`, blockTime: (10_000 - i) * 60, err: null }));
+  const conn = {
+    getSignaturesForAddress: async (_pk: unknown, o: { limit: number; before?: string }) => {
+      const start = o.before ? all.findIndex((s) => s.signature === o.before) + 1 : 0;
+      return all.slice(start, start + o.limit);
+    },
+  } as any;
+  const stats: any = { read: 0, failed: 0 };
+  await fetchSwaps(conn, 'So11111111111111111111111111111111111111112', 5000, undefined, { tries: 1, stats, since: 9_000 * 60_000, until: 9_499 * 60_000 });
+  assert.equal(stats.read, 500); // minutes 9000..9499
+  assert.equal(stats.truncated, false);
+  const capped: any = { read: 0, failed: 0 };
+  await fetchSwaps(conn, 'So11111111111111111111111111111111111111112', 100, undefined, { tries: 1, stats: capped, since: 8_000 * 60_000 });
+  assert.equal(capped.read, 100);
+  assert.equal(capped.truncated, true);
+  srv.close();
+});

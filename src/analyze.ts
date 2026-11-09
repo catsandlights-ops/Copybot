@@ -26,18 +26,55 @@ export type Report = {
 
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);
 
-/** `stats.failed` counts transactions that couldn't be read (RPC errors), so callers can warn about gaps. */
-export async function fetchSwaps(conn: Connection, wallet: string, maxTxs: number, onProgress?: (n: number, total: number) => void, opts: { tries?: number; stats?: { read: number; failed: number } } = {}): Promise<Swap[]> {
+export type FetchStats = { read: number; failed: number; truncated?: boolean; oldestMs?: number | null };
+
+/**
+ * A wallet's SOL swaps, newest first in the chain's order.
+ *  - by count: the last `maxTxs` transactions
+ *  - by date (`since`/`until`, ms): every transaction in that window, up to `maxTxs`
+ * `stats.failed` counts transactions that couldn't be read (RPC errors); `stats.truncated` is set
+ * when the date window had more than `maxTxs` transactions (then `stats.oldestMs` is how far back it got).
+ */
+export async function fetchSwaps(
+  conn: Connection,
+  wallet: string,
+  maxTxs: number,
+  onProgress?: (n: number, total: number) => void,
+  opts: { tries?: number; stats?: FetchStats; since?: number; until?: number; onScan?: (n: number) => void } = {},
+): Promise<Swap[]> {
   const pk = new PublicKey(wallet);
   const sigs: string[] = [];
+  const byDate = opts.since !== undefined;
   let before: string | undefined;
+  let scanned = 0;
+  let reachedStart = false;
   while (sigs.length < maxTxs) {
-    const page = await withRetry(() => conn.getSignaturesForAddress(pk, { limit: Math.min(1000, maxTxs - sigs.length), before }));
-    if (!page.length) break;
-    sigs.push(...page.filter((s) => !s.err).map((s) => s.signature));
+    const page = await withRetry(() => conn.getSignaturesForAddress(pk, { limit: byDate ? 1000 : Math.min(1000, maxTxs - sigs.length), before }));
+    if (!page.length) {
+      reachedStart = true;
+      break;
+    }
+    scanned += page.length;
+    opts.onScan?.(scanned);
+    for (const s of page) {
+      if (s.err) continue;
+      const t = s.blockTime ? s.blockTime * 1000 : null;
+      if (byDate && t !== null && (t < opts.since! || (opts.until !== undefined && t > opts.until))) continue;
+      if (sigs.length < maxTxs) sigs.push(s.signature);
+    }
     before = page[page.length - 1].signature;
-    if (page.length < 1000) break;
+    const oldest = page[page.length - 1].blockTime;
+    if (opts.stats) opts.stats.oldestMs = oldest ? oldest * 1000 : null;
+    if (byDate && oldest && oldest * 1000 < opts.since!) {
+      reachedStart = true;
+      break;
+    }
+    if (page.length < 1000) {
+      reachedStart = true;
+      break;
+    }
   }
+  if (opts.stats && byDate) opts.stats.truncated = !reachedStart;
   let done = 0;
   const swaps = await mapLimit(sigs, 4, async (sig) => {
     const tx = await getTx(sig, opts.tries ?? 2).catch(() => {
