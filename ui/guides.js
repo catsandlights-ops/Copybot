@@ -45,6 +45,11 @@ window.GUIDES = [
 <li>The one-press paper experiment no longer fails with "Couldn't find active traders" when the market data service is busy: it retries, says what went wrong, and falls back to your last Find wallets results.</li>
 <li>Find wallets now also looks at older, established coins.</li>
 <li>The bot can start with only the scanner on, no wallets needed.</li>
+<li>Selling part of a position by hand no longer sets off dump protection.</li>
+</ul>
+<h3>Under the hood</h3>
+<ul>
+<li>Groundwork for trading on more blockchains later: every trade, position, wallet and order now records which chain it's on (all Solana for now), and Settings show the dollar value of SOL amounts. Nothing changes in how Copybot trades.</li>
 </ul>`,
   },
   {
