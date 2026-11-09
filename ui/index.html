@@ -1046,12 +1046,12 @@ function renderJobs() { const el = $('#jobs'); if (el) { el.innerHTML = jobsHtml
 function jobsHtml() {
   if (!S.jobs.length) return '<div class="empty">Results from discovery and analysis show up here.</div>';
   return S.jobs.map((j) => {
-    const title = j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
+    const title = j.kind === 'optimize' ? `Best settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
     const head = `<div class="job-h">${j.status === 'running' || j.status === 'queued' ? '<span class="spinner"></span>' : j.status === 'error' ? '<span class="dot bad"></span>' : '<span class="dot ok"></span>'}
       <b style="font-weight:600">${title}</b><span class="muted" style="font-size:12.5px">${esc(j.status === 'error' ? j.error : j.progress)}</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:12px">${time(j.createdAt)}</span></div>`;
     if (j.status !== 'done') return `<div class="job">${head}</div>`;
     if (j.kind === 'scout') return `<div class="job">${head}<div class="muted" style="padding:0 18px 12px;font-size:13px">Results are shown in the Wallet scout card above.</div></div>`;
-    if (j.kind === 'backtest') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the backtest results →</a></div></div>`;
+    if (j.kind === 'backtest' || j.kind === 'optimize') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the results →</a></div></div>`;
     return `<div class="job">${head}${j.kind === 'analyze' ? analyzeTable(j.result) : discoverTable(j.result)}</div>`;
   }).join('');
 }
@@ -1163,8 +1163,28 @@ function btResult(j) {
     ${r.unreadable ? `<div class="banner warn"><div><b>${r.unreadable} of ${r.read} transactions couldn't be read</b> (the connection was rate-limiting), so some trades may be missing and the numbers are less certain. A private RPC (Settings → Connection) fixes this.</div></div>` : ''}
     <div class="banner info"><div><b>How to read this.</b> It replays these wallets' real trades with your current settings, buying ${s.delayPct}% higher and selling ${s.delayPct}% lower than they did, because you always trade after them, plus network fees. It sells when they sell${r.exitsReplayed?.withPrices ? `, and your stop-loss, take-profits and trailing stop were replayed from price history for ${r.exitsReplayed.withPrices} of ${r.exitsReplayed.tokens} tokens (${r.exitsReplayed.exitSells} sells came from them)` : '. Stop-loss and take-profits were not replayed'}. Rug protection isn't replayed. Past results don't predict future ones.</div></div>`;
 }
+function optResult(j) {
+  const o = j.result, cur = o.current, best = o.best;
+  const sameAsNow = (r) => r.setup.id === 'current';
+  const row = (r, i) => `<tr${sameAsNow(r) ? ' style="background:var(--panel-2)"' : ''}><td class="muted num">${i + 1}</td><td>${esc(r.setup.name)}${sameAsNow(r) ? ' <span class="tag paper">now</span>' : ''}</td>
+    <td class="r num ${cls(r.totalSol)}">${signed(r.totalSol, 3)}</td><td class="r num ${cls(r.roiPct)}">${r.roiPct != null ? pct(r.roiPct) : '—'}</td>
+    <td class="r num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '—'}</td><td class="r num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'}</td><td class="r num muted">${r.closed}</td>
+    <td class="r">${sameAsNow(r) ? '' : `<button class="btn sm ${i === 0 ? 'primary' : ''}" data-apply-setup="${esc(r.setup.id)}" data-job="${j.id}">Use</button>`}</td></tr>`;
+  const verdict = {
+    better: `<div class="banner info"><div><b>${esc(best.setup.name)}</b> would have made <b class="pos">${signed(best.totalSol, 3)} SOL</b>, against <b class="${cls(cur.totalSol)}">${signed(cur.totalSol, 3)} SOL</b> with your current settings.</div><button class="btn sm primary" data-apply-setup="${esc(best.setup.id)}" data-job="${j.id}">Use these settings</button></div>`,
+    small: `<div class="banner warn"><div><b>No clear winner.</b> The best setup beat your current settings by only ${sol(best.totalSol - cur.totalSol, 3)} SOL, which could just be luck in this period. Keeping your settings is reasonable; try a longer period to be sure.</div></div>`,
+    current: `<div class="banner info"><div><b>Your current settings were the best</b> of the 16 compared for this period.</div></div>`,
+    'few-trades': `<div class="banner warn"><div><b>Only ${cur.closed} trade${cur.closed === 1 ? '' : 's'} to compare on</b>, too few to trust the ranking. Try a longer period or more wallets.</div></div>`,
+  }[o.verdict];
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Best exit settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${o.period ? ` · ${dateFmt(o.period.from)} to ${dateFmt(o.period.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">The same trades replayed with 16 exit setups, ${o.delayPct}% copy-delay cost. Price history was found for ${o.priced.withPrices} of ${o.priced.tokens} tokens; without it a token can only exit when the wallet sells.</div></div></div></div>
+    ${verdict}
+    <div class="card" style="margin-bottom:16px"><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Exit setup</th><th class="r">Profit (SOL)</th><th class="r">Return</th><th class="r">Win rate</th><th class="r">Worst dip</th><th class="r">Sells</th><th></th></tr></thead><tbody>${o.results.map(row).join('')}</tbody></table></div></div>
+    ${o.unreadable ? `<div class="banner warn"><div><b>${o.unreadable} of ${o.read} transactions couldn't be read</b>, so the comparison is less certain. A private RPC fixes this.</div></div>` : ''}
+    <div class="banner info"><div><b>How to read this.</b> Each row replays exactly the same copied trades; only the stop-loss, take-profits and trailing stop change. The best setup for the past isn't guaranteed to be the best next week, so prefer a clear winner over a longer period.</div></div>`;
+}
 function renderBacktest(el) {
-  const list = S.jobs.filter((j) => j.kind === 'backtest');
+  const list = S.jobs.filter((j) => j.kind === 'backtest' || j.kind === 'optimize');
   const j = list.find((x) => x.id === S.btJob) || list[0];
   const mine = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
   el.innerHTML = `
@@ -1179,12 +1199,12 @@ function renderBacktest(el) {
           <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Copy-delay cost <span class="with-unit" style="width:120px"><input type="number" id="bt-delay" min="0" max="50" step="0.5" value="${S.btDelay ?? 5}"><span>%</span></span></label>
           <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.${(() => { const g = measuredGap(); return g.n >= 5 ? ` <b>Your measured gap: ${g.median.toFixed(1)}%</b> over ${g.n} trades. <a href="#" id="bt-use-gap">Use it</a>` : ''; })()}</div>
           <label class="muted" style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer"><input type="checkbox" id="bt-exits" style="flex:none;margin-top:3px" ${S.btExits === false ? '' : 'checked'}><span>Replay my stop-loss and take-profits (slower: loads price history, ~5 s per token)</span></label>
-          <button class="btn primary" id="bt-go">Run backtest</button>
+          <div class="row" style="gap:8px"><button class="btn primary" id="bt-go" style="flex:1">Run backtest</button><button class="btn" id="bt-opt" style="flex:1" title="Compare 16 exit setups on the same wallets and period">Find my best settings</button></div>
         </div>
       </div></div>
-    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
+    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.kind === 'optimize' ? 'Best settings · ' : ''}${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
     ${!j ? `<div class="card"><div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No backtests yet</h3>Enter wallets above, or press <b>Backtest</b> next to any wallet on the Wallets or Find wallets pages.</div></div>`
-      : j.status === 'done' ? btResult(j)
+      : j.status === 'done' ? (j.kind === 'optimize' ? optResult(j) : btResult(j))
       : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
       : `<div class="card"><div class="empty"><span class="spinner"></span><h3 style="margin-top:12px">Running the backtest…</h3>${esc(j.progress)}</div></div>`}`;
   $('#bt-period').onchange = (e) => {
@@ -1195,6 +1215,19 @@ function renderBacktest(el) {
   const ug = $('#bt-use-gap');
   if (ug) ug.onclick = (e) => { e.preventDefault(); $('#bt-delay').value = Math.max(0, +measuredGap().median.toFixed(1)); };
   $('#bt-mine').onclick = () => { $('#bt-wallets').value = mine.join('\n'); };
+  $('#bt-opt').onclick = async () => {
+    const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    S.btDelay = Number($('#bt-delay').value); S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value; S.btTxs = Number($('#bt-txs').value);
+    if (S.btPeriod === 'custom' && S.btFrom > S.btTo) return toast('The start date must be before the end date', true);
+    const j = await act(() => api('POST', '/api/jobs/optimize', { wallets, ...btPeriodBody(), delayPct: S.btDelay }));
+    if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); render(); }
+  };
+  el.querySelectorAll('[data-apply-setup]').forEach((b) => (b.onclick = async () => {
+    const r = S.jobs.find((x) => x.id === Number(b.dataset.job))?.result?.results.find((x) => x.setup.id === b.dataset.applySetup);
+    if (!r || !(await confirmModal({ title: 'Use these exit settings?', confirm: 'Use them', body: `<p><b>${esc(r.setup.name)}</b></p><p>This replaces your stop-loss, take-profits and trailing stop in Settings → Selling. Wallets with their own exit settings keep them. You can change it back any time.</p>` }))) return;
+    const res = await act(() => api('POST', '/api/apply-exits', { jobId: Number(b.dataset.job), setupId: b.dataset.applySetup }), 'Exit settings updated');
+    if (res) { S.config = res.config; if (res.restarted) toast('Bot restarted with the new settings'); render(); }
+  }));
   $('#bt-go').onclick = () => {
     const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     S.btTxs = Number($('#bt-txs').value); S.btDelay = Number($('#bt-delay').value); S.btExits = $('#bt-exits').checked;
@@ -1870,7 +1903,7 @@ function connectEvents() {
     const j = JSON.parse(e.data);
     upsertJob(j);
     if (S.page === 'research') { if (j.kind === 'scout') render(); else renderJobs(); }
-    if (S.page === 'backtest' && j.kind === 'backtest') render();
+    if (S.page === 'backtest' && (j.kind === 'backtest' || j.kind === 'optimize')) render();
     if (S.page === 'autopilot' && j.kind === 'scout') renderAutopilot($('#content'), true);
   });
   es.onerror = () => { $('#run-pill').innerHTML = '<span class="pill"><span class="dot bad"></span>Disconnected</span>'; };
