@@ -6,6 +6,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { getTx, mapLimit, short, withRetry } from './util';
+import { historyCache } from './history';
 
 
 export type Report = {
@@ -26,7 +27,7 @@ export type Report = {
 
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);
 
-export type FetchStats = { read: number; failed: number; truncated?: boolean; oldestMs?: number | null };
+export type FetchStats = { read: number; failed: number; cached?: number; truncated?: boolean; oldestMs?: number | null };
 
 /**
  * A wallet's SOL swaps, newest first in the chain's order.
@@ -75,16 +76,32 @@ export async function fetchSwaps(
     }
   }
   if (opts.stats && byDate) opts.stats.truncated = !reachedStart;
+  // Transactions read before come from the on-disk cache; only new ones are downloaded.
   let done = 0;
+  let fresh = 0;
   const swaps = await mapLimit(sigs, 4, async (sig) => {
+    const cached = historyCache.get(wallet, sig);
+    if (cached) {
+      if (opts.stats) {
+        opts.stats.read++;
+        opts.stats.cached = (opts.stats.cached ?? 0) + 1;
+      }
+      onProgress?.(++done, sigs.length);
+      return cached.swap;
+    }
     const tx = await getTx(sig, opts.tries ?? 2).catch(() => {
       if (opts.stats) opts.stats.failed++;
-      return null;
+      return undefined;
     });
     if (opts.stats) opts.stats.read++;
     onProgress?.(++done, sigs.length);
-    return tx ? decodeSwap(tx, wallet) : null;
+    if (tx === undefined || tx === null) return null; // errors and not-found aren't cached, so they're retried next time
+    const swap = decodeSwap(tx, wallet);
+    historyCache.set(wallet, sig, swap);
+    fresh++;
+    return swap;
   });
+  if (fresh) historyCache.save(wallet);
   return swaps.filter((s): s is Swap => !!s && s.quote === 'SOL');
 }
 
