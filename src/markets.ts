@@ -49,15 +49,18 @@ async function getJson(url: string, headers: Record<string, string> = {}): Promi
 // GeckoTerminal allows ~30 requests/minute: space calls out and retry once on 429.
 let gtNext = 0;
 async function gecko(path: string): Promise<any> {
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Up to 3 tries: on a rate limit, a server error or a dropped connection, wait longer each time.
+  for (let attempt = 0; ; attempt++) {
     const wait = gtNext - Date.now();
     gtNext = Math.max(Date.now(), gtNext) + 2_100;
     if (wait > 0) await sleep(wait);
     try {
       return await getJson(`https://api.geckoterminal.com/api/v2${path}`, { accept: 'application/json;version=20230302' });
     } catch (e: any) {
-      if (!e.rateLimited || attempt === 1) throw e;
-      await sleep(4_000);
+      const retryable = e.rateLimited || /HTTP 5\d\d/.test(e.message) || e.name === 'TimeoutError' || e.name === 'TypeError';
+      if (!retryable || attempt >= 2) throw e;
+      if (e.rateLimited) gtNext = Date.now() + 6_000 * (attempt + 1); // let every caller back off
+      await sleep(4_000 * (attempt + 1));
     }
   }
 }
@@ -381,7 +384,10 @@ export function scoutPools(): Promise<PoolRow[]> {
       '/networks/solana/pools?include=base_token&page=1&sort=h24_volume_usd_desc',
     ];
     const out: PoolRow[] = [];
-    for (const p of paths) out.push(...mapPools(await gecko(p).catch(() => null)));
+    let failed = 0;
+    for (const p of paths) out.push(...mapPools(await gecko(p).catch(() => (failed++, null))));
+    // Never cache an empty answer from a failed lookup: the next try should ask again.
+    if (!out.length) throw new Error(`Couldn't reach the market data service (GeckoTerminal)${failed ? `: ${failed} of ${paths.length} requests failed` : ''}. Try again in a minute.`);
     return out;
   });
 }

@@ -778,21 +778,46 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (jobs.some((j) => j.kind === 'quickstart' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'Already setting up an experiment.');
     const job = addJob('quickstart', {}, async (progress) => {
       progress('Looking at tokens that are moving right now…');
-      const tokens = pickTokens(await markets.scoutPools(), Date.now(), 6, new Set());
+      const pools = await markets.scoutPools();
+      const tokens = pickTokens(pools, Date.now(), 8, new Set());
       if (!tokens.length) throw new Error('No tokens are moving enough right now. Try again in a while, or add wallets yourself.');
-      const caught = new Map<string, { tokens: string[]; bestGainPct: number }>();
+      const mine = new Set(engine.cfg.wallets.map((w) => w.address));
+      // Recent big trades for each token (kept so the gain bar can be lowered without fetching again).
+      const tradesBy: { t: (typeof tokens)[number]; trades: Awaited<ReturnType<typeof markets.poolTrades>> }[] = [];
+      let failed = 0;
       for (const [i, t] of tokens.entries()) {
         progress(`Finding traders who caught ${t.symbol}'s move (${i + 1}/${tokens.length})…`);
-        const trades = await markets.poolTrades(t.pool, 300).catch(() => []);
-        for (const [w, gain] of pumpBuyers(trades, t.priceUsd, 40)) {
-          const c = caught.get(w) ?? { tokens: [], bestGainPct: 0 };
-          c.tokens.push(t.symbol);
-          c.bestGainPct = Math.max(c.bestGainPct, gain);
-          caught.set(w, c);
+        try {
+          tradesBy.push({ t, trades: await markets.poolTrades(t.pool, 300) });
+        } catch (e) {
+          failed++;
+          engine.log(`Experiment: couldn't load ${t.symbol}'s trades (${(e as Error).message})`, 'warn');
         }
       }
-      const picks = experimentPicks(caught, new Set(engine.cfg.wallets.map((w) => w.address)), 3);
-      if (!picks.length) throw new Error("Couldn't find active traders right now. Try again in a while, or use Find wallets.");
+      if (!tradesBy.length) throw new Error(`The market data service (GeckoTerminal) isn't answering right now (${failed} requests failed). Wait a minute and try again.`);
+      const collect = (minGain: number) => {
+        const caught = new Map<string, { tokens: string[]; bestGainPct: number }>();
+        for (const { t, trades } of tradesBy) {
+          for (const [w, gain] of pumpBuyers(trades, t.priceUsd, minGain)) {
+            const c = caught.get(w) ?? { tokens: [], bestGainPct: 0 };
+            c.tokens.push(t.symbol);
+            c.bestGainPct = Math.max(c.bestGainPct, gain);
+            caught.set(w, c);
+          }
+        }
+        return experimentPicks(caught, mine, 3);
+      };
+      // Prefer traders up 40%+; if the market has cooled off, accept 15%+.
+      let picks = collect(40);
+      if (picks.length < 3) picks = [...picks, ...collect(15).filter((p) => !picks.some((x) => x.wallet === p.wallet))].slice(0, 3);
+      // Still nobody: fall back to the last wallet-scout search.
+      if (!picks.length) {
+        picks = (lastScout?.reports ?? [])
+          .filter((r) => !mine.has(r.wallet) && r.swaps > 0)
+          .slice(0, 3)
+          .map((r) => ({ wallet: r.wallet, tokens: [...(r.pumpOn ?? []), ...r.earlyOn].slice(0, 2), bestGainPct: 0 }));
+      }
+      if (!picks.length) throw new Error(`No trader on today's ${tradesBy.length} trending tokens is in profit right now (prices have fallen back). Try again in a while, or use Find wallets.`);
       if (engine.cfg.mode !== 'paper') throw new Error('Switched to live mode, so the experiment was cancelled.');
       progress('Starting the bot in paper mode…');
       const next = structuredClone(engine.cfg);
