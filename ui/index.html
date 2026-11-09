@@ -1540,6 +1540,7 @@ function renderTrades(el) {
       ${ts.length ? `<button class="btn sm" id="csv-btn">Export CSV</button>` : ''}
       <span class="muted">${ts.length} trades · ${sells.length ? `${Math.round((wins / sells.length) * 100)}% profitable sells · ` : ''}<span class="${cls(total)}">${signed(total, 3)} SOL</span></span>
     </div>
+    <div id="report-box">${reportHtml()}</div>
     <div class="card">${ts.length ? `<div class="tbl-wrap"><table>
       <thead><tr><th>Time</th><th>Side</th><th>Token</th><th class="r">SOL</th><th class="r">Profit</th><th>Why</th><th>Mode</th><th></th></tr></thead>
       <tbody>${ts.map((t) => `<tr>
@@ -1554,6 +1555,64 @@ function renderTrades(el) {
       </tr>`).join('')}</tbody></table></div>` : '<div class="empty"><h3>No trades yet</h3>Trades the bot makes appear here.</div>'}</div>`;
   el.querySelectorAll('#tf button').forEach((b) => (b.onclick = () => { S.tradeFilter = b.dataset.f; render(); }));
   const cb = $('#csv-btn'); if (cb) cb.onclick = () => exportCsv(S.tradeFilter);
+  bindReport();
+}
+
+// ----- profit report + tax export -----
+const reportMode = () => (S.tradeFilter === 'paper' || S.tradeFilter === 'live' ? S.tradeFilter : S.config.mode);
+function loadReport() {
+  const mode = reportMode(), by = S.reportBy || 'day';
+  S.reportFor = `${mode}|${by}|${S.trades.length}`;
+  api('GET', `/api/report?mode=${mode}&by=${by}`).then((r) => { S.report = r; const b = $('#report-box'); if (b && S.page === 'trades') { b.innerHTML = reportHtml(); bindReport(); } }).catch(() => {});
+}
+function reportHtml() {
+  const mode = reportMode(), by = S.reportBy || 'day';
+  if (S.reportFor !== `${mode}|${by}|${S.trades.length}`) setTimeout(loadReport, 0);
+  const r = S.report && S.report.mode === mode && S.report.by === by ? S.report : null;
+  const year = new Date().getFullYear();
+  const label = (k) => by === 'month' ? new Date(k + '-01T12:00').toLocaleDateString([], { month: 'long', year: 'numeric' }) : by === 'week' ? 'Week of ' + new Date(k + 'T12:00').toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(k + 'T12:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const hi = (h) => `<div class="row" style="justify-content:space-between;font-size:13px;padding:3px 0"><span>${tokenLink(h.mint)} <span class="muted">${dateTime(h.t)}</span></span><b class="num ${cls(h.pnlSol)}">${signed(h.pnlSol, 3)}</b></div>`;
+  const maxAbs = r ? Math.max(0.000001, ...r.rows.filter((x) => x.sells).slice(0, 14).map((x) => Math.abs(x.pnlSol))) : 1;
+  const body = !r ? '<div class="card-b muted">Loading…</div>' : !r.totals.sells && !r.totals.buys ? `<div class="card-b muted">No ${mode} trades yet.</div>` : `
+    <div class="grid two" style="padding:0 16px 14px;gap:16px">
+      <div class="tbl-wrap"><table><thead><tr><th>${by === 'day' ? 'Day' : by === 'week' ? 'Week' : 'Month'}</th><th class="r">Sells</th><th class="r">Won</th><th class="r">Profit (SOL)</th><th style="width:30%"></th></tr></thead><tbody>
+        ${r.rows.filter((x) => x.sells).slice(0, 14).map((x) => `<tr><td>${label(x.key)}</td><td class="r num">${x.sells}</td><td class="r num">${x.sells ? Math.round((x.wins / x.sells) * 100) + '%' : '–'}</td><td class="r num ${cls(x.pnlSol)}">${x.sells ? signed(x.pnlSol, 3) : '–'}</td><td><div style="height:8px;border-radius:4px;background:${x.pnlSol >= 0 ? 'var(--green)' : 'var(--red)'};width:${Math.round((Math.abs(x.pnlSol) / maxAbs) * 100)}%;opacity:.7"></div></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="stack" style="gap:14px">
+        <div><div class="muted" style="font-size:12.5px">All ${mode} trades</div><div style="font-size:22px;font-weight:700" class="num ${cls(r.totals.pnlSol)}">${signed(r.totals.pnlSol, 3)} SOL</div><div class="muted" style="font-size:12.5px">${r.totals.sells} sells · ${r.totals.sells ? Math.round((r.totals.wins / r.totals.sells) * 100) : 0}% in profit · ${sol(r.totals.boughtSol, 2)} SOL bought</div></div>
+        ${r.best.length ? `<div><div style="font-weight:600;font-size:13px">Best trades</div>${r.best.map(hi).join('')}</div>` : ''}
+        ${r.worst.length ? `<div><div style="font-weight:600;font-size:13px">Worst trades</div>${r.worst.map(hi).join('')}</div>` : ''}
+        ${r.bySource.length ? `<div><div style="font-weight:600;font-size:13px">By source</div>${r.bySource.slice(0, 8).map((x) => `<div class="row" style="justify-content:space-between;font-size:13px;padding:3px 0"><span>${esc(x.name)} <span class="muted">${x.sells} sells, ${Math.round((x.wins / x.sells) * 100)}% won</span></span><b class="num ${cls(x.pnlSol)}">${signed(x.pnlSol, 3)}</b></div>`).join('')}</div>` : ''}
+      </div>
+    </div>`;
+  return `<div class="card"><div class="card-h"><h2>Profit report <span class="muted" style="font-weight:400;font-size:13px">(${mode})</span></h2><span class="spacer"></span><div class="seg" id="rep-by">${[['day', 'Days'], ['week', 'Weeks'], ['month', 'Months']].map(([k, l]) => `<button data-by="${k}" class="${by === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>${body}</div>
+    <div class="card"><div class="card-h"><div><h2>Tax export</h2><div class="muted" style="font-size:12.5px">Every trade for a year with its USD value at the time, and the gain or loss on each sell (average-cost method). Most crypto tax tools and accountants can work from this file.</div></div></div>
+      <div class="card-b row"><select class="input" id="tax-year" style="width:auto;height:34px">${[year, year - 1, year - 2].map((y) => `<option>${y}</option>`).join('')}</select>
+        <select class="input" id="tax-mode" style="width:auto;height:34px"><option value="live">Live trades</option><option value="paper">Paper trades (practice)</option></select>
+        <button class="btn" id="tax-check">Show totals</button><button class="btn primary" id="tax-dl">Download tax file</button><span id="tax-res" class="muted" style="font-size:13px"></span></div>
+      <div class="muted" style="font-size:12px;padding:0 16px 14px">SOL prices are daily closing prices (UTC) from GeckoTerminal. Network fees are already included in the SOL amounts of live trades. Not tax advice: check the rules where you live, or give this file to your accountant.</div></div>`;
+}
+function bindReport() {
+  document.querySelectorAll('#rep-by button').forEach((b) => (b.onclick = () => { S.reportBy = b.dataset.by; const box = $('#report-box'); box.innerHTML = reportHtml(); bindReport(); }));
+  const q = () => `year=${$('#tax-year').value}&mode=${$('#tax-mode').value}`;
+  const res = $('#tax-res');
+  const tc = $('#tax-check'); if (tc) tc.onclick = async () => {
+    res.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Working out USD values…';
+    const r = await act(() => api('GET', '/api/tax?' + q()));
+    res.innerHTML = r ? (r.trades ? `${r.trades} trades, ${r.sells} sells · proceeds $${r.proceedsUsd.toFixed(2)} · gain <b class="${cls(r.gainUsd)}">${r.gainUsd < 0 ? '−' : ''}$${Math.abs(r.gainUsd).toFixed(2)}</b> (${signed(r.gainSol, 3)} SOL)${r.missingPrices ? ` · ${r.missingPrices} without a SOL price` : ''}` : `No ${esc($('#tax-mode').value)} trades in ${esc($('#tax-year').value)}.`) : '';
+  };
+  const td = $('#tax-dl'); if (td) td.onclick = async () => {
+    res.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Preparing the file…';
+    try {
+      const r = await fetch('/api/tax?csv=1&' + q(), { headers: { 'x-copybot-token': TOKEN || '' } });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Error ${r.status}`);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(await r.blob());
+      link.download = `copybot-tax-${$('#tax-year').value}-${$('#tax-mode').value}.csv`;
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      res.textContent = 'Downloaded.';
+    } catch (e) { res.textContent = ''; toast(e.message, true); }
+  };
 }
 const labelFor = (addr) => { const w = S.config.wallets.find((x) => x.address === addr); return w?.label || short(addr); };
 

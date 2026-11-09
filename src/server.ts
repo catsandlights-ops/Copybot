@@ -19,6 +19,8 @@ import { isAddress, sanitizeConfig, saveConfig, SCANNER_SOURCE } from './config'
 import { coinSignals, entryRulesFor, exitVariants, replayExit, replaySignals, RULES, signalStats, type CoinSignal, type ExitReplay, type ScanExits } from './scanner';
 import * as remote from './remote';
 import QRCode from 'qrcode';
+import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report';
+import { PublicKey } from '@solana/web3.js';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { readSecret } from './env';
 import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
@@ -1181,6 +1183,56 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const labels = new Map(engine.cfg.wallets.map((w) => [w.address, w.label]));
     res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/csv; charset=utf-8' });
     return res.end(tradesCsv(readTrades(1e9).reverse().filter((t: any) => mode !== 'paper' && mode !== 'live' ? true : t.mode === mode), labels));
+  }
+
+  if (route === 'GET /api/report') {
+    const by = (['day', 'week', 'month'] as Period[]).find((p) => p === url.searchParams.get('by')) ?? 'day';
+    const mode = url.searchParams.get('mode') === 'live' ? 'live' : 'paper';
+    const r = profitReport(readTrades(1e9), mode, by);
+    const labels = new Map<string, string>([[SCANNER_SOURCE, 'Market scanner'], ...engine.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
+    const name = (s: string) => labels.get(s) ?? (s === 'unknown' || s === 'manual' ? s : `${s.slice(0, 4)}…${s.slice(-4)}`);
+    return send(res, 200, { ...r, mode, bySource: r.bySource.map((x) => ({ ...x, name: name(x.source) })) });
+  }
+
+  if (route === 'GET /api/tax') {
+    // ?year=2026&mode=live[&csv=1]
+    const year = Number(url.searchParams.get('year'));
+    if (!Number.isInteger(year) || year < 2020 || year > 2100) throw new HttpError(400, 'Pick a year');
+    const mode = url.searchParams.get('mode') === 'paper' ? 'paper' : 'live';
+    const all = readTrades(1e9).reverse();
+    const mints = [...new Set(all.filter((t: any) => t.mode === mode).map((t: any) => t.mint as string))].filter(isAddress);
+    const prices = await markets.solUsdDaily().catch((e) => {
+      throw new HttpError(502, (e as Error).message);
+    });
+    const days = [...prices.keys()].sort((a, b) => a - b);
+    const solUsdAt = (t: number) => {
+      const day = Math.floor(t / 86_400_000) * 86_400_000;
+      if (prices.has(day)) return prices.get(day)!;
+      // Today's candle may not be closed yet: use the latest day before.
+      const before = days.filter((d) => d <= day).pop();
+      return before != null && day - before <= 3 * 86_400_000 ? prices.get(before)! : null;
+    };
+    // Token decimals from the chain (100 per request) and symbols from Dexscreener (30 per request).
+    const decimals = new Map<string, number>();
+    const conn = makeConnection();
+    for (let i = 0; i < mints.length; i += 100) {
+      const infos = await conn.getMultipleParsedAccounts(mints.slice(i, i + 100).map((m) => new PublicKey(m))).catch(() => null);
+      infos?.value.forEach((a, j) => {
+        const d = (a?.data as any)?.parsed?.info?.decimals;
+        if (typeof d === 'number') decimals.set(mints[i + j], d);
+      });
+    }
+    const symbols = new Map<string, string>();
+    for (let i = 0; i < mints.length; i += 30) {
+      const list = await markets.tokens(mints.slice(i, i + 30)).catch(() => []);
+      for (const t of list as any[]) if (t?.mint && t?.symbol && t.symbol !== '?') symbols.set(t.mint, t.symbol);
+    }
+    const rows = taxRows(all, mode, solUsdAt, decimals, symbols).filter((r) => new Date(r.t).getUTCFullYear() === year);
+    if (url.searchParams.get('csv')) {
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/csv; charset=utf-8' });
+      return res.end(taxCsv(rows));
+    }
+    return send(res, 200, { year, mode, ...taxSummary(rows), missingDecimals: mints.length - decimals.size });
   }
 
   if (route === 'GET /api/state') {

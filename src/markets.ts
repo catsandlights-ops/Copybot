@@ -378,6 +378,25 @@ export async function priceHistory(mint: string, fromMs: number, toMs: number): 
   return candles.length ? { step, candles, createdAt } : null;
 }
 
+/**
+ * SOL's USD price per day (UTC day start -> closing price), from the main SOL/USDC pool on
+ * GeckoTerminal. Covers up to 1000 days back. Cached for an hour.
+ */
+export function solUsdDaily(): Promise<Map<number, number>> {
+  return cached('sol-daily', 3_600_000, async () => {
+    const pool = '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2'; // Raydium SOL/USDC
+    const d = await gecko(`/networks/solana/pools/${pool}/ohlcv/day?aggregate=1&limit=1000&currency=usd&token=So11111111111111111111111111111111111111112`);
+    const out = new Map<number, number>();
+    for (const r of d?.data?.attributes?.ohlcv_list ?? []) {
+      const t = num(r?.[0]);
+      const c = num(r?.[4]);
+      if (t != null && c != null && c > 0) out.set(t * 1000, c);
+    }
+    if (!out.size) throw new Error("Couldn't load SOL's price history. Try again in a minute.");
+    return out;
+  });
+}
+
 // ---------------- wallet scout sources ----------------
 /** Many places to look for tokens that are moving: trending over 1h/6h/24h, new launches, top volume. */
 export function scoutPools(): Promise<PoolRow[]> {
