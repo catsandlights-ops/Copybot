@@ -862,6 +862,8 @@ function banners() {
   else if (!c.hasPrivateKey) out.push(`<div class="banner danger"><div><b>Live mode needs a trading wallet.</b> Add one in Settings → Connection.</div><button class="btn sm" onclick="go('settings')">Open settings</button></div>`);
   const m = S.status?.mood;
   if (m && S.status.running && (m.level === 'bad' || m.level === 'cautious')) out.push(`<div class="banner ${m.level === 'bad' ? 'danger' : 'warn'}"><div><b>Market mood: ${m.level === 'bad' ? 'bad, so no new buys from signals' : 'cautious, so buying at half size'}.</b> ${esc(m.why)}. Sells, exits and your own orders keep running. Turn this off in Settings → Limits.</div></div>`);
+  const ns = S.netstatus;
+  if (ns && ns.summary.level === 'bad' && Date.now() - ns.at < 30 * 60_000) out.push(`<div class="banner danger"><div><b>Connection problem:</b> ${esc(ns.summary.text)}. Some trades may be missed.</div><button class="btn sm" onclick="go('settings').then(() => $('#netstatus-card')?.scrollIntoView({ block: 'start' }))">See details</button></div>`);
   const t = S.tune;
   if (t && t.status === 'better' && !t.dismissed) out.push(`<div class="banner info"><div><b>Weekly settings check: better exit settings found.</b> ${esc(t.message)} Past results can be luck; you can always switch back in Settings.</div><button class="btn sm primary" onclick="applyTune()">Use these</button><button class="btn sm" onclick="dismissTune()">Dismiss</button></div>`);
   if (c.usingPublicRpc) out.push(`<div class="banner warn"><div><b>You're on the free public RPC.</b> It's rate-limited and will miss trades. Add a free Helius key for reliable copying.</div><button class="btn sm" onclick="go('settings')">Add RPC</button></div>`);
@@ -2440,6 +2442,8 @@ function renderSettings(el) {
         <div class="card-b row" style="justify-content:space-between"><span id="upd-text">${updateText()}</span>
           <span class="row">${S.app.update.state === 'ready' ? '<button class="btn primary" id="upd-install2">Restart &amp; update</button>' : ''}<button class="btn" id="upd-check" ${S.app.update.state === 'disabled' ? 'disabled' : ''}>Check for updates</button></span></div></div>
 
+      <div class="card" id="netstatus-card">${netStatusHtml()}</div>
+
       <div class="card" id="remote-card">${remoteCardHtml()}</div>
 
       <div class="card"><div class="card-h"><h2>Trading mode</h2></div><div class="card-b row" style="justify-content:space-between">
@@ -2484,6 +2488,7 @@ function renderSettings(el) {
     <div class="savebar" id="savebar" style="display:${S.dirty ? 'flex' : 'none'}"><span>You have unsaved changes</span><span class="spacer"></span><button class="btn sm" id="s-reset">Discard</button><button class="btn sm primary" id="s-save">Save settings</button></div>`;
 
   bindRemote();
+  bindNetStatus();
   el.querySelectorAll('[data-k]').forEach((i) => (i.oninput = i.onchange = () => { S.dirty = true; $('#savebar').style.display = 'flex'; }));
   $('#s-reset').onclick = () => { S.dirty = false; render(); };
   $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));
@@ -2519,6 +2524,24 @@ function renderSettings(el) {
     if (r) { S.connection = r; render(); }
   };
 }
+// ----- connection status -----
+function netStatusHtml() {
+  const st = S.netstatus;
+  const dot = { ok: 'var(--green)', slow: 'var(--amber)', limited: 'var(--amber)', down: 'var(--red)', off: 'var(--border-strong)' };
+  const word = { ok: 'Working', slow: 'Slow', limited: 'Busy / limiting', down: 'Not working', off: 'Not in use' };
+  const rows = st ? st.results.map((r) => `<div class="row" style="align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--border)">
+      <span style="width:10px;height:10px;border-radius:50%;background:${dot[r.health]};margin-top:5px;flex:none" aria-hidden="true"></span>
+      <div style="flex:1"><div><b>${esc(r.name)}</b> <span class="muted" style="font-size:12.5px">· ${esc(r.what)}</span></div>
+        <div style="font-size:13px"><span class="${r.health === 'down' ? 'neg' : r.health === 'ok' ? '' : ''}">${word[r.health]}</span>${r.ms != null ? ` <span class="muted">(${r.ms} ms)</span>` : ''} <span class="muted">· ${esc(r.detail)}</span></div>
+        ${r.fix ? `<div style="font-size:13px;margin-top:2px"><b>Fix:</b> ${esc(r.fix)}</div>` : ''}</div></div>`).join('') : '';
+  return `<div class="card-h"><div><h2>Connection status</h2><div class="muted" style="font-size:12.5px">Copybot depends on several outside services. ${st ? `Checked ${ago(st.at)} ago: <b class="${st.summary.level === 'bad' ? 'neg' : st.summary.level === 'warn' ? '' : 'pos'}">${esc(st.summary.text)}</b>.` : 'Check them all at once.'} Checked again every 15 minutes while the bot runs.</div></div><span class="spacer"></span><button class="btn sm" id="ns-check" ${S.nsBusy ? 'disabled' : ''}>${S.nsBusy ? 'Checking…' : 'Check now'}</button></div>
+    ${rows ? `<div class="card-b" style="padding-top:0">${rows}</div>` : ''}`;
+}
+function paintNetStatus() { const el = $('#netstatus-card'); if (el) { el.innerHTML = netStatusHtml(); bindNetStatus(); } }
+function bindNetStatus() {
+  const b = $('#ns-check'); if (b) b.onclick = async () => { S.nsBusy = true; paintNetStatus(); const r = await act(() => api('POST', '/api/status/check')); S.nsBusy = false; if (r) S.netstatus = r; paintNetStatus(); };
+}
+
 // ----- phone access -----
 function loadRemote() { api('GET', '/api/remote').then((r) => { S.remote = r; paintRemote(); }).catch(() => {}); }
 function paintRemote() { const el = $('#remote-card'); if (el) { el.innerHTML = remoteCardHtml(); bindRemote(); } }
@@ -2721,6 +2744,7 @@ function connectEvents() {
     const pts = S.series.points; if (!pts.length || p[0] > pts[pts.length - 1][0]) pts.push(p);
     const c = $('#pf-chart'); if (c && S.page === 'dashboard') { c.outerHTML = portfolioCard(); bindPortfolio(); }
   });
+  es.addEventListener('netstatus', (e) => { S.netstatus = JSON.parse(e.data); paintNetStatus(); if (S.page === 'dashboard') render(); });
   es.addEventListener('autotune', (e) => { S.tune = JSON.parse(e.data); if (S.page === 'dashboard' || S.page === 'settings') render(); });
   es.addEventListener('scanner', (e) => { S.scanner = JSON.parse(e.data); renderChrome(); if (S.page === 'scanner' && !S.dirty) render(); });
   es.addEventListener('trades-reset', () => load());
@@ -2750,7 +2774,7 @@ async function load() {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
     const firstLoad = !S.loadedOnce; S.loadedOnce = true;
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, tune: d.tune || null, chain: d.chain || null, strategies: d.strategies || [], health: d.health || null });
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, tune: d.tune || null, chain: d.chain || null, netstatus: d.netstatus || null, strategies: d.strategies || [], health: d.health || null });
     render();
     if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }
