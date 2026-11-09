@@ -209,5 +209,8 @@ Set a number to 0 to turn that rule off.
    `UPDATE_SIGNING_KEY` repository secret and publishes the release. Installed apps pick it up within
    4 hours, or right away with **Check for updates**.
 
+Optional: code-sign the installer so Windows SmartScreen stops warning, see [docs/CODE-SIGNING.md](docs/CODE-SIGNING.md).
+Releases also run the type-check and tests first, and are not published if any fail.
+
 Keep a backup of the update signing key (`signing/update-signing-key.pem`, never committed). Without
 it, existing installs can't accept updates; if it leaks, rotate it and ship a manual reinstall.
