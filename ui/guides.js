@@ -10,6 +10,25 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
+    teaser: 'Control Copybot from your phone, and a market scanner that finds traders and trades rising coins.',
+    body: `
+<h3>Phone access</h3>
+<p>Check your profit and positions, start and stop the bot, and sell from your phone, at home over Wi-Fi or anywhere with the free Tailscale app. Set it up in <b>Settings → Phone access</b>. Your phone can't change settings or touch your keys and wallets. <a href="#" data-guide="phone">Set it up →</a></p>
+<h3>Market scanner</h3>
+<p>A new <b>Scanner</b> page with two switches, both off until you turn them on:</p>
+<ul>
+<li><b>Find traders:</b> keeps looking at new <i>and older</i> coins for traders who are winning, backtests them with your settings, and adds the best on a trial.</li>
+<li><b>Trade coins:</b> buys coins that are rising on strong buying, on its own, with its own budget, stop-loss and take-profit, through every safety check. Try it in paper mode first. <a href="#" data-guide="scanner">How it works →</a></li>
+</ul>
+<h3>Fixes</h3>
+<ul>
+<li>The one-press paper experiment no longer fails with "Couldn't find active traders" when the market data service is busy: it retries, says what went wrong, and falls back to your last Find wallets results.</li>
+<li>Find wallets now also looks at older, established coins.</li>
+<li>The bot can start with only the scanner on, no wallets needed.</li>
+</ul>`,
+  },
+  {
     id: 'phone', cat: 'features', mins: 3, title: 'Control Copybot from your phone (Tailscale)',
     teaser: 'Check profit and positions, start and stop, and sell from your phone, at home or anywhere.',
     body: `

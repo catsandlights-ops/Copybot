@@ -782,7 +782,7 @@ function render() {
   ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, scanner: renderScanner, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
-    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-07">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
+    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-08">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
     $('#upd-dismiss').onclick = () => { S.updateNoticeDismissed = true; render(); };
   }
   const u = S.app.update;

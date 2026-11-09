@@ -64,6 +64,15 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **Backtest** (any period: last 24h/3d/7d/30d or custom dates): replay up to 5 wallets' real trades with your current settings, with an adjustable copy-delay cost (you always buy higher and sell lower than they did) and fees. Shows total profit, win rate, worst dip, a profit chart, per-wallet results, skipped trades and every trade. Exits follow their sells, and your stop-loss, take-profits and trailing stop are replayed from GeckoTerminal price candles.
 - **Wallet scout** (*Find wallets for me*): Copybot picks tokens that pumped recently, finds their early buyers (plus DexCheck top traders), checks each wallet's real record, and **Claude picks the most suitable ones** and explains why (a rule-based ranking without Claude). It searches trending, new and top-volume tokens, finds wallets that bought early or caught a recent move, and only picks wallets whose backtest with your settings made money. With the autopilot managing wallets, it runs once a day and adds its picks, up to your maximum.
 
+### Market scanner
+- **Find traders:** while the bot runs, it keeps looking at new *and older* coins that are moving, finds traders who caught the move, backtests them with your settings, and adds the best on a trial. No Claude needed.
+- **Trade coins:** buys coins that are rising on real buying (up over the last hour but not already run, more buyers than sellers, more volume than usual, not falling right now), through every limit and safety check, with its own budget, stop-loss, take-profit, trailing stop and maximum hold time. It stops itself after a losing streak. Both switches are off by default.
+
+### Phone access
+- **Control Copybot from your phone** at home over Wi-Fi, or anywhere with the free [Tailscale](https://tailscale.com/download) app: profit, positions, trades and activity; start and stop; sell half or all of a position; the scanner switches.
+- **Paired with a one-time QR code** (5 minutes, single use). Each phone has its own key, stored only as a hash, and can be removed at any time.
+- Off by default, and **only answers your home network and Tailscale**, never the open internet. A phone can't change settings, switch to live mode, or see keys and wallets.
+
 ### Alerts, speed and reliability
 - **Phone alerts** on Telegram or Discord: trades, problems, the circuit breaker and autopilot decisions, with rate limiting.
 - **Backup RPC** with automatic failover and switch-back.
