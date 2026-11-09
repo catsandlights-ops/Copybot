@@ -13,6 +13,8 @@ window.GUIDES = [
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
+<h3>New in 0.8.1: Base</h3>
+<p>Copy wallets on <b>Base</b> (addresses starting with 0x) alongside your Solana wallets, in paper mode for now. Base trades are checked for honeypots and high taxes and converted to SOL in your books. <a href="#" data-guide="base">How it works →</a></p>
 <h3>Phone access</h3>
 <p>Check your profit and positions, start and stop the bot, and sell from your phone, at home over Wi-Fi or anywhere with the free Tailscale app. Set it up in <b>Settings → Phone access</b>. Your phone can't change settings or touch your keys and wallets. <a href="#" data-guide="phone">Set it up →</a></p>
 <h3>Market scanner</h3>
@@ -50,6 +52,28 @@ window.GUIDES = [
 <h3>Under the hood</h3>
 <ul>
 <li>Groundwork for trading on more blockchains later: every trade, position, wallet and order now records which chain it's on (all Solana for now), and Settings show the dollar value of SOL amounts. Nothing changes in how Copybot trades.</li>
+</ul>`,
+  },
+  {
+    id: 'base', cat: 'features', mins: 3, title: 'Copying wallets on Base (paper mode)',
+    teaser: 'Copy traders on Base, Coinbase\'s fast and cheap Ethereum network, alongside your Solana wallets.',
+    body: `
+<p>Copybot can now copy wallets on <b>Base</b> as well as Solana. For now Base runs in <b>paper mode only</b>: it shows you what copying would do, with real prices, without spending anything.</p>
+<h3>Add a Base wallet</h3>
+<p>On the Wallets page, paste an address that starts with <span class="mono">0x</span>. Copybot recognises it as a Base wallet and labels it. Start the bot in paper mode, and Base and Solana wallets are copied side by side.</p>
+<h3>How it works</h3>
+<ul>
+<li><b>Watching:</b> Copybot checks Base every few seconds for your wallets' trades (a new Base block arrives every 2 seconds).</li>
+<li><b>Prices:</b> from KyberSwap, which finds the best route across Base exchanges.</li>
+<li><b>Safety checks:</b> every token is checked with GoPlus (honeypots, sell taxes over 10%, owners who can pause transfers, block sellers or change balances) plus the same buy-then-sell test as on Solana. Your liquidity filters and rug memory apply too.</li>
+<li><b>Your books stay in SOL:</b> Base trades are in ETH, converted to SOL at the price of the moment. So your buy size, limits, profit, charts and reports all work the same way across both chains.</li>
+</ul>
+<h3>Good to know</h3>
+<ul>
+<li>The free public Base nodes limit how often they can be asked. For reliable copying, add a free Base RPC from Alchemy or QuickNode in <b>Settings → Connection</b>.</li>
+<li>Find wallets, Analyze, backtests and the wallet check-up read Solana history only, for now.</li>
+<li>Some Base traders use smart-contract wallets: copy the address that actually holds the tokens (it's the one shown on Basescan as receiving them).</li>
+<li>Live trading on Base will come after it has proven itself in paper mode, with its own transaction checks before anything is signed.</li>
 </ul>`,
   },
   {

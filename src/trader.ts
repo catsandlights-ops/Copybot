@@ -50,10 +50,13 @@ export class Trader {
   /** All trades go through the chain's adapter (today: Solana). */
   chain: ChainAdapter = getChain('solana');
 
-  private async swap(q: Quote): Promise<{ sig: string; tokenRaw: bigint; sol: number }> {
-    const toToken = q.outputMint !== WSOL;
-    const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: Number(toToken ? q.inAmount : q.outAmount) / 1e9 };
+  private async swap(q: Quote, chain: ChainAdapter = this.chain): Promise<{ sig: string; tokenRaw: bigint; sol: number }> {
+    const toToken = q.outputMint !== chain.meta.native.wrapped;
+    // Amounts in the chain's own coin, converted to SOL (Copybot's books are in SOL).
+    const native = Number(toToken ? q.inAmount : q.outAmount) / 10 ** chain.meta.native.decimals;
+    const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: await chain.nativeToSol(native) };
     if (!this.live) return { sig: 'PAPER', ...quoted };
+    if (!chain.liveTrading) throw new Error(`Live trading on ${chain.meta.name} isn't available yet (paper mode only).`);
     const kp = this.kp!;
     const x = this.cfg.execution;
     const sig = await this.chain.executeSwap({ conn: this.conn, kp, cfg: this.cfg }, q, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn') });
@@ -74,15 +77,15 @@ export class Trader {
     return { ...(g === null ? {} : { gapPct: Math.round(g * 100) / 100 }), ...(ref.at ? { lagSec: Math.max(0, Math.round((Date.now() / 1000 - ref.at) * 10) / 10) } : {}) };
   }
 
-  async buy(mint: string, decimals: number, q: Quote, source: string, ref?: CopyRef) {
-    const r = await this.swap(q);
-    const p: Position = this.state.positions[mint] ?? { chain: this.chain.meta.id, mint, decimals, amountRaw: '0', costSol: 0, openedAt: Date.now(), sources: [] };
+  async buy(mint: string, decimals: number, q: Quote, source: string, ref?: CopyRef, chain: ChainAdapter = this.chain) {
+    const r = await this.swap(q, chain);
+    const p: Position = this.state.positions[mint] ?? { chain: chain.meta.id, mint, decimals, amountRaw: '0', costSol: 0, openedAt: Date.now(), sources: [] };
     p.amountRaw = (BigInt(p.amountRaw) + r.tokenRaw).toString();
     p.costSol += r.sol;
     if (!p.sources.includes(source)) p.sources.push(source);
     this.state.positions[mint] = p;
     const g = this.gap('buy', ref, r.sol, r.tokenRaw);
-    this.record({ t: Date.now(), chain: this.chain.meta.id, mode: this.cfg.mode, side: 'buy', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source, sig: r.sig, ...g });
+    this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'buy', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source, sig: r.sig, ...g });
     const note = g.gapPct !== undefined ? `, ${g.gapPct >= 0 ? `${g.gapPct.toFixed(1)}% above` : `${(-g.gapPct).toFixed(1)}% below`} their price${g.lagSec !== undefined ? `, ${g.lagSec}s after them` : ''}` : '';
     this.hooks.log(`BUY ${short(mint)} for ${r.sol.toFixed(4)} SOL (${source === SCANNER_SOURCE ? 'market scanner' : source === ORDER_SOURCE ? 'your order' : `copying ${this.hooks.name(source)}${note}`})`, 'buy');
   }
@@ -96,12 +99,13 @@ export class Trader {
     const amount = all ? held : (held * BigInt(Math.round(fraction * 1e6))) / 1_000_000n;
     if (amount <= 0n) return null;
 
-    const q = await getChain(p).quoteSell(mint, amount, this.cfg.safety.slippageBps);
+    const chain = getChain(p);
+    const q = await chain.quoteSell(mint, amount, this.cfg.safety.slippageBps);
     if (!q) {
       this.hooks.log(`SELL ${short(mint)} skipped: no route (${reason})`, 'warn');
       return null;
     }
-    const r = await this.swap(q);
+    const r = await this.swap(q, chain);
     const soldFrac = Math.min(1, Number(r.tokenRaw) / Number(held));
     const costPortion = p.costSol * soldFrac;
     const pnl = r.sol - costPortion;

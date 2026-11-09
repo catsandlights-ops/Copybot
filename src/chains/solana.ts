@@ -41,4 +41,7 @@ export const solana: ChainAdapter = {
   balance: async (ctx, owner) => (await ctx.conn.getBalance(new PublicKey(owner))) / 1e9,
   nativeUsd: () => getSolUsd(),
   tokenCreator: (ctx, token) => tokenCreator(ctx.conn, token),
+  nativeToSol: async (x) => x,
+  solToNativeRaw: async (sol) => BigInt(Math.round(sol * 1e9)),
+  liveTrading: true,
 };

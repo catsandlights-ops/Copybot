@@ -13,7 +13,7 @@ import type { CheckResult } from '../safety';
 import type { RawTx } from '../util';
 
 /** Chains Copybot knows. New ones are added here as their adapters are written. */
-export type ChainId = 'solana';
+export type ChainId = 'solana' | 'base';
 export const DEFAULT_CHAIN: ChainId = 'solana';
 
 /** Facts about a chain: names, units, where its data lives. No network calls. */
@@ -51,10 +51,20 @@ export interface ChainAdapter {
   nativeUsd(): Promise<number | null>;
   /** Who created a token, for rug memory (optional: not every chain makes this cheap). */
   tokenCreator?(ctx: ChainContext, token: string): Promise<string | null>;
+  /**
+   * Copybot keeps its books in SOL. Amounts on other chains are converted at the current price
+   * when they happen (identity on Solana).
+   */
+  nativeToSol(amount: number): Promise<number>;
+  solToNativeRaw(sol: number): Promise<bigint>;
+  /** Watch wallets for swaps (chains without Solana's log subscriptions poll). */
+  watch?(wallets: string[], onSwap: (s: Swap) => void, onError: (e: Error) => void): { stop(): void };
+  /** Can this chain place real trades yet? (false = paper mode only) */
+  liveTrading: boolean;
 }
 
 /** Every chain id, for validating stored records (kept here so config can use it without import cycles). */
-export const KNOWN_CHAINS: readonly ChainId[] = ['solana'];
+export const KNOWN_CHAINS: readonly ChainId[] = ['solana', 'base'];
 
 /** Records written before chains existed have no chain: they are Solana. */
 export const chainOf = (r: { chain?: string } | null | undefined): ChainId => ((KNOWN_CHAINS as readonly string[]).includes(r?.chain ?? '') ? (r!.chain as ChainId) : DEFAULT_CHAIN);

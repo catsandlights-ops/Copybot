@@ -18,7 +18,9 @@ export type Swap = {
   tokenPre: bigint; // wallet's raw balance of the token before the tx
   tokenPost: bigint;
   quote: 'SOL' | 'USDC' | 'USDT';
-  quoteAmount: number; // UI amount of SOL / stable spent or received
+  quoteAmount: number; // UI amount of SOL / stable spent or received (other chains: converted to SOL)
+  chain?: import('./chains/types').ChainId; // missing = Solana
+  nativeAmount?: number; // other chains: the amount in their own coin (e.g. ETH) before converting
 };
 
 /**

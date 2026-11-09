@@ -65,7 +65,7 @@ export type Decision = {
   wallet?: string;
   costUsd: number;
   // skipped buys: what the same buy would have been worth an hour later
-  probe?: { lamports: string; tokensOut: string };
+  probe?: { lamports: string; tokensOut: string; chain?: string };
   outcomePct?: number | null;
   applied?: string[];
 };
@@ -268,7 +268,7 @@ export type BuySignal = {
   market: { liquidityUsd: number | null; marketCapUsd: number | null; ageMin: number | null; volume24hUsd?: number | null; change1hPct?: number | null; buys1h?: number | null; sells1h?: number | null } | null;
   holders?: { holderCount: number | null; largestWalletPct: number; top10WalletsPct: number; largestIsTheCopiedWallet: boolean } | null;
   portfolio: { openPositions: number; maxPositions: number; exposureSol: number; maxExposureSol: number; dayPnlSol: number };
-  probe: { lamports: string; tokensOut: string };
+  probe: { lamports: string; tokensOut: string; chain?: string };
 };
 export type { WalletRecord } from './rules';
 import type { WalletRecord, TradeLike } from './rules';

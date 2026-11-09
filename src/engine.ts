@@ -8,7 +8,7 @@ import { overHeld } from './scanner';
 import { loadKeypair, makeConnection } from './env';
 import type { Swap } from './decode';
 import type { CheckResult } from './safety';
-import { getChain, type ChainAdapter } from './chains';
+import { chainOf, getChain, type ChainAdapter, type ChainId } from './chains';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
@@ -54,6 +54,7 @@ export class BotEngine extends EventEmitter {
   private queue: Promise<void> = Promise.resolve();
   private lastRateWarn = 0;
   private lastJupWarn = 0;
+  private lastBaseWarn = 0;
   keyError: string | null = null;
   private stream: FastStream | null = null;
 
@@ -66,6 +67,11 @@ export class BotEngine extends EventEmitter {
   /** Errors from background work: collapse RPC rate limits into one warning per minute. */
   private logError(e: unknown) {
     const msg = (e as Error)?.message ?? String(e);
+    if (/^Base RPC/.test(msg)) {
+      if (Date.now() - this.lastBaseWarn < 60_000) return;
+      this.lastBaseWarn = Date.now();
+      return this.log(`The Base network node is busy or limiting Copybot (${msg.replace(/^Base RPC:? ?/, '')}), so some Base trades may be missed. A free Base RPC from Alchemy or QuickNode (Settings → Connection) fixes this.`, 'warn');
+    }
     if (/Jupiter is busy/.test(msg)) {
       if (Date.now() - this.lastJupWarn < 60_000) return;
       this.lastJupWarn = Date.now();
@@ -157,7 +163,20 @@ export class BotEngine extends EventEmitter {
     const scanning = [sc.tradeCoins && 'trading coins', sc.findTraders && 'finding traders'].filter(Boolean).join(' and ');
     this.log(`Bot started in ${this.cfg.mode.toUpperCase()} mode, watching ${wallets.length} wallet(s)${scanning ? `; market scanner ${scanning}` : ''}${hasOrders ? `; ${this.orders.filter((o) => o.status === 'active').length} open order(s)` : ''}`, 'system');
 
-    for (const w of wallets) {
+    // Wallets on other chains (Base): watched by their chain's adapter. Paper mode only where live isn't ready.
+    const byChain = new Map<string, typeof wallets>();
+    for (const w of wallets) if (chainOf(w) !== 'solana') byChain.set(chainOf(w), [...(byChain.get(chainOf(w)) ?? []), w]);
+    for (const [id, ws] of byChain) {
+      const c = getChain(id as ChainId);
+      if (this.cfg.mode === 'live' && !c.liveTrading) {
+        this.log(`${ws.length} ${c.meta.name} wallet(s) not watched: ${c.meta.name} runs in paper mode only for now.`, 'warn');
+        continue;
+      }
+      if (!c.watch) continue;
+      this.watchers.push(c.watch(ws.map((w) => w.address), (s) => this.onChainSwap(s, gen), (e) => this.logError(e)));
+      for (const w of ws) this.log(`Watching ${this.labels.get(w.address)} (${c.meta.name})`, 'system');
+    }
+    for (const w of wallets.filter((x) => chainOf(x) === 'solana')) {
       try {
         const pk = new PublicKey(w.address);
         const recent = await withRetry(() => this.conn.getSignaturesForAddress(pk, { limit: 50 }), 4);
@@ -180,8 +199,9 @@ export class BotEngine extends EventEmitter {
     this.balanceLoop(gen);
     this.aiLoop(gen);
     const wsu = this.cfg.execution.fastStream ? heliusWsUrl(rpcUrl()) : null;
-    if (wsu && wallets.length) {
-      this.stream = new FastStream(wsu, wallets.map((w) => w.address), (tx) => this.onStreamTx(tx), (s, detail) => {
+    const solWallets = wallets.filter((x) => chainOf(x) === 'solana');
+    if (wsu && solWallets.length) {
+      this.stream = new FastStream(wsu, solWallets.map((w) => w.address), (tx) => this.onStreamTx(tx), (s, detail) => {
         if (s === 'connected') this.log('Fast trade detection is on (Helius stream).', 'system');
         if (s === 'unavailable') this.log(`Fast trade detection isn't available on your Helius plan (${detail}). Using the normal method.`, 'warn');
         this.emit('status');
@@ -196,6 +216,8 @@ export class BotEngine extends EventEmitter {
     this.running = false;
     this.stream?.stop();
     this.stream = null;
+    for (const w of this.watchers) w.stop();
+    this.watchers = [];
     for (const id of this.subs) await this.conn.removeOnLogsListener(id).catch(() => {});
     this.subs = [];
     this.log('Bot stopped', 'system');
@@ -459,6 +481,21 @@ export class BotEngine extends EventEmitter {
     }
   }
 
+  /** Watchers for wallets on other chains. */
+  private watchers: { stop(): void }[] = [];
+
+  /** A swap seen by another chain's watcher (already decoded). */
+  private onChainSwap(swap: Swap, gen: number) {
+    if (!this.running || gen !== this.gen || this.seen.has(swap.signature)) return;
+    this.remember(swap.signature);
+    const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
+    const c = getChain(swap);
+    const amount = swap.nativeAmount != null ? `${swap.nativeAmount.toFixed(4)} ${c.meta.native.symbol} (≈ ${swap.quoteAmount.toFixed(3)} SOL)` : `${swap.quoteAmount.toFixed(2)} ${swap.quote}`;
+    this.log(`${this.labels.get(swap.wallet) ?? short(swap.wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} on ${c.meta.name} for ${amount} (${age.toFixed(1)}s ago)`, 'signal');
+    if (age > this.cfg.risk.maxSignalAgeSec) return this.log('  skipped: signal too old', 'skip');
+    this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
+  }
+
   private onTx(tx: RawTx, wallet: string) {
     const swap = this.chain.decodeSwap(tx, wallet);
     if (!swap) return;
@@ -492,22 +529,23 @@ export class BotEngine extends EventEmitter {
    * All lookups start at the same time (they don't depend on each other), then the answers are
    * checked in the usual order. This takes about as long as the slowest lookup instead of all of them added up.
    */
-  private async tokenChecks(mint: string, sol: number, wantInfo: boolean, quiet = false): Promise<string | { info: MarketInfo | null; holders: HolderStats | null; check: Extract<CheckResult, { ok: true }> }> {
+  private async tokenChecks(mint: string, sol: number, wantInfo: boolean, quiet = false, chain: ChainAdapter = this.chain): Promise<string | { info: MarketInfo | null; holders: HolderStats | null; check: Extract<CheckResult, { ok: true }> }> {
     const { cfg } = this;
     const f = cfg.filters;
     const started = Date.now();
     if (cfg.safety.rugMemory && this.rugs.mints.includes(mint)) return 'this coin rugged you before (rug memory)';
     const settle = <T>(p: Promise<T>) => p.then((v) => ({ ok: true as const, v }), (e: Error) => ({ ok: false as const, e }));
     const wantMarket = f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0;
-    const wantHolders = (f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || wantInfo) && hasSecret('SOLSCAN_API_KEY');
+    const wantHolders = chain.meta.id === 'solana' && (f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || wantInfo) && hasSecret('SOLSCAN_API_KEY');
     const wantCreator = cfg.safety.rugMemory && this.rugs.creators.length > 0;
+    const nativeRaw = await chain.solToNativeRaw(sol);
     const [market, solUsd, hold, check, creator] = await Promise.all([
-      wantMarket ? settle(getMarketInfo(mint)) : null,
+      wantMarket ? settle(getMarketInfo(mint, chain.meta.dexscreenerId)) : null,
       wantMarket ? getSolUsd().catch(() => null) : null,
       wantHolders ? settle(this.cachedHolders(mint)) : null,
-      this.chain.checkToken(this.ctx(), mint, BigInt(Math.round(sol * 1e9))).catch((e) => ({ ok: false as const, reason: (e as Error).message })),
+      chain.checkToken(this.ctx(), mint, nativeRaw).catch((e) => ({ ok: false as const, reason: (e as Error).message })),
       // Who made this coin? Only waited for briefly, so it never slows a buy by more than 1.5 s.
-      wantCreator && this.chain.tokenCreator ? Promise.race([this.chain.tokenCreator(this.ctx(), mint).catch(() => null), sleep(1500).then(() => null)]) : null,
+      wantCreator && chain.tokenCreator ? Promise.race([chain.tokenCreator(this.ctx(), mint).catch(() => null), sleep(1500).then(() => null)]) : null,
     ]);
     let info: MarketInfo | null = null;
     if (market) {
@@ -613,6 +651,8 @@ export class BotEngine extends EventEmitter {
 
     const now = Date.now();
     const b = cfg.buy;
+    const chain = getChain(s);
+    if (cfg.mode === 'live' && !chain.liveTrading) return skip(`${chain.meta.name} runs in paper mode only for now`);
     // Remember every buy we see (even ones we skip), to spot several wallets agreeing.
     this.recentBuys = [...this.recentBuys.filter((x) => now - x.t < 4 * 3_600_000), { mint: s.mint, wallet: s.wallet, t: now }].slice(-500);
     const agree = consensusWallets(this.recentBuys, s.mint, now, b.consensusWindowMin);
@@ -665,8 +705,8 @@ export class BotEngine extends EventEmitter {
     // Market filters, holders, rug memory and token safety, with the wallet balance check, all at once.
     const useAi = cfg.ai.enabled && cfg.ai.decideBuys;
     const [bal, checked] = await Promise.all([
-      this.kp && cfg.mode === 'live' ? this.chain.balance(this.ctx(), this.kp.publicKey.toBase58()) : null,
-      this.tokenChecks(s.mint, sol, useAi),
+      this.kp && cfg.mode === 'live' && chain.meta.id === 'solana' ? chain.balance(this.ctx(), this.kp.publicKey.toBase58()) : null,
+      this.tokenChecks(s.mint, sol, useAi, false, chain),
     ]);
     if (bal != null && bal - sol < r.solReserve) return skip(`wallet balance ${bal.toFixed(3)} SOL too low`);
     if (typeof checked === 'string') return skip(checked);
@@ -685,7 +725,7 @@ export class BotEngine extends EventEmitter {
 
     // Autopilot: Claude decides buy/skip and the size, inside every limit checked above.
     if (useAi) {
-      if (!info) info = await getMarketInfo(s.mint).catch(() => null);
+      if (!info) info = await getMarketInfo(s.mint, chain.meta.dexscreenerId).catch(() => null);
       const label = w?.label ?? short(s.wallet);
       const record = walletRecords(this.readTrades(), cfg.mode)[s.wallet] ?? null;
       const g = this.guard;
@@ -701,7 +741,7 @@ export class BotEngine extends EventEmitter {
         market: info && { liquidityUsd: info.liquidityUsd, marketCapUsd: info.marketCapUsd, ageMin: info.createdAt ? Math.round((Date.now() - info.createdAt) / 60_000) : null, volume24hUsd: info.volume24hUsd, change1hPct: info.change1hPct, buys1h: info.buys1h, sells1h: info.sells1h },
         holders: holders && { holderCount: holders.holderCount, largestWalletPct: +holders.largestPct.toFixed(2), top10WalletsPct: +holders.top10Pct.toFixed(1), largestIsTheCopiedWallet: holders.largestOwner === s.wallet },
         portfolio: { openPositions: Object.keys(state.positions).length, maxPositions: r.maxOpenPositions, exposureSol: exposure(state), maxExposureSol: r.maxTotalExposureSol, dayPnlSol: g.dayPnlSol },
-        probe: { lamports: lamports.toString(), tokensOut: check.buyQuote.outAmount },
+        probe: { lamports: check.buyQuote.inAmount, tokensOut: check.buyQuote.outAmount, chain: chain.meta.id },
       });
       if (!this.running) return;
       if (!d) {
@@ -715,7 +755,7 @@ export class BotEngine extends EventEmitter {
         sol = Math.min(resized, cap);
         if (sol < cfg.buy.minSol) return skip('no room left under your limits');
         lamports = BigInt(Math.round(sol * 1e9));
-        const again = await this.chain.checkToken(this.ctx(), s.mint, lamports);
+        const again = await chain.checkToken(this.ctx(), s.mint, await chain.solToNativeRaw(sol));
         if (!again.ok) return skip(again.reason);
         check = again;
         drift = driftOf(check.buyQuote, lamports);
@@ -723,7 +763,7 @@ export class BotEngine extends EventEmitter {
         if (late) return skip(late);
       }
     }
-    await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
+    await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined, chain);
     if (addOn && state.positions[s.mint]) {
       state.positions[s.mint].addedOn = true;
       saveState(state, cfg.mode);
@@ -814,7 +854,7 @@ export class BotEngine extends EventEmitter {
       const view: ai.ReviewPosition[] = [];
       for (const p of list) {
         const v = this.values[p.mint];
-        const info = await getMarketInfo(p.mint).catch(() => null);
+        const info = await getMarketInfo(p.mint, getChain(p).meta.dexscreenerId).catch(() => null);
         view.push({
           mint: p.mint,
           symbol: info?.symbol ?? null,
@@ -852,7 +892,7 @@ export class BotEngine extends EventEmitter {
   private async checkSkippedOutcomes() {
     for (const d of ai.pendingOutcomes().slice(0, 10)) {
       if (!d.probe || !d.mint) continue;
-      const q = await this.chain.quoteBuy(d.mint, BigInt(d.probe.lamports), this.cfg.safety.slippageBps).catch(() => undefined);
+      const q = await getChain({ chain: d.probe.chain }).quoteBuy(d.mint, BigInt(d.probe.lamports), this.cfg.safety.slippageBps).catch(() => undefined);
       if (q === undefined) continue; // network trouble: try again next round
       // Fewer tokens for the same SOL = the price went up. No route at all usually means the token died.
       ai.setOutcome(d.id, q ? (Number(d.probe.tokensOut) / Number(q.outAmount) - 1) * 100 : -100);
@@ -958,7 +998,7 @@ export class BotEngine extends EventEmitter {
     const unit = perTokenValue(valueSol, p.amountRaw);
     s.push([now, unit]);
     this.samples.set(p.mint, s);
-    const info = pr.liquidityDropPct || pr.maxSellBuyRatio ? await getMarketInfo(p.mint).catch(() => null) : null;
+    const info = pr.liquidityDropPct || pr.maxSellBuyRatio ? await getMarketInfo(p.mint, getChain(p).meta.dexscreenerId).catch(() => null) : null;
     if (info?.liquidityUsd != null && info.liquidityUsd > (p.peakLiquidityUsd ?? 0)) p.peakLiquidityUsd = info.liquidityUsd;
     return dangerReason({ now, valueSol: unit, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null }, pr);
   }
@@ -968,7 +1008,8 @@ export class BotEngine extends EventEmitter {
       try {
         const q = await getChain(p).quoteSell(p.mint, BigInt(p.amountRaw), this.cfg.safety.slippageBps);
         if (!q) continue;
-        const valueSol = Number(q.outAmount) / 1e9;
+        const pc = getChain(p);
+        const valueSol = await pc.nativeToSol(Number(q.outAmount) / 10 ** pc.meta.native.decimals);
         const now = Date.now();
         this.values[p.mint] = { valueSol, pnlPct: (valueSol / p.costSol - 1) * 100, at: now };
         // Live chart: value as a multiple of what it cost (1 = break-even).
