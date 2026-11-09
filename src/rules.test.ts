@@ -211,3 +211,64 @@ test('per-wallet exits: overrides apply to positions opened by that wallet only,
   assert.equal(planExit({ costSol: 1 }, 0.8, exitConfigFor(c, [W])).action?.fraction, 1);
   assert.equal(planExit({ costSol: 1 }, 0.8, c).action, null);
 });
+
+test('wallet trial: steps up after enough profitable copies; any wallet pauses after a losing streak', async () => {
+  const { walletLifecycle, trialFactor } = await import('./rules');
+  const t = { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 };
+  assert.deepEqual([trialFactor(0), trialFactor(1), trialFactor(undefined)], [0.25, 0.5, 1]);
+  assert.deepEqual(walletLifecycle({ trialStage: 0 }, [0.1, -0.05, 0.2], t), { stepUp: false, pause: null });
+  assert.deepEqual(walletLifecycle({ trialStage: 0 }, [0.1, -0.05, 0.2, 0.01], t), { stepUp: true, pause: null });
+  assert.deepEqual(walletLifecycle({}, [0.1, 0.2, 0.3], t), { stepUp: false, pause: null }); // already full size
+  assert.equal(walletLifecycle({}, [0.5, -0.1, -0.1, -0.1, -0.1, -0.1], t).pause, '5 losing copies in a row');
+  assert.equal(walletLifecycle({}, [-0.1, -0.1, -0.1, -0.1], t).pause, null);
+  assert.equal(walletLifecycle({}, [-0.1, -0.1, -0.1, -0.1, -0.1], { ...t, pauseAfterLosses: 0 }).pause, null); // off
+  assert.equal(walletLifecycle({ trialStage: 1 }, [1, 1, 1], { ...t, enabled: false }).stepUp, false);
+});
+
+test('config keeps trial fields; existing wallets get a start date on upgrade', async () => {
+  const { sanitizeConfig } = await import('./config');
+  const W = 'So11111111111111111111111111111111111111112';
+  const c = sanitizeConfig({ wallets: [{ address: W, label: 'a', enabled: false, trialStage: 1, since: 5, pausedReason: '5 losing copies<script>' }] }, true);
+  assert.equal(c.wallets[0].trialStage, 1);
+  assert.equal(c.wallets[0].since, 5);
+  assert.equal(c.wallets[0].pausedReason, '5 losing copiesscript');
+  assert.equal(sanitizeConfig({ wallets: [{ address: W, label: 'a', trialStage: 7 }] }, true).wallets[0].trialStage, undefined);
+});
+
+test('healthVerdict', async () => {
+  const { healthVerdict } = await import('./rules');
+  assert.equal(healthVerdict({ copied: 0, closed: 0, totalSol: 0 }), 'quiet');
+  assert.equal(healthVerdict({ copied: 3, closed: 2, totalSol: 1 }), 'unclear');
+  assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: 0.1 }), 'keep');
+  assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: -0.1 }), 'losing');
+  // 642 of 1,500 transactions unreadable: no fair verdict, even with no copies seen.
+  assert.equal(healthVerdict({ copied: 0, closed: 0, totalSol: 0, read: 1500, unreadable: 642 }), 'unclear');
+  assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: 0.1, read: 100, unreadable: 10 }), 'keep');
+});
+
+test('paper wallet balance and picking experiment wallets', async () => {
+  const { paperFreeSol, experimentPicks } = await import('./rules');
+  assert.equal(paperFreeSol(10, 1.5, 2), 9.5);
+  assert.equal(paperFreeSol(10, -9, 0.5), 0.5);
+  const caught = new Map([
+    ['one-token-big', { tokens: ['A'], bestGainPct: 900 }],
+    ['two-tokens', { tokens: ['A', 'B'], bestGainPct: 60 }],
+    ['mine', { tokens: ['A', 'B', 'C'], bestGainPct: 500 }],
+    ['one-token-small', { tokens: ['C'], bestGainPct: 45 }],
+  ]);
+  assert.deepEqual(experimentPicks(caught, new Set(['mine']), 2).map((p) => p.wallet), ['two-tokens', 'one-token-small']); // 'one-token-big' only adds token A, already covered
+});
+
+test('experiment picks are spread over different tokens', async () => {
+  const { experimentPicks } = await import('./rules');
+  const caught = new Map([
+    ['gpu1', { tokens: ['GPU'], bestGainPct: 900 }],
+    ['gpu2', { tokens: ['GPU'], bestGainPct: 800 }],
+    ['gpu3', { tokens: ['GPU'], bestGainPct: 700 }],
+    ['cat', { tokens: ['CAT'], bestGainPct: 50 }],
+    ['dog', { tokens: ['DOG'], bestGainPct: 45 }],
+  ]);
+  assert.deepEqual(experimentPicks(caught, new Set(), 3).map((p) => p.wallet), ['gpu1', 'cat', 'dog']);
+  // Only one token moving: still fills the places.
+  assert.equal(experimentPicks(new Map([['a', { tokens: ['X'], bestGainPct: 90 }], ['b', { tokens: ['X'], bestGainPct: 80 }]]), new Set(), 3).length, 2);
+});

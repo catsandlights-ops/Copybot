@@ -12,13 +12,15 @@
  *
  * Pure: no network. The server fetches the swaps, candles and current prices.
  */
-import { exitConfigFor, type Config } from './config';
+import { exitConfigFor, walletRules, type Config } from './config';
 import type { Swap } from './decode';
 import type { Candle } from './markets';
 import { buyBlockReason, ExitStep, freshGuard, GuardState, planExit, recordSell } from './rules';
 
-export type BacktestOpts = { delayPct: number; feeSol: number };
-export type PriceSeries = { step: number; candles: Candle[] };
+/** endAt: value what's still held at this time (a past date range) instead of today. */
+export type BacktestOpts = { delayPct: number; feeSol: number; endAt?: number };
+/** createdAt: when the token's first pool launched, for the minimum token age filter. */
+export type PriceSeries = { step: number; candles: Candle[]; createdAt?: number | null };
 export type BtTrade = { t: number; side: 'buy' | 'sell'; mint: string; wallet: string; sol: number; pnl?: number; reason?: string };
 export type BtOpen = { mint: string; costSol: number; tokensRaw: number; valueSol: number | null; wallets: string[] };
 export type BtWallet = { wallet: string; signals: number; copied: number; closed: number; wins: number; pnlSol: number };
@@ -67,7 +69,9 @@ export function usdAt(series: PriceSeries | undefined, t: number): number | null
 export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, marks: Map<string, number | null> = new Map(), prices: Map<string, PriceSeries> = new Map()): BacktestResult {
   const r = cfg.risk;
   const d = opts.delayPct / 100;
-  const ordered = swaps.filter((s) => s.quote === 'SOL' && s.blockTime && s.tokenAmount > 0n && s.quoteAmount > 0).sort((a, b) => a.blockTime! - b.blockTime!);
+  const ordered = swaps
+    .filter((s) => s.quote === 'SOL' && s.blockTime && s.tokenAmount > 0n && s.quoteAmount > 0 && (opts.endAt === undefined || s.blockTime * 1000 <= opts.endAt))
+    .sort((a, b) => a.blockTime! - b.blockTime!);
   const positions = new Map<string, Pos>();
   const anchors = new Map<string, Anchor>();
   const cursor = new Map<string, number>();
@@ -117,6 +121,20 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
         if (c.t + series.step > until) break;
         if (c.t + series.step <= p.openedAt) continue;
         const valueAt = (usd: number) => p.tokens * a.solPerRaw * (usd / a.usd!) * (1 - d);
+        // Dump protection: a crash of crashPct% from the highest price within crashWindowMin.
+        const pr = cfg.protect;
+        if (pr.crashPct > 0) {
+          const from = c.t - pr.crashWindowMin * 60_000;
+          let high = c.h;
+          for (let j = i - 1; j >= 0 && series.candles[j].t >= from && series.candles[j].t + series.step > p.openedAt; j--) high = Math.max(high, series.candles[j].h);
+          const drop = (1 - c.l / high) * 100;
+          if (drop >= pr.crashPct) {
+            const v = valueAt(c.l); // sold near the low of the crash candle
+            sell(p, 1, v, c.t + series.step, [...p.wallets][0], `dump protection: fell ${drop.toFixed(0)}% within ${pr.crashWindowMin} min`);
+            exitSells++;
+            break;
+          }
+        }
         // Low first (stop-loss / trailing stop), then the high (take-profits), cautious order.
         for (const usd of [c.l, c.h]) {
           for (let k = 0; k < 3 && positions.has(p.mint); k++) {
@@ -154,7 +172,7 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
       const held = positions.get(s.mint);
       if (held && r.skipIfAlreadyHolding) { skip('already holding'); continue; }
       if (!held && positions.size >= r.maxOpenPositions) { skip('max open positions'); continue; }
-      if (s.quoteAmount < cfg.buy.minTargetBuySol) { skip('their buy too small'); continue; }
+      if (s.quoteAmount < walletRules(cfg, s.wallet).minTargetBuySol) { skip('their buy too small'); continue; }
       let sol = cfg.buy.sizing === 'percent' ? (s.quoteAmount * cfg.buy.percentOfTarget) / 100 : cfg.buy.fixedSol;
       sol = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol * (w?.sizeMultiplier ?? 1)));
       if (exposure + sol > r.maxTotalExposureSol) { skip('max SOL in trades'); continue; }
@@ -164,6 +182,9 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
         if (used + sol > w.maxExposureSol) { skip('wallet budget used up'); continue; }
       }
       if (cfg.safety.blacklist.includes(s.mint)) { skip('blacklisted'); continue; }
+      // Minimum token age, from when its first pool launched (when price history is loaded).
+      const born = prices.get(s.mint)?.createdAt;
+      if (cfg.filters.minTokenAgeMin > 0 && born && now - born < cfg.filters.minTokenAgeMin * 60_000) { skip('token too new'); continue; }
       const p = held ?? { mint: s.mint, tokens: 0, costSol: 0, wallets: new Set<string>(), openedAt: now, steps: [] };
       p.tokens += sol / (theirPrice * (1 + d));
       p.costSol += sol + opts.feeSol;
@@ -182,11 +203,17 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
       sell(p, fraction, p.tokens * fraction * theirPrice * (1 - d), now, s.wallet, fraction >= 0.999 ? 'they sold everything' : `they sold ${Math.round(fraction * 100)}%`);
     }
   }
-  advance(Infinity);
+  advance(opts.endAt ?? Infinity);
 
   const open: BtOpen[] = [...positions.values()].map((p) => {
-    const m = marks.get(p.mint);
-    return { mint: p.mint, costSol: p.costSol, tokensRaw: p.tokens, valueSol: m == null ? null : Math.max(0, p.tokens * m * (1 - d) - opts.feeSol), wallets: [...p.wallets] };
+    let perRaw: number | null | undefined;
+    if (opts.endAt !== undefined) {
+      // Value at the end of the period from the candles, anchored on the last real fill.
+      const a = anchors.get(p.mint);
+      const u = usdAt(prices.get(p.mint), opts.endAt);
+      perRaw = a?.usd && u ? a.solPerRaw * (u / a.usd) : null;
+    } else perRaw = marks.get(p.mint);
+    return { mint: p.mint, costSol: p.costSol, tokensRaw: p.tokens, valueSol: perRaw == null ? null : Math.max(0, p.tokens * perRaw * (1 - d) - opts.feeSol), wallets: [...p.wallets] };
   });
   const unrealizedSol = open.every((o) => o.valueSol !== null) ? open.reduce((a, o) => a + (o.valueSol! - o.costSol), 0) : null;
   // Unpriced open positions count as a total loss in the headline number (conservative).

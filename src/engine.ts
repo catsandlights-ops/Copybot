@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { Config, exitConfigFor, loadConfig } from './config';
+import { Config, exitConfigFor, loadConfig, walletRules } from './config';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { quoteBuy, quoteSell } from './jupiter';
@@ -10,6 +10,8 @@ import { getHolderStats, HolderStats } from './solscan';
 import { hasSecret, onRpcSwitch, rpcUrl } from './env';
 import { FastStream, heliusWsUrl } from './stream';
 import type { RawTx } from './util';
+import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
+import { saveConfig } from './config';
 import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
@@ -91,7 +93,10 @@ export class BotEngine extends EventEmitter {
     this.trader = new Trader(this.conn, this.cfg, this.state, this.kp, {
       log: (m, l) => this.log(m, l),
       trade: (t: Trade) => {
-        if (t.side === 'sell' && typeof t.pnl === 'number') this.afterSell(t.pnl);
+        if (t.side === 'sell' && typeof t.pnl === 'number') {
+          this.afterSell(t.pnl);
+          this.walletProgress(t.sources ?? []);
+        }
         this.emit('trade', t);
         this.emit('status');
         setTimeout(() => this.valuePositions(), 1500); // price new positions right away
@@ -183,6 +188,38 @@ export class BotEngine extends EventEmitter {
     }
   }
 
+  /** Trial step-ups and auto-pauses for the wallets a sell was copied from. Saved without a restart. */
+  private walletProgress(sources: string[]) {
+    const trades = this.readTrades();
+    let changed = false;
+    for (const addr of sources) {
+      const w = this.cfg.wallets.find((x) => x.address === addr);
+      if (!w || !w.enabled) continue;
+      const pnls = trades
+        .filter((t: any) => t.mode === this.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.includes(addr) && t.t >= (w.since ?? 0))
+        .map((t: any) => t.pnl as number);
+      const { stepUp, pause } = walletLifecycle(w, pnls, this.cfg.trial);
+      if (pause) {
+        w.enabled = false;
+        w.pausedReason = pause;
+        this.log(`Paused ${w.label}: ${pause}. Open positions from it still follow its sells. Turn it back on in Wallets.`, 'warn');
+        changed = true;
+      } else if (stepUp) {
+        w.trialStage = w.trialStage === 0 ? 1 : undefined;
+        if (w.trialStage === undefined) delete w.trialStage;
+        w.since = Date.now();
+        this.log(`${w.label} passed its trial step: now copying at ${w.trialStage === 1 ? 'half' : 'full'} size.`, 'system');
+        changed = true;
+      }
+    }
+    if (changed) {
+      saveConfig(this.cfg);
+      this.labels = new Map(this.cfg.wallets.map((w) => [w.address, w.label]));
+      this.emit('config', this.cfg);
+      this.emit('status');
+    }
+  }
+
   /** Let the bot buy again today despite the daily limit / losing-streak pause. */
   resumeBuying() {
     this.state.guard = { ...this.guard, pausedUntil: 0, lossStreak: 0, resumedDay: localDay(Date.now()) };
@@ -241,14 +278,20 @@ export class BotEngine extends EventEmitter {
     const holding = state.positions[s.mint];
     if (holding && r.skipIfAlreadyHolding) return skip('already holding');
     if (!holding && Object.keys(state.positions).length >= r.maxOpenPositions) return skip('max open positions reached');
-    if (s.quote === 'SOL' && s.quoteAmount < cfg.buy.minTargetBuySol) return skip(`their buy is below ${cfg.buy.minTargetBuySol} SOL`);
+    const rules = walletRules(cfg, s.wallet);
+    if (s.quote === 'SOL' && s.quoteAmount < rules.minTargetBuySol) return skip(`their buy is below ${rules.minTargetBuySol} SOL`);
 
     // Size: base amount × this wallet's multiplier, then the min/max limits.
     const w = cfg.wallets.find((x) => x.address === s.wallet);
     let sol = cfg.buy.sizing === 'percent' && s.quote === 'SOL' ? (s.quoteAmount * cfg.buy.percentOfTarget) / 100 : cfg.buy.fixedSol;
-    sol *= w?.sizeMultiplier ?? 1;
+    if (w && !w.enabled) return skip(`${w.label} is paused${w.pausedReason ? ` (${w.pausedReason})` : ''}`);
+    sol *= (w?.sizeMultiplier ?? 1) * trialFactor(w?.trialStage);
     sol = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol));
     if (exposure(state) + sol > r.maxTotalExposureSol) return skip('max total exposure reached');
+    if (cfg.mode === 'paper') {
+      const free = paperFreeSol(cfg.paper.startSol, state.realizedPnlSol, exposure(state));
+      if (free < sol) return skip(`paper wallet has only ${Math.max(0, free).toFixed(3)} SOL left (reset it on the Dashboard)`);
+    }
     if (w && w.maxExposureSol > 0) {
       const used = walletExposureSol(Object.values(state.positions), w.address);
       if (used + sol > w.maxExposureSol) return skip(`${w.label}'s budget is used up (${used.toFixed(3)} of ${w.maxExposureSol} SOL)`);
@@ -294,7 +337,8 @@ export class BotEngine extends EventEmitter {
 
     // Don't chase: compare our price with what the copied wallet paid.
     const driftOf = (q: { outAmount: string }, lam: bigint) => (s.quote === 'SOL' ? priceDriftPct(s.quoteAmount, s.tokenAmount, lam, BigInt(q.outAmount)) : null);
-    const chased = (drift: number | null) => (r.maxPriceDriftPct > 0 && drift != null && drift > r.maxPriceDriftPct ? `price is already ${drift.toFixed(0)}% above their entry (max ${r.maxPriceDriftPct}%)` : null);
+    const maxDrift = rules.risk.maxPriceDriftPct;
+    const chased = (drift: number | null) => (maxDrift > 0 && drift != null && drift > maxDrift ? `price is already ${drift.toFixed(0)}% above their entry (max ${maxDrift}%)` : null);
     let drift = driftOf(check.buyQuote, lamports);
     const chasing = chased(drift);
     if (chasing) return skip(chasing);
@@ -565,6 +609,7 @@ export class BotEngine extends EventEmitter {
       unrealizedPnlSol: unrealized,
       exposureSol: exposure(this.state),
       positions,
+      paper: this.cfg.mode === 'paper' ? { startSol: this.cfg.paper.startSol, freeSol: paperFreeSol(this.cfg.paper.startSol, this.state.realizedPnlSol, exposure(this.state)) } : null,
       guard: { blocked: buyBlockReason(this.guard, this.cfg.risk, Date.now()), dayPnlSol: this.guard.dayPnlSol, lossStreak: this.guard.lossStreak },
       wallet: this.kp ? { address: this.kp.publicKey.toBase58(), balance: this.walletBalance } : null,
     };

@@ -151,6 +151,69 @@ export function dangerReason(d: DangerInputs, p: Config['protect']): string | nu
 }
 
 // ---------------------------------------------------------------------------
+// Wallet trial period and auto-pause
+// ---------------------------------------------------------------------------
+
+/** Size factor for a wallet on trial: quarter, then half, then full. */
+export const trialFactor = (stage?: 0 | 1) => (stage === 0 ? 0.25 : stage === 1 ? 0.5 : 1);
+
+/**
+ * After a sell copied from this wallet: should it step up its trial size, or be paused?
+ * `pnls` = profit of each sell copied from it since `since`, oldest first.
+ */
+export function walletLifecycle(w: { trialStage?: 0 | 1 }, pnls: number[], t: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number }): { stepUp: boolean; pause: string | null } {
+  const n = t.pauseAfterLosses;
+  if (n > 0 && pnls.length >= n && pnls.slice(-n).every((p) => p < 0)) {
+    return { stepUp: false, pause: `${n} losing copies in a row` };
+  }
+  const wins = pnls.filter((p) => p > 0).length;
+  return { stepUp: t.enabled && w.trialStage !== undefined && wins >= t.winsToStepUp, pause: null };
+}
+
+// ---------------------------------------------------------------------------
+// Paper wallet
+// ---------------------------------------------------------------------------
+
+/** SOL free to spend in the paper wallet: what it started with, plus closed profits, minus what's in open positions. */
+export const paperFreeSol = (startSol: number, realizedPnlSol: number, openCostSol: number) => startSol + realizedPnlSol - openCostSol;
+
+/**
+ * Pick wallets for a quick paper experiment from recent "caught the move" buyers:
+ * wallets seen on the most tokens first, then the biggest gain.
+ */
+export function experimentPicks(caught: Map<string, { tokens: string[]; bestGainPct: number }>, skip: Set<string>, n = 3) {
+  const ranked = [...caught.entries()]
+    .filter(([w]) => !skip.has(w))
+    .sort((a, b) => b[1].tokens.length - a[1].tokens.length || b[1].bestGainPct - a[1].bestGainPct);
+  // Spread the picks over different tokens: skip a trader whose tokens are all already covered,
+  // then fill any empty places from the rest.
+  const picked: typeof ranked = [];
+  const covered = new Set<string>();
+  for (const e of ranked) {
+    if (picked.length >= n) break;
+    if (e[1].tokens.every((t) => covered.has(t))) continue;
+    picked.push(e);
+    e[1].tokens.forEach((t) => covered.add(t));
+  }
+  for (const e of ranked) if (picked.length < n && !picked.includes(e)) picked.push(e);
+  return picked.map(([wallet, v]) => ({ wallet, ...v }));
+}
+
+// ---------------------------------------------------------------------------
+// Wallet health check
+// ---------------------------------------------------------------------------
+
+export type HealthVerdict = 'keep' | 'losing' | 'unclear' | 'quiet';
+/** From one wallet's backtest with the user's settings: worth keeping, losing money, too few trades, or no trades. */
+export function healthVerdict(r: { copied: number; closed: number; totalSol: number; read?: number; unreadable?: number }): HealthVerdict {
+  // If a big part of the history couldn't be read, there's no fair verdict.
+  if (r.read && (r.unreadable ?? 0) > r.read * 0.3) return 'unclear';
+  if (r.copied === 0) return 'quiet';
+  if (r.closed < 3) return 'unclear';
+  return r.totalSol > 0 ? 'keep' : 'losing';
+}
+
+// ---------------------------------------------------------------------------
 // Copy gap: how much worse our fill was than the copied wallet's
 // ---------------------------------------------------------------------------
 

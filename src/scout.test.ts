@@ -12,27 +12,47 @@ const row = (o: Partial<PoolRow> & { mint: string }): PoolRow => ({
   createdAt: now - 24 * H, buys24h: 5000, sells24h: 4000, ...o,
 });
 
-test('pickTokens: pumped, 3h–7d old, liquid, not too busy; best first; no duplicates or SOL/USDC', () => {
+test('pickTokens: moving 30%+ (6h or 24h), 1h–14d old, liquid; best first; one entry per token; quiet flag', () => {
   const t = pickTokens([
     row({ mint: 'A', change: { h1: 0, h24: 80 } }),
     row({ mint: 'B', change: { h1: 0, h24: 300 } }),
-    row({ mint: 'B', change: { h1: 0, h24: 300 } }),
-    row({ mint: 'FLAT', change: { h1: 0, h24: 10 } }),
-    row({ mint: 'BABY', createdAt: now - 1 * H }),
+    row({ mint: 'B', change: { h1: 0, h24: 300 }, liquidityUsd: 500_000, pool: 'PB-main' }), // same token, bigger pool
+    row({ mint: 'SIXH', change: { h1: 0, h6: 120, h24: 10 } }), // moving in the last 6h only
+    row({ mint: 'FLAT', change: { h1: 0, h6: 5, h24: 10 } }),
+    row({ mint: 'BABY', createdAt: now - 0.5 * H }),
     row({ mint: 'OLD', createdAt: now - 30 * 24 * H }),
-    row({ mint: 'FOURDAYS', createdAt: now - 96 * H }),
-    row({ mint: 'LONGBUSY', createdAt: now - 60 * H, buys24h: 6000, sells24h: 5000 }), // ~27k txs over its life
+    row({ mint: 'WEEKOLD', createdAt: now - 7 * 24 * H }), // allowed now, but too much history for early buyers
     row({ mint: 'THIN', liquidityUsd: 5_000 }),
-    row({ mint: 'BUSY', buys24h: 30_000 }),
     row({ mint: 'NODATE', createdAt: null }),
     row({ mint: 'So11111111111111111111111111111111111111112' }),
-  ], now);
-  assert.deepEqual(t.map((x) => x.mint), ['B', 'A']);
-  assert.equal(t[0].ageHours, 24);
-  assert.equal(pickTokens(Array.from({ length: 9 }, (_, i) => row({ mint: 'T' + i })), now, 5).length, 5);
+  ], now, 10);
+  assert.deepEqual(t.map((x) => x.mint), ['B', 'SIXH', 'WEEKOLD', 'A']);
+  assert.equal(t[0].pool, 'PB-main');
+  assert.equal(t.find((x) => x.mint === 'A')!.quiet, true);
+  assert.equal(t.find((x) => x.mint === 'WEEKOLD')!.quiet, false);
+  assert.equal(pickTokens(Array.from({ length: 9 }, (_, i) => row({ mint: 'T' + i })), now).length, 6);
 });
 
-test('pickCandidates: multi-token early buyers and top traders first; skips copied wallets and dust', () => {
+test('pickTokens: tokens from recent searches go to the back so searches vary', () => {
+  const rows = [row({ mint: 'TOP', change: { h1: 0, h24: 500 } }), row({ mint: 'NEXT', change: { h1: 0, h24: 100 } }), row({ mint: 'LAST', change: { h1: 0, h24: 50 } })];
+  assert.deepEqual(pickTokens(rows, now, 2).map((x) => x.mint), ['TOP', 'NEXT']);
+  assert.deepEqual(pickTokens(rows, now, 2, new Set(['TOP'])).map((x) => x.mint), ['NEXT', 'LAST']);
+});
+
+test('pumpBuyers: recent big buys now up 40%+', async () => {
+  const { pumpBuyers } = await import('./scout');
+  const b = pumpBuyers([
+    { kind: 'buy', wallet: 'early', usd: 1000, priceUsd: 1 },
+    { kind: 'buy', wallet: 'early', usd: 500, priceUsd: 0.5 }, // keeps the best gain
+    { kind: 'buy', wallet: 'late', usd: 1000, priceUsd: 2.5 },
+    { kind: 'buy', wallet: 'tiny', usd: 50, priceUsd: 0.5 },
+    { kind: 'sell', wallet: 'seller', usd: 1000, priceUsd: 0.5 },
+  ], 3);
+  assert.deepEqual([...b.entries()], [['early', 500]]);
+  assert.equal(pumpBuyers([{ kind: 'buy', wallet: 'x', usd: 1000, priceUsd: 1 }], null).size, 0);
+});
+
+test('pickCandidates: wallets seen on several tokens first, any source; skips copied wallets and dust', () => {
   const sym = new Map([['m1', 'AAA'], ['m2', 'BBB']]);
   const c = pickCandidates(
     [
@@ -44,9 +64,11 @@ test('pickCandidates: multi-token early buyers and top traders first; skips copi
     new Map([['trader', ['AAA']], ['one-hit-big', ['BBB']]]),
     sym,
     new Set(['mine']),
+    12,
+    new Map([['pumper', ['CCC']], ['double', ['CCC']]]),
   );
-  assert.deepEqual(c.map((x) => x.wallet), ['double', 'one-hit-big', 'trader']);
-  assert.deepEqual(c[0].earlyOn, ['AAA', 'BBB']);
+  assert.deepEqual(c.map((x) => x.wallet), ['double', 'one-hit-big', 'trader', 'pumper']);
+  assert.deepEqual(c[0].pumpOn, ['CCC']);
   assert.deepEqual(c[1].topTraderOn, ['BBB']);
 });
 
@@ -74,4 +96,26 @@ test('passesBasics: the hard floor for any scout pick', async () => {
   assert.equal(passesBasics(rep({})), true);
   // The wallet the first real scout run surfaced: losing money and trading 269 times a day.
   assert.equal(passesBasics(rep({ closedTokens: 10, winRate: 0.4, realizedPnlSol: -1.44, roiPct: -6, tradesPerDay: 269, medianHoldMin: 72 })), false);
+});
+
+test('passesBacktest: only wallets that would have made money for us, over 3+ trades', async () => {
+  const { passesBacktest } = await import('./scout');
+  const r = (bt?: any) => ({ ...rep({}), earlyOn: [], topTraderOn: [], bt });
+  assert.equal(passesBacktest(r({ totalSol: 0.2, roiPct: 20, closed: 5, wins: 3, delayPct: 5 })), true);
+  assert.equal(passesBacktest(r({ totalSol: -0.3, roiPct: -40, closed: 9, wins: 0, delayPct: 5 })), false); // the scout's first real pick
+  assert.equal(passesBacktest(r({ totalSol: 0.5, roiPct: 90, closed: 2, wins: 2, delayPct: 5 })), false); // too few to tell
+  assert.equal(passesBacktest(r()), false);
+});
+
+test('suggestStrategy matches the wallet style and never picks one that would skip its buys', async () => {
+  const { suggestStrategy } = await import('./scout');
+  const { strategyById } = await import('./presets');
+  assert.equal(suggestStrategy({ medianHoldMin: 8, medianBuySol: 1, closedTokens: 20 }).id, 'sniper');
+  assert.equal(suggestStrategy({ medianHoldMin: 180, medianBuySol: 12, closedTokens: 20 }).id, 'whale');
+  assert.equal(suggestStrategy({ medianHoldMin: 90, medianBuySol: 1.5, closedTokens: 20 }).id, 'momentum');
+  assert.equal(suggestStrategy({ medianHoldMin: 600, medianBuySol: 0.8, closedTokens: 20 }).id, 'balanced');
+  // A 0.3 SOL buyer holding for an hour: Momentum's 0.5 SOL minimum would skip its buys.
+  const s = suggestStrategy({ medianHoldMin: 60, medianBuySol: 0.3, closedTokens: 20 });
+  assert.ok(strategyById(s.id)!.patch.buy!.minTargetBuySol! <= 0.3, s.id);
+  assert.match(suggestStrategy({ medianHoldMin: 8, medianBuySol: 1, closedTokens: 20 }).why, /8 min/);
 });

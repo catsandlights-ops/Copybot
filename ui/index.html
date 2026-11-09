@@ -189,6 +189,23 @@ button.wz-choice:hover { border-color: var(--accent); }
 .pick .why { color: var(--muted); font-size: 13px; margin: 8px 0 10px; }
 .pick .nums { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
 .pick .nums b { color: var(--text); }
+.strat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.strat { display: flex; flex-direction: column; position: relative; overflow: hidden; padding: 18px 20px; }
+.strat::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--c); }
+.strat.on { box-shadow: 0 0 0 2px var(--c); }
+.strat h3 { margin: 0; font-size: 17px; }
+.strat .tag-risk { font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 99px; background: var(--panel-2); color: var(--muted); }
+.strat .tag-risk.Higher { background: var(--red-bg); color: var(--red); }
+.strat .tag-risk.Lower { background: var(--green-bg); color: var(--green); }
+.strat .tag-risk.Medium { background: var(--amber-bg); color: var(--amber); }
+.strat dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; margin: 12px 0 16px; }
+.strat dt { color: var(--muted); }
+.strat dd { margin: 0; text-align: right; font-weight: 560; }
+.strat .acts { margin-top: auto; display: flex; gap: 8px; }
+.strat .acts .btn { flex: 1; }
+.chg { width: 100%; border-collapse: collapse; font-size: 13px; }
+.chg td { padding: 5px 4px; border-top: 1px solid var(--border); }
+.chg td:nth-child(2), .chg td:nth-child(3) { text-align: right; white-space: nowrap; }
 .bt-curve { padding: 8px 18px 16px; }
 .bt-curve svg { width: 100%; height: 220px; display: block; }
 .bt-axis { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; margin-top: 6px; }
@@ -205,8 +222,12 @@ button.wz-choice:hover { border-color: var(--accent); }
 .chip { display: inline-block; white-space: nowrap; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); margin: 1px 0; }
 .chip.done { background: var(--green-bg); color: var(--green); }
 .chip.trail { background: var(--amber-bg); color: var(--amber); }
-.wallet-num { width: 96px; height: 30px; text-align: right; }
-.wallet-row .label-input { min-width: 120px; }
+.input.wallet-num { width: 68px; min-width: 60px; height: 30px; text-align: right; flex: none; padding: 0 8px; }
+.wallets-tbl th, .wallets-tbl td { padding-left: 8px; padding-right: 8px; }
+.wallets-tbl th:first-child, .wallets-tbl td:first-child { padding-left: 18px; }
+.wallets-tbl .note { font-size: 11px; }
+.wallet-row .note { white-space: nowrap; }
+.wallet-row .label-input { min-width: 104px; }
 
 /* forms */
 .field { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
@@ -457,6 +478,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
     <button class="nav" data-page="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg>Markets</button>
     <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
     <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
+    <button class="nav" data-page="strategies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 2 5-6"/><circle cx="19" cy="7" r="1.5"/></svg>Strategies</button>
     <button class="nav" data-page="backtest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>Backtest</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
     <button class="nav" data-page="autopilot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Autopilot<span class="count" id="nav-ai"></span></button>
@@ -569,21 +591,25 @@ function wizard(step = 0) {
      <p class="muted">Set it up any time in <b>Settings → Phone alerts</b>. It takes about 2 minutes.</p>
      <button class="btn" id="wz-alerts">Set up alerts now</button>`,
     `<div class="wz-hero">${ICON.star}</div><h2>You're ready</h2>
-     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '⚠️ No wallets yet (add them on the Wallets page)'}</li><li>✅ Paper mode: nothing is spent</li></ul>
+     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '💡 No wallets yet: <b>Start a paper experiment</b> and Copybot picks a few active traders for you'}</li><li>✅ Paper mode: nothing is spent</li></ul>
      <p class="muted">Tip: before copying a wallet with real money, run it on the <b>Backtest</b> page. Read <a href="#" data-guide="getting-started" id="wz-guide">Getting started</a> for the rest.</p>`,
   ][step];
   $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal wizard" role="dialog" aria-modal="true" aria-label="Setup">
     <div class="wz-top"><div class="wz-dots">${dots}</div><button class="btn sm ghost" id="wz-skip">Skip setup</button></div>
     <div class="wz-body">${body}</div>
     <div class="row wz-nav">${step ? '<button class="btn" id="wz-back">Back</button>' : ''}<span class="spacer" style="flex:1"></span>
-      ${step < WZ_STEPS.length - 1 ? `<button class="btn primary" id="wz-next">${step === 0 ? 'Let\'s go' : 'Next'}</button>` : `<button class="btn primary" id="wz-start" ${S.config.wallets.filter((w) => w.enabled !== false).length ? '' : 'disabled'}>Start in paper mode</button><button class="btn" id="wz-done">Finish</button>`}</div></div></div>`;
+      ${step < WZ_STEPS.length - 1 ? `<button class="btn primary" id="wz-next">${step === 0 ? 'Let\'s go' : 'Next'}</button>` : `<button class="btn primary" id="wz-start">${S.config.wallets.some((w) => w.enabled !== false) ? 'Start in paper mode' : 'Start a paper experiment'}</button><button class="btn" id="wz-done">Finish</button>`}</div></div></div>`;
   const finish = async () => { $('#modal-root').innerHTML = ''; S.ui = { ...S.ui, setupDone: true }; await act(() => api('PUT', '/api/ui', { setupDone: true })); };
   $('#wz-skip').onclick = finish;
   const nx = $('#wz-next'); if (nx) nx.onclick = () => wizard(step + 1);
   const bk = $('#wz-back'); if (bk) bk.onclick = () => wizard(step - 1);
   const dn = $('#wz-done'); if (dn) dn.onclick = finish;
   const gd = $('#wz-guide'); if (gd) gd.addEventListener('click', finish);
-  const st = $('#wz-start'); if (st) st.onclick = async () => { await finish(); go('dashboard'); await act(() => api('POST', '/api/start'), 'Bot started in paper mode'); };
+  const st = $('#wz-start'); if (st) st.onclick = async () => {
+    await finish(); go('dashboard');
+    if (!S.config.wallets.some((w) => w.enabled !== false)) return quickStart();
+    await act(() => api('POST', '/api/start'), 'Bot started in paper mode');
+  };
   const t = $('#wz-test');
   if (t) t.onclick = async () => {
     const url = $('#wz-rpc').value.trim();
@@ -693,10 +719,44 @@ $('#run-btn').onclick = async () => {
     const ok = await confirmModal({ title: 'Start in LIVE mode?', body: '<p>The bot will spend real SOL from your trading wallet automatically.</p>', confirm: 'Start live trading', danger: true });
     if (!ok) return;
   }
+  // Paper mode with no wallets yet: offer a one-press experiment instead of an error.
+  if (!S.status.running && S.config.mode === 'paper' && !S.config.wallets.some((w) => w.enabled !== false)) return quickStart();
   S.busy = true; renderChrome();
   await act(() => api('POST', S.status.running ? '/api/stop' : '/api/start'));
   S.busy = false; renderChrome();
 };
+
+// ---------------- one-press paper experiment ----------------
+async function quickStart() {
+  const ok = await confirmModal({ title: 'Start a paper experiment?', confirm: 'Start experiment',
+    body: `<p>You haven't picked any wallets yet, so Copybot will pick <b>3 traders who just caught a move</b> on today's trending tokens and copy them in <b>paper mode</b>, with a pretend ${S.config.paper.startSol} SOL wallet.</p>
+      <p class="muted">Nothing is ever spent. It takes about 30 seconds to set up. These traders aren't vetted, so treat it as an experiment: check them later with <b>Check my wallets</b>, or use <b>Find wallets</b> for proven ones.</p>` });
+  if (!ok) return;
+  const j = await act(() => api('POST', '/api/jobs/quickstart'));
+  if (!j) return;
+  upsertJob(j); S.qsJob = j.id;
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:460px;text-align:center"><div class="wz-hero" style="margin:4px auto 10px;width:64px">${ICON.rainbow}</div><h3>Setting up your experiment</h3>
+    <div class="row" style="justify-content:center;gap:10px;margin-top:8px"><span class="spinner"></span><span id="qs-msg" class="muted">Starting…</span></div></div></div>`;
+}
+function quickStartUpdate(j) {
+  if (j.id !== S.qsJob) return;
+  const msg = $('#qs-msg');
+  if (j.status === 'done') {
+    S.qsJob = null; $('#modal-root').innerHTML = '';
+    toast(`Experiment started: copying ${j.result.added.length} trader${j.result.added.length > 1 ? 's' : ''}`);
+    go('dashboard');
+  } else if (j.status === 'error') {
+    S.qsJob = null;
+    $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:460px"><h3>Couldn't start the experiment</h3><p>${esc(j.error)}</p>
+      <div class="row"><span class="spacer" style="flex:1"></span><button class="btn" onclick="document.getElementById('modal-root').innerHTML=''">Close</button><button class="btn primary" onclick="document.getElementById('modal-root').innerHTML='';go('research')">Find wallets</button></div></div></div>`;
+  } else if (msg) msg.textContent = j.progress;
+}
+async function resetPaper() {
+  if (!(await confirmModal({ title: 'Reset paper results?', confirm: 'Reset', danger: true,
+    body: `<p>Your paper wallet goes back to <b>${S.config.paper.startSol} SOL</b>, and paper positions and paper trades are cleared so you can start a fresh experiment.</p><p class="muted">A copy of the old results is kept in the data folder. Live trading is not affected.</p>` }))) return;
+  const r = await act(() => api('POST', '/api/paper/reset'), 'Paper results reset');
+  if (r) load();
+}
 document.querySelectorAll('.nav').forEach((n) => (n.onclick = () => go(n.dataset.page)));
 async function go(page) {
   if (S.page === 'settings' && page !== 'settings' && S.dirty) {
@@ -711,16 +771,16 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', strategies: 'Strategies', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
-    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-06">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
+    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-07">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
     $('#upd-dismiss').onclick = () => { S.updateNoticeDismissed = true; render(); };
   }
   const u = S.app.update;
@@ -797,7 +857,7 @@ function renderDashboard(el) {
         <td class="r muted num">${ago(p.openedAt)}</td>
         <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button></td>
       </tr>`).join('')}</tbody></table></div>`
-    : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn primary" onclick="go('wallets')">Add wallets</button>`}</div>`;
+    : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : S.config.mode === 'paper' ? 'Press <b>Start bot</b> to run a paper experiment: Copybot picks a few active traders for you. Nothing is spent.<div class="press">Press start</div>' : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn ${S.config.mode === 'paper' ? '' : 'primary'}" onclick="go('wallets')">Pick wallets myself</button>`}</div>`;
 
   el.innerHTML = `${banners()}
     <div class="grid stats">
@@ -806,20 +866,46 @@ function renderDashboard(el) {
       <div class="card stat"><div class="k">Open positions</div><div class="v num">${n} <small style="font-size:13px" class="muted">/ ${cfg.risk.maxOpenPositions}</small></div>${hearts(n, cfg.risk.maxOpenPositions)}<div class="s">${sol(st.exposureSol, 3)} of ${cfg.risk.maxTotalExposureSol} SOL in use</div><div class="bar"><i style="width:${expPct}%"></i></div></div>
       ${st.wallet && cfg.mode === 'live'
         ? `<div class="card stat"><div class="k">${ICON.coin}Trading wallet</div><div class="v num">${st.wallet.balance != null ? sol(st.wallet.balance, 3) : '…'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${walletLink(st.wallet.address)}</div></div>`
+        : st.paper ? (() => {
+          const openVal = st.positions.reduce((a, p) => a + (p.valueSol ?? p.costSol), 0), total = st.paper.freeSol + openVal, chg = total - st.paper.startSol;
+          return `<div class="card stat"><div class="k">${ICON.key}Paper wallet</div><div class="v num">${sol(total, 3)} <small style="font-size:13px" class="muted">SOL</small></div>
+            <div class="s"><span class="${cls(chg)}">${signed(chg, 3)}</span> since start (${st.paper.startSol} SOL) · ${sol(Math.max(0, st.paper.freeSol), 3)} free</div>
+            <div class="s" style="margin-top:4px">copying ${enabled.length} wallet${enabled.length === 1 ? '' : 's'} · <a href="#" id="paper-reset">Reset</a></div></div>`; })()
         : `<div class="card stat"><div class="k">${ICON.key}Copying</div><div class="v num">${enabled.length} <small style="font-size:13px" class="muted">wallet${enabled.length === 1 ? '' : 's'}</small></div><div class="s">${todays.length} trade${todays.length === 1 ? '' : 's'} today</div></div>`}
     </div>
+    ${pnlChart()}
     <div class="grid two">
       <div class="card"><div class="card-h"><h2>Open positions</h2><span class="spacer"></span>${n ? '<button class="btn sm ghost" id="refresh-pos">Refresh prices</button>' : ''}</div>${positions}</div>
       <div class="card"><div class="card-h"><h2>Live activity</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${st.running ? 'watching…' : ''}</span></div>
         <div class="feed" id="feed">${feedHtml()}</div></div>
     </div>`;
   el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
+  const pr = $('#paper-reset'); if (pr) pr.onclick = (e) => { e.preventDefault(); resetPaper(); };
+  el.querySelectorAll('[data-pnl-range]').forEach((b) => (b.onclick = () => { S.pnlRange = b.dataset.pnlRange; render(); }));
   const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
 }
+/** Realized profit over time from your own sells (current mode), as a chart card on the Dashboard. */
+function pnlChart() {
+  const range = S.pnlRange || '7d', now = Date.now();
+  const from = range === 'all' ? 0 : now - { '1d': 1, '7d': 7, '30d': 30 }[range] * 864e5;
+  const sells = S.trades.filter((t) => t.mode === S.config.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.t >= from).sort((a, b) => a.t - b.t);
+  let run = 0;
+  const curve = sells.map((t) => [t.t, (run += t.pnl)]);
+  const start = range === 'all' ? sells[0]?.t ?? now : from;
+  const wins = sells.filter((t) => t.pnl > 0).length;
+  const seg = [['1d', '24h'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All']].map(([v, l]) => `<button data-pnl-range="${v}" class="${range === v ? 'on' : ''}">${l}</button>`).join('');
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Your profit over time</h2>
+      <span class="muted" style="font-size:12.5px;margin-left:8px">${sells.length ? `${signed(run, 3)} SOL from ${sells.length} sell${sells.length > 1 ? 's' : ''} · ${Math.round((wins / sells.length) * 100)}% in profit` : ''}</span>
+      <span class="spacer"></span><div class="seg">${seg}</div></div>
+    <div class="bt-curve">${curve.length >= 2 ? curveSvg(curve, start, now) : `<div class="muted" style="padding:28px 0;text-align:center">${sells.length ? 'One sell so far: the chart starts after the second.' : `No sells in ${range === 'all' ? S.config.mode + ' mode yet' : 'this period'}. Your profit shows here as positions close.`}</div>`}</div></div>`;
+}
+
 /** What the staged exits have done for a position, and what happens next. */
 function exitPlan(p) {
-  const { stopLossPct, ...ov } = S.config.wallets.find((w) => w.address === p.sources?.[0])?.exits || {};
-  const x = { ...S.config.exits, ...ov }, done = new Set(p.steps || []);
+  const ww = S.config.wallets.find((w) => w.address === p.sources?.[0]);
+  const st = (S.strategies || []).find((x) => x.id === ww?.strategy);
+  const { stopLossPct, ...ov } = ww?.exits || {};
+  const x = { ...S.config.exits, ...(st?.patch.exits || {}), ...ov }, done = new Set(p.steps || []);
   const chips = [];
   const step = (id, on, label) => { if (on) chips.push(`<span class="chip ${done.has(id) ? 'done' : ''}">${done.has(id) ? '✓ ' : ''}${label}</span>`); };
   step('recover', x.recoverCostAtPct > 0, `cost back +${x.recoverCostAtPct}%`);
@@ -830,7 +916,8 @@ function exitPlan(p) {
     const floor = ((p.peakMultiple || 1) * (1 - x.trailingStopPct / 100) - 1) * 100;
     chips.push(`<span class="chip trail" title="Peak +${peakGain.toFixed(0)}%. Sells everything if it falls to ${pct(floor)}.">trailing: sells below ${pct(floor)}</span>`);
   }
-  if (Object.keys(ov).length || stopLossPct !== undefined) chips.push('<span class="chip" title="This wallet has its own exit settings (Wallets page)">wallet\'s own exits</span>');
+  if (st) chips.push(`<span class="chip" title="This wallet uses its own strategy (Wallets page)">${esc(st.name)}</span>`);
+  else if (Object.keys(ov).length || stopLossPct !== undefined) chips.push('<span class="chip" title="This wallet has its own exit settings (Wallets page)">wallet\'s own exits</span>');
   return chips.join(' ') || '<span class="muted">stop-loss only</span>';
 }
 
@@ -866,26 +953,71 @@ const EXIT_FIELDS = [
   ['trailingStopPct', 'Trailing stop', '% drop', 'exits.trailingStopPct'],
 ];
 /** Edit one wallet's own exit settings. Blank = use the global setting. */
+/** The rules a wallet trades with in the UI: global, then its strategy, then its own exit overrides. */
+function walletBase(w, strategyId) {
+  const st = (S.strategies || []).find((x) => x.id === strategyId);
+  return {
+    'risk.stopLossPct': st?.patch.risk.stopLossPct ?? S.config.risk.stopLossPct,
+    ...Object.fromEntries(Object.entries({ ...S.config.exits, ...(st?.patch.exits || {}) }).map(([k, v]) => [`exits.${k}`, v])),
+  };
+}
+/** A wallet's own strategy and exit settings. Blank = use the strategy's (or your normal) setting. */
 function walletExitsModal(i) {
   const w = S.config.wallets[i], o = w.exits || {};
-  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:560px"><h3>Exits for ${esc(w.label)}</h3>
-    <p class="muted" style="margin-top:0">Used for positions copied from this wallet. Leave a box empty to use your normal setting (shown in grey). Useful for a fast scalper vs a long holder.</p>
-    <div class="stack" style="gap:8px">${EXIT_FIELDS.map(([k, label, unit, path]) => `<label class="row" style="justify-content:space-between;gap:12px"><span>${label}</span>
-      <span class="with-unit" style="width:190px"><input type="number" min="0" step="any" data-ex="${k}" value="${o[k] ?? ''}" placeholder="${esc(getP(S.config, path))}"><span>${unit}</span></span></label>`).join('')}</div>
+  const draw = (strategyId) => {
+    const base = walletBase(w, strategyId);
+    return EXIT_FIELDS.map(([k, label, unit, path]) => `<label class="row" style="justify-content:space-between;gap:12px"><span>${label}</span>
+      <span class="with-unit" style="width:190px"><input type="number" min="0" step="any" data-ex="${k}" value="${o[k] ?? ''}" placeholder="${esc(base[path])}"><span>${unit}</span></span></label>`).join('');
+  };
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:560px"><h3>Strategy and exits for ${esc(w.label)}</h3>
+    <p class="muted" style="margin-top:0">Give this wallet its own strategy, e.g. Sniper for a fast flipper and Whale follower for a patient big buyer. It sets this wallet's exits, stop-loss, minimum buy size and "don't chase". Your SOL per buy, limits and token filters stay the same for all wallets.</p>
+    <label class="row" style="justify-content:space-between;gap:12px;margin-bottom:12px"><b>Strategy for this wallet</b>
+      <select class="input" id="ws-strat" style="width:190px;height:34px"><option value="">Same as everyone (${esc((S.strategies || []).find((x) => x.id === stratActive())?.name || 'your settings')})</option>${(S.strategies || []).map((x) => `<option value="${esc(x.id)}" ${w.strategy === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    <details ${Object.keys(o).length ? 'open' : ''}><summary style="cursor:pointer;font-weight:600;margin-bottom:8px">Fine-tune its exits <span class="muted" style="font-weight:400">(optional; empty boxes use the strategy's values shown in grey)</span></summary>
+      <div class="stack" style="gap:8px" id="ws-fields">${draw(w.strategy || '')}</div></details>
     <div class="row" style="margin-top:16px"><button class="btn ghost" data-a="reset">Use normal settings</button><span class="spacer" style="flex:1"></span><button class="btn" data-a="no">Cancel</button><button class="btn primary" data-a="yes">Save</button></div></div></div>`;
   const close = () => { $('#modal-root').innerHTML = ''; };
-  const save = async (exits) => {
-    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits } : x));
-    if (await saveWallets(wallets, 'Exit settings saved')) close();
+  const save = async (exits, strategy) => {
+    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits, strategy: strategy || undefined } : x));
+    if (await saveWallets(wallets, 'Saved')) close();
+  };
+  $('#ws-strat').onchange = (e) => {
+    // Keep what the user typed; only the grey placeholders change.
+    const typed = Object.fromEntries([...document.querySelectorAll('[data-ex]')].map((i) => [i.dataset.ex, i.value]));
+    $('#ws-fields').innerHTML = draw(e.target.value);
+    for (const inp of document.querySelectorAll('[data-ex]')) inp.value = typed[inp.dataset.ex] ?? '';
   };
   $('#modal-root [data-a=no]').onclick = close;
   $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) close(); };
-  $('#modal-root [data-a=reset]').onclick = () => save(undefined);
+  $('#modal-root [data-a=reset]').onclick = () => save(undefined, undefined);
   $('#modal-root [data-a=yes]').onclick = () => {
     const exits = {};
     for (const inp of document.querySelectorAll('[data-ex]')) if (inp.value !== '') exits[inp.dataset.ex] = Number(inp.value);
-    save(Object.keys(exits).length ? exits : undefined);
+    save(Object.keys(exits).length ? exits : undefined, $('#ws-strat').value);
   };
+}
+function healthJob() { return S.jobs.find((j) => j.kind === 'health' && (j.status === 'queued' || j.status === 'running')); }
+const HEALTH_LABEL = { keep: ['good', '✅ Worth keeping'], losing: ['bad', '❌ Losing you money'], unclear: ['', '⚠️ Not enough to judge'], quiet: ['', '💤 No copies'] };
+function healthChip(addr) {
+  const h = S.health?.wallets.find((x) => x.address === addr);
+  if (!h) return '';
+  const [c, l] = HEALTH_LABEL[h.verdict];
+  return `<div class="notes"><span class="note ${c}" title="Backtest with your settings, ${dateFmt(S.health.period.from)}–${dateFmt(S.health.period.to)}: ${h.copied} copied buys, ${h.closed} sells">${l}${h.closed ? ` · ${signed(h.totalSol, 3)} SOL` : ''}</span></div>`;
+}
+function healthCard() {
+  const run = healthJob(), h = S.health;
+  if (run) return `<div class="card" style="margin-bottom:16px"><div class="card-b row" style="gap:10px"><span class="spinner"></span><span>Checking your wallets: ${esc(run.progress)}</span></div></div>`;
+  if (!h) return '';
+  const n = (v) => h.wallets.filter((x) => x.verdict === v).length;
+  const losers = h.wallets.filter((x) => x.verdict === 'losing' && S.config.wallets.some((w) => w.address === x.address && w.enabled !== false));
+  const rows = h.wallets.map((x) => { const [c, l] = HEALTH_LABEL[x.verdict]; const on = S.config.wallets.find((w) => w.address === x.address)?.enabled !== false; return `<tr><td>${esc(x.label)}</td><td><span class="note ${c}">${l}</span></td>
+    <td class="r num ${cls(x.totalSol)}">${x.closed ? signed(x.totalSol, 3) : '—'}</td><td class="r num">${x.closed ? Math.round((x.wins / x.closed) * 100) + '%' : '—'}</td><td class="r num muted">${x.copied}${x.coveredFrom ? ` <span title="A very active wallet: only its trades since ${new Date(x.coveredFrom).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} were checked">*</span>` : ''}</td>
+    <td class="r">${x.verdict === 'losing' && on ? `<button class="btn sm danger" data-health-pause="${esc(x.address)}">Pause</button>` : !on ? '<span class="muted" style="font-size:12.5px">Paused</span>' : ''}</td></tr>`; }).join('');
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Wallet check · ${dateFmt(h.period.from)} to ${dateFmt(h.period.to)}</h2>
+      <div class="muted" style="font-size:12.5px">Each wallet backtested on its own with your settings and a ${(+h.delayPct).toFixed(1)}% copy delay. Checked ${ago(h.at)} ago.</div></div><span class="spacer"></span>
+      ${losers.length > 1 ? `<button class="btn sm danger" id="health-pause-all">Pause all ${losers.length} losing</button>` : ''}</div>
+    <div class="card-b row" style="gap:8px;padding-top:0">${n('keep') ? `<span class="note good">${n('keep')} worth keeping</span>` : ''}${n('losing') ? `<span class="note bad">${n('losing')} losing money</span>` : ''}${n('unclear') ? `<span class="note">${n('unclear')} not enough to judge</span>` : ''}${n('quiet') ? `<span class="note">${n('quiet')} no copies</span>` : ''}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th>Verdict</th><th class="r">Profit for you</th><th class="r">Win rate</th><th class="r">Copied buys</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function walletStats() {
   const mode = S.config.mode, weekAgo = Date.now() - 7 * 86400_000;
@@ -920,10 +1052,11 @@ function renderWallets(el) {
       </form>
       <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a></div>
     </div></div>
+    ${healthCard()}
     <div class="card">
-      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
+      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm primary" id="health-go" ${healthJob() ? 'disabled' : ''}>${healthJob() ? 'Checking…' : 'Check my wallets'}</button> ` : ''}${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
       ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
-      <div class="tbl-wrap"><table><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r">Sells</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r">Budget SOL</th><th></th></tr></thead><tbody>
+      <div class="tbl-wrap"><table class="wallets-tbl"><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r" title="SOL limit for this wallet's open positions (0 = no limit)">Budget</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
           const held = S.status.positions.filter((p) => p.sources.includes(w.address)).length;
           const st = stats[w.address] || { sells: 0, wins: 0, pnl: 0, week: 0, gaps: [], lags: [] };
@@ -932,15 +1065,14 @@ function renderWallets(el) {
           return `<tr class="wallet-row">
             <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
             <td><input class="label-input" data-label="${i}" value="${esc(w.label || '')}" placeholder="Add a nickname"></td>
-            <td>${walletLink(w.address)}</td>
+            <td>${walletLink(w.address)}${healthChip(w.address)}${w.trialStage !== undefined ? `<div class="notes"><span class="note" title="New wallets start small. After ${S.config.trial.winsToStepUp} profitable copies it moves up to ${w.trialStage === 0 ? 'half' : 'full'} size.">On trial · ${w.trialStage === 0 ? '¼' : '½'} size</span></div>` : ''}${!w.enabled && w.pausedReason ? `<div class="notes"><span class="note bad" title="Turn it back on to resume; its count starts again.">Auto-paused: ${esc(w.pausedReason)}</span></div>` : ''}</td>
             <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
-            <td class="r num">${st.sells ? Math.round((st.wins / st.sells) * 100) + '%' : '—'}</td>
-            <td class="r num muted">${st.sells || '—'}</td>
+            <td class="r num">${st.sells ? `${Math.round((st.wins / st.sells) * 100)}%<div class="muted" style="font-size:11px">${st.wins} of ${st.sells}</div>` : '—'}</td>
             <td class="r num ${gap == null ? 'muted' : gap > 10 ? 'neg' : ''}" title="${gap == null ? 'Measured on your next copied trades' : `Median of ${st.gaps.length} trades${lag != null ? `, ${lag.toFixed(1)} s behind them` : ''}`}">${gap == null ? '—' : `${gap > 0 ? '−' : '+'}${Math.abs(gap).toFixed(1)}%`}</td>
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits ? 'primary' : ''}" data-exits="${i}" title="${w.exits ? 'This wallet has its own exit settings' : 'Use different exit settings for this wallet'}">Exits${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}">Remove</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button> <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;
@@ -952,6 +1084,18 @@ function renderWallets(el) {
     if (await saveWallets([...ws, { address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], 'Wallet added')) e.target.reset();
   };
   el.querySelectorAll('[data-exits]').forEach((b) => (b.onclick = () => walletExitsModal(Number(b.dataset.exits))));
+  const hg = $('#health-go');
+  if (hg) hg.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/health', { delayPct: measuredGap().n >= 5 ? Math.max(0, measuredGap().median) : undefined })); if (j) { upsertJob(j); render(); } };
+  el.querySelectorAll('[data-health-pause]').forEach((b) => (b.onclick = () => {
+    const h = S.health.wallets.find((x) => x.address === b.dataset.healthPause);
+    saveWallets(S.config.wallets.map((w) => (w.address === h.address ? { ...w, enabled: false, pausedReason: `health check: ${signed(h.totalSol, 3)} SOL over ${h.closed} copies` } : w)), `Paused ${h.label}`);
+  }));
+  const hp = $('#health-pause-all');
+  if (hp) hp.onclick = async () => {
+    const losers = S.health.wallets.filter((h) => h.verdict === 'losing' && S.config.wallets.some((w) => w.address === h.address && w.enabled !== false));
+    if (!(await confirmModal({ title: `Pause ${losers.length} losing wallet${losers.length > 1 ? 's' : ''}?`, confirm: 'Pause them', body: `<p>${losers.map((h) => esc(h.label)).join(', ')}</p><p class="muted">Open positions from them still follow their sells. Turn them back on any time.</p>` }))) return;
+    saveWallets(S.config.wallets.map((w) => { const h = losers.find((x) => x.address === w.address); return h ? { ...w, enabled: false, pausedReason: `health check: ${signed(h.totalSol, 3)} SOL over ${h.closed} copies` } : w; }), 'Paused');
+  };
   el.querySelectorAll('[data-toggle]').forEach((c) => (c.onchange = () => saveWallets(ws.map((w, i) => (i == c.dataset.toggle ? { ...w, enabled: c.checked } : w)))));
   el.querySelectorAll('[data-label]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.label ? { ...w, label: inp.value.trim() } : w)), 'Saved')));
   el.querySelectorAll('[data-mult]').forEach((inp) => (inp.onchange = () => saveWallets(ws.map((w, i) => (i == inp.dataset.mult ? { ...w, sizeMultiplier: Number(inp.value) } : w)), 'Saved')));
@@ -982,23 +1126,25 @@ function scoutCard() {
   const pickCard = (p) => {
     const rep = r.reports.find((x) => x.wallet === p.address) || {};
     const added = r.added.includes(p.address), copying = inList(p.address);
-    return `<div class="pick"><div class="row" style="justify-content:space-between">${walletLink(p.address)}${copying ? `<span class="tag buy">${added ? 'Added' : 'Copying'}</span>` : `<button class="btn sm primary" data-scout-add="${esc(p.address)}" data-mult="${p.sizeMultiplier}" data-budget="${p.budgetSol}">Copy</button>`}</div>
+    return `<div class="pick"><div class="row" style="justify-content:space-between">${walletLink(p.address)}${copying ? `<span class="tag buy">${added ? 'Added' : 'Copying'}</span>` : `<button class="btn sm primary" data-scout-add="${esc(p.address)}" data-mult="${p.sizeMultiplier}" data-budget="${p.budgetSol}" data-strat="${esc(p.strategy && p.strategy !== 'balanced' ? p.strategy : '')}">Copy</button>`}</div>
       <div class="why">${esc(p.reason)}</div>
       <div style="margin:-4px 0 8px"><button class="btn sm ghost" data-backtest="${esc(p.address)}">Backtest this wallet</button></div>
-      <div class="nums"><span>Win rate <b>${Math.round((rep.winRate || 0) * 100)}%</b></span><span>Return <b class="${cls(rep.roiPct)}">${pct(rep.roiPct || 0)}</b></span><span>Trades <b>${rep.closedTokens ?? '–'}</b></span><span>Holds <b>${rep.closedTokens ? hrs(rep.medianHoldMin) : '–'}</b></span>${rep.earlyOn?.length ? `<span>Early on <b>${esc(rep.earlyOn.join(', '))}</b></span>` : ''}</div>
+      <div class="nums"><span>Win rate <b>${Math.round((rep.winRate || 0) * 100)}%</b></span><span>Return <b class="${cls(rep.roiPct)}">${pct(rep.roiPct || 0)}</b></span><span>Trades <b>${rep.closedTokens ?? '–'}</b></span><span>Holds <b>${rep.closedTokens ? hrs(rep.medianHoldMin) : '–'}</b></span>${rep.earlyOn?.length ? `<span>Early on <b>${esc(rep.earlyOn.join(', '))}</b></span>` : ''}${rep.pumpOn?.length ? `<span>Caught the move on <b>${esc(rep.pumpOn.join(', '))}</b></span>` : ''}${rep.topTraderOn?.length ? `<span>Top trader on <b>${esc(rep.topTraderOn.join(', '))}</b></span>` : ''}</div>
+      ${p.strategy ? `<div style="font-size:12.5px;margin-top:8px">Suggested strategy: <b>${esc((S.strategies || []).find((x) => x.id === p.strategy)?.name || p.strategy)}</b> <span class="muted">(${esc(p.strategyWhy || '')})</span></div>` : ''}
+      ${rep.bt ? `<div style="font-size:12.5px;margin-top:8px">Backtest for you: <b class="${cls(rep.bt.totalSol)}">${signed(rep.bt.totalSol, 3)} SOL</b>${rep.bt.roiPct != null ? ` (${pct(rep.bt.roiPct)})` : ''} over ${rep.bt.closed} copied trades <span class="muted">· ${rep.bt.delayPct.toFixed(1)}% copy delay</span></div>` : ''}
       ${p.sizeMultiplier !== 1 || p.budgetSol ? `<div class="muted" style="font-size:12px;margin-top:8px">Suggested size ×${p.sizeMultiplier}${p.budgetSol ? ` · budget ${p.budgetSol} SOL` : ''}</div>` : ''}</div>`;
   };
   const result = !r ? '' : `
     <div class="card-h" style="border-top:1px solid var(--border)"><div><h2>Last search · ${ago(r.at)} ago</h2><div class="muted" style="font-size:12.5px">${r.pickedBy === 'claude' ? 'Picked by Claude' : 'Picked by the rules'}: ${esc(r.summary)}</div></div></div>
-    <div class="tokchips"><span class="muted" style="font-size:12.5px;align-self:center">Tokens scanned:</span>${r.tokens.map((t) => `<span class="chip">${esc(t.symbol)} <b class="pos">+${t.change24hPct.toFixed(0)}%</b></span>`).join('')}</div>
+    <div class="tokchips"><span class="muted" style="font-size:12.5px;align-self:center">Tokens scanned:</span>${r.tokens.map((t) => { const mv = Math.max(t.change24hPct, t.change6hPct ?? -Infinity); return `<span class="chip" title="${t.ageHours} h old${t.quiet ? ', early buyers checked too' : ''}">${esc(t.symbol)} <b class="pos">+${mv.toFixed(0)}%</b></span>`; }).join('')}</div>
     ${r.notes.length ? `<div class="banner warn" style="margin:0 18px 12px">${r.notes.map(esc).join('<br>')}</div>` : ''}
     ${r.picks.length ? `<div class="picks">${r.picks.map(pickCard).join('')}</div>` : '<div class="empty" style="padding:16px">No wallet was good enough this time. That\'s normal: most wallets that catch one pump don\'t keep winning.</div>'}
     <details style="padding:0 18px 16px"><summary class="muted" style="cursor:pointer;font-size:13px">${r.reports.length === 1 ? 'The 1 wallet' : `All ${r.reports.length} wallets`} checked</summary>${analyzeTable(r.reports)}</details>`;
   return `<div class="card" style="margin-bottom:16px">
     <div class="scout-hero"><div class="orb" style="width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--rainbow);color:#fff;flex:none">${ICON_SPARK}</div>
       <div style="flex:1;min-width:260px"><h2 style="margin:0 0 4px;font-size:18px">Let Copybot find wallets for you</h2>
-        <div class="muted">It scans tokens that pumped recently, finds the wallets that bought early, checks their real track record, and ${c.hasAnthropicKey ? 'Claude picks the most suitable ones' : 'ranks the best ones (connect Claude on the Autopilot page to have it choose)'}. ${auto ? `<b>Autopilot is on, so picks are added to your copy list automatically</b> (up to ${cfg.ai.scoutMaxPicks} per search${cfg.ai.scoutEveryHours ? `, every ${cfg.ai.scoutEveryHours} h while the bot runs` : ''}).` : 'You decide which picks to copy.'}</div>
-        <div class="scout-steps"><span>1 · Pumped tokens</span><span>2 · Early buyers</span><span>3 · Track records</span><span>4 · ${c.hasAnthropicKey ? 'Claude picks' : 'Best ranked'}</span></div></div>
+        <div class="muted">It scans tokens that are moving right now (trending, new launches, top volume), finds the wallets that bought before the move, checks their real track record, and ${c.hasAnthropicKey ? 'Claude picks the most suitable ones' : 'ranks the best ones (connect Claude on the Autopilot page to have it choose)'}. ${auto ? `<b>Autopilot is on, so picks are added to your copy list automatically</b> (up to ${cfg.ai.scoutMaxPicks} per search${cfg.ai.scoutEveryHours ? `, every ${cfg.ai.scoutEveryHours} h while the bot runs` : ''}).` : 'You decide which picks to copy.'}</div>
+        <div class="scout-steps"><span>1 · Moving tokens</span><span>2 · Buyers before the move</span><span>3 · Track records</span><span>4 · ${c.hasAnthropicKey ? 'Claude picks' : 'Best ranked'}</span></div></div>
       <div style="text-align:right">${run ? `<div class="row" style="gap:8px"><span class="spinner"></span><span class="muted" style="font-size:13px;max-width:280px">${esc(run.progress)}</span></div>` : `<button class="btn primary" id="scout-go">Find wallets for me</button>`}
         <div class="muted" style="font-size:12px;margin-top:6px">Takes 5–15 minutes${c.usingPublicRpc ? ', slower on the public RPC' : ''}</div></div>
     </div>${result}</div>`;
@@ -1006,7 +1152,7 @@ function scoutCard() {
 function bindScout() {
   const g = $('#scout-go');
   if (g) g.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); if (S.page === 'research') render(); } };
-  document.querySelectorAll('[data-scout-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.scoutAdd, label: `scout-${b.dataset.scoutAdd.slice(0, 4)}`, enabled: true, sizeMultiplier: Number(b.dataset.mult) || 1, maxExposureSol: Number(b.dataset.budget) || 0 }], 'Added to your copy list')));
+  document.querySelectorAll('[data-scout-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.scoutAdd, label: `scout-${b.dataset.scoutAdd.slice(0, 4)}`, enabled: true, sizeMultiplier: Number(b.dataset.mult) || 1, maxExposureSol: Number(b.dataset.budget) || 0, ...(b.dataset.strat ? { strategy: b.dataset.strat } : {}) }], 'Added to your copy list')));
 }
 function renderResearch(el) {
   el.innerHTML = `${scoutCard()}
@@ -1045,12 +1191,14 @@ function renderJobs() { const el = $('#jobs'); if (el) { el.innerHTML = jobsHtml
 function jobsHtml() {
   if (!S.jobs.length) return '<div class="empty">Results from discovery and analysis show up here.</div>';
   return S.jobs.map((j) => {
-    const title = j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
+    const title = j.kind === 'quickstart' ? 'Paper experiment setup' : j.kind === 'health' ? 'Wallet check' : j.kind === 'compare' ? `Strategies compared · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'optimize' ? `Best settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
     const head = `<div class="job-h">${j.status === 'running' || j.status === 'queued' ? '<span class="spinner"></span>' : j.status === 'error' ? '<span class="dot bad"></span>' : '<span class="dot ok"></span>'}
       <b style="font-weight:600">${title}</b><span class="muted" style="font-size:12.5px">${esc(j.status === 'error' ? j.error : j.progress)}</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:12px">${time(j.createdAt)}</span></div>`;
     if (j.status !== 'done') return `<div class="job">${head}</div>`;
     if (j.kind === 'scout') return `<div class="job">${head}<div class="muted" style="padding:0 18px 12px;font-size:13px">Results are shown in the Wallet scout card above.</div></div>`;
-    if (j.kind === 'backtest') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the backtest results →</a></div></div>`;
+    if (j.kind === 'quickstart') return `<div class="job">${head}</div>`;
+    if (j.kind === 'health') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" onclick="go('wallets');return false">See it on the Wallets page →</a></div></div>`;
+    if (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the results →</a></div></div>`;
     return `<div class="job">${head}${j.kind === 'analyze' ? analyzeTable(j.result) : discoverTable(j.result)}</div>`;
   }).join('');
 }
@@ -1083,10 +1231,123 @@ function bindJobs() {
   document.querySelectorAll('[data-analyze-list]').forEach((b) => (b.onclick = () => startAnalyze(b.dataset.analyzeList.split(','))));
 }
 
+// ----- strategies -----
+const STRAT_COLORS = { balanced: 'var(--r-blue)', sniper: 'var(--r-red)', whale: 'var(--r-cyan)', momentum: 'var(--r-orange)', conservative: 'var(--r-green)' };
+/** Label and display for a config key, borrowed from the Settings page fields. */
+function fieldInfo(k) {
+  const f = FIELDS.flatMap((s) => s.fields).find((x) => x.k === k);
+  return f || { k, label: k, unit: '' };
+}
+// Settings where 0 means "off".
+const ZERO_OFF = /^(exits\.(recoverCostAtPct|tp1AtPct|tp2AtPct|trailingAfterPct|trailingStopPct)|risk\.(takeProfitPct|maxPriceDriftPct)|filters\.|protect\.(liquidityDropPct|crashPct|maxSellBuyRatio))/;
+function fmtVal(f, v) {
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (v === 0 && ZERO_OFF.test(f.k)) return 'off';
+  const n = f.toView ? f.toView(v) : v;
+  return `${typeof n === 'number' ? +n.toFixed(4) : esc(String(n))}${f.unit ? `${f.unit.startsWith('%') ? '' : ' '}<span class="muted">${esc(f.unit)}</span>` : ''}`;
+}
+function stratDiff(s) {
+  const out = [];
+  for (const [sec, vals] of Object.entries(s.patch)) for (const [k, v] of Object.entries(vals)) { const key = `${sec}.${k}`, cur = getP(S.config, key); if (cur !== v) out.push([key, cur, v]); }
+  return out;
+}
+const stratActive = () => (S.strategies || []).find((s) => stratDiff(s).length === 0)?.id || null;
+function renderStrategies(el) {
+  const list = S.strategies || [], act = stratActive(), last = S.config.strategy;
+  const lastS = list.find((s) => s.id === last);
+  const k = (s) => s.patch;
+  const tp = (x) => [x.recoverCostAtPct ? `cost back +${x.recoverCostAtPct}%` : '', x.tp1AtPct ? `+${x.tp1AtPct}%` : '', x.tp2AtPct ? `+${x.tp2AtPct}%` : ''].filter(Boolean).join(', ') || 'their sells only';
+  const card = (s) => `<div class="card strat ${act === s.id ? 'on' : ''}" style="--c:${STRAT_COLORS[s.id] || 'var(--accent)'}">
+    <div class="row" style="justify-content:space-between;gap:8px"><h3>${esc(s.name)}</h3><span class="tag-risk ${esc(s.risk)}">${esc(s.risk)} risk</span></div>
+    <p class="muted" style="margin:8px 0 4px;font-size:13.5px">${esc(s.tagline)}</p>
+    <div style="font-size:12.5px"><b>Best for:</b> <span class="muted">${esc(s.bestFor)}</span></div>
+    <dl>
+      <dt>Copies their buys from</dt><dd>${k(s).buy.minTargetBuySol} SOL</dd>
+      <dt>Don't chase above</dt><dd>+${k(s).risk.maxPriceDriftPct}%</dd>
+      <dt>Min liquidity</dt><dd>$${(k(s).filters.minLiquidityUsd / 1000).toFixed(0)}K</dd>
+      <dt>Min token age</dt><dd>${k(s).filters.minTokenAgeMin ? (k(s).filters.minTokenAgeMin >= 60 ? `${k(s).filters.minTokenAgeMin / 60} h` : `${k(s).filters.minTokenAgeMin} min`) : 'any'}</dd>
+      <dt>Stop-loss</dt><dd>−${k(s).risk.stopLossPct}%</dd>
+      <dt>Take profit</dt><dd>${tp(k(s).exits)}</dd>
+      <dt>Trailing stop</dt><dd>${k(s).exits.trailingStopPct ? `${k(s).exits.trailingStopPct}% after +${k(s).exits.trailingAfterPct}%` : 'off'}</dd>
+    </dl>
+    <div class="acts">${act === s.id ? '<button class="btn" disabled>✓ In use</button>' : `<button class="btn primary" data-use-strat="${esc(s.id)}">Use this</button>`}<button class="btn" data-bt-strat="${esc(s.id)}" title="Backtest the wallets you copy with this strategy">Backtest it</button></div>
+  </div>`;
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-b row" style="justify-content:space-between;gap:12px">
+      <div><div style="font-size:17px;font-weight:650">Your strategy: ${act ? esc(list.find((s) => s.id === act).name) : lastS ? `${esc(lastS.name)} <span class="tag paper">modified</span>` : 'Custom'}</div>
+        <div class="muted" style="font-size:13px;margin-top:4px">A strategy sets how Copybot trades: which buys to copy, which tokens to skip, and when to sell. It never changes your SOL per buy, your limits or the safety checks.${act ? '' : ' Your settings don\'t match a preset exactly, so you\'re on your own mix.'}</div></div>
+      <div class="row" style="gap:8px"><button class="btn primary" id="st-compare">Compare on my wallets</button><button class="btn ghost" onclick="go('settings')">Fine-tune in Settings</button></div>
+    </div></div>
+    <div class="strat-grid">${list.map(card).join('')}</div>
+    <div class="banner info" style="margin-top:16px"><div><b>Not sure?</b> Press <b>Compare on my wallets</b>: it replays the wallets you copy with every strategy over your chosen period (last 7 days by default) and ranks them.</div></div>`;
+  $('#st-compare').onclick = () => {
+    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    if (!wallets.length) return toast('Add wallets to copy first, or compare any wallets from the Backtest page', true);
+    startCompare(wallets);
+  };
+  el.querySelectorAll('[data-use-strat]').forEach((b) => (b.onclick = () => useStrategy(b.dataset.useStrat)));
+  el.querySelectorAll('[data-bt-strat]').forEach((b) => (b.onclick = () => {
+    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    if (!wallets.length) return toast('Add wallets to copy first, or run a backtest with any wallets on the Backtest page', true);
+    startBacktest(wallets, null, S.btDelay ?? 5, b.dataset.btStrat);
+  }));
+}
+async function startCompare(wallets) {
+  const j = await act(() => api('POST', '/api/jobs/compare', { wallets, ...btPeriodBody(), delayPct: S.btDelay ?? 5 }));
+  if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); go('backtest'); }
+}
+function compareResult(j) {
+  const o = j.result, cur = o.current, best = o.best, list = S.strategies || [];
+  const nameOf = (r) => (r.id === 'current' ? `Your current settings${o.currentIs ? ` (${esc(list.find((s) => s.id === o.currentIs)?.name || '')})` : ''}` : esc(r.name));
+  const row = (r, i) => `<tr${r.id === 'current' ? ' style="background:var(--panel-2)"' : ''}><td class="muted num">${i + 1}</td>
+    <td><b>${nameOf(r)}</b>${r.id === 'current' ? ' <span class="tag paper">now</span>' : ` <span class="muted" style="font-size:12px">${esc(list.find((s) => s.id === r.id)?.risk || '')} risk</span>`}</td>
+    ${r.copied === 0 ? `<td colspan="6" class="muted" style="font-size:12.5px">No trades: ${r.id === 'current' ? 'your settings' : 'this strategy'} would have skipped every buy (e.g. their buys were under its minimum size).</td>` : `
+    <td class="r num ${cls(r.totalSol)}">${signed(r.totalSol, 3)}</td><td class="r num ${cls(r.roiPct)}">${r.roiPct != null ? pct(r.roiPct) : '—'}</td>
+    <td class="r num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '—'}</td><td class="r num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'}</td>
+    <td class="r num muted">${r.copied}</td><td class="r num muted">${r.closed}</td>`}
+    <td class="r">${r.id === 'current' ? '' : `<button class="btn sm ${i === 0 && r.copied ? 'primary' : ''}" data-use-strat="${esc(r.id)}">Use</button>`}</td></tr>`;
+  const verdict = {
+    better: `<div class="banner info"><div><b>${nameOf(best)}</b> would have made <b class="pos">${signed(best.totalSol, 3)} SOL</b>, against <b class="${cls(cur.totalSol)}">${signed(cur.totalSol, 3)} SOL</b> with your current settings.</div><button class="btn sm primary" data-use-strat="${esc(best.id)}">Use ${esc(best.name)}</button></div>`,
+    small: `<div class="banner warn"><div><b>No clear winner.</b> ${nameOf(best)} beat your current settings by only ${sol(best.totalSol - cur.totalSol, 3)} SOL, which could be luck in this period. Try a longer period to be sure.</div></div>`,
+    current: `<div class="banner info"><div><b>Your current settings did best</b> on these wallets and dates.</div></div>`,
+    'all-lose': `<div class="banner danger"><div><b>Every strategy lost money on ${j.input.wallets.length > 1 ? 'these wallets' : 'this wallet'}</b> in this period (the best lost ${sol(-best.totalSol, 3)} SOL). That points to the wallet${j.input.wallets.length > 1 ? 's' : ''}, not your settings: no exit strategy fixes copying a losing trader. Consider pausing ${j.input.wallets.length > 1 ? 'them' : 'it'} or finding better wallets.</div></div>`,
+    'few-trades': `<div class="banner warn"><div><b>Too few trades to trust the ranking</b> (${Math.max(cur.closed, best.closed)} at most). Try a longer period or more wallets.</div></div>`,
+  }[o.verdict];
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Strategies compared · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${o.period ? ` · ${dateFmt(o.period.from)} to ${dateFmt(o.period.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">The same copied trades, replayed with each strategy and a ${o.delayPct}% copy-delay cost. Price history was found for ${o.priced.withPrices} of ${o.priced.tokens} tokens.</div></div></div></div>
+    ${verdict}
+    <div class="card" style="margin-bottom:16px"><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Strategy</th><th class="r">Profit (SOL)</th><th class="r">Return</th><th class="r">Win rate</th><th class="r">Worst dip</th><th class="r">Buys</th><th class="r">Sells</th><th></th></tr></thead><tbody>${o.results.map(row).join('')}</tbody></table></div></div>
+    ${o.unreadable ? `<div class="banner warn"><div><b>${o.unreadable} of ${o.read} transactions couldn't be read</b>, so the comparison is less certain. A private RPC fixes this.</div></div>` : ''}
+    <div class="banner info"><div><b>What's compared.</b> Each strategy's minimum buy size, minimum token age, stop-loss, take-profits, trailing stop and crash protection are replayed on the same trades. Its liquidity and holder filters, "don't chase" and the liquidity-drain check can't be: there's no record of those numbers at each past moment, so in real trading the stricter strategies will also skip some of these tokens. Past results don't predict future ones.</div></div>`;
+}
+async function useStrategy(id) {
+  const s = S.strategies.find((x) => x.id === id);
+  const diff = stratDiff(s);
+  const rows = diff.map(([key, from, to]) => { const f = fieldInfo(key); return `<tr><td>${esc(f.label)}</td><td class="muted">${fmtVal(f, from)}</td><td>→ ${fmtVal(f, to)}</td></tr>`; }).join('');
+  const ok = await confirmModal({ title: `Use the ${esc(s.name)} strategy?`, confirm: 'Use this strategy',
+    body: `<p>${esc(s.tagline)}</p>${diff.length ? `<div style="max-height:320px;overflow:auto"><table class="chg"><tbody>${rows}</tbody></table></div>` : '<p class="muted">Your settings already match it.</p>'}<p class="muted" style="font-size:12.5px;margin-top:10px">Your SOL per buy, limits, safety checks and wallets stay as they are. Wallets with their own exit settings keep them.</p>` });
+  if (!ok) return;
+  const r = await act(() => api('POST', '/api/strategy', { id }), `${s.name} strategy on`);
+  if (r) { S.config = r.config; if (r.restarted) toast('Bot restarted with the new strategy'); render(); }
+}
+
 // ----- backtest -----
 const dateFmt = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
-async function startBacktest(wallets, txs, delayPct) {
-  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, txs, delayPct, replayExits: S.btExits !== false }));
+const BT_PERIODS = [['1d', 'Last 24 hours'], ['3d', 'Last 3 days'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom dates…'], ['txs', 'Last N transactions']];
+const isoDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+/** The chosen period as request fields: { from, to } or { txs }. */
+function btPeriodBody() {
+  const p = S.btPeriod || '7d', now = Date.now();
+  if (p === 'txs') return { txs: S.btTxs || 600 };
+  if (p === 'custom') {
+    const from = new Date(`${S.btFrom || isoDay(now - 7 * 864e5)}T00:00:00`).getTime();
+    const to = Math.min(now, new Date(`${S.btTo || isoDay(now)}T23:59:59.999`).getTime());
+    return { from, to };
+  }
+  return { from: now - { '1d': 1, '3d': 3, '7d': 7, '30d': 30 }[p] * 864e5, to: now };
+}
+async function startBacktest(wallets, _txs, delayPct, strategy) {
+  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, ...btPeriodBody(), delayPct, replayExits: S.btExits !== false, ...(strategy ? { strategy } : {}) }));
   if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); go('backtest'); }
 }
 document.addEventListener('click', (e) => {
@@ -1121,23 +1382,24 @@ function btResult(j) {
   const copied = r.wallets.reduce((a, w) => a + w.copied, 0);
   const unpriced = r.open.filter((o) => o.valueSol === null).length;
   return `
-    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${r.from ? ` · ${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
-      <div class="muted" style="font-size:12.5px">Your settings: ${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, last ${s.txs} transactions per wallet.</div></div></div></div>
-    ${!r.from ? '<div class="card"><div class="empty"><h3>No SOL swaps found</h3>These wallets have no token trades in the transactions read. Try a longer history.</div></div>' : `
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result${j.input.strategy ? ` · ${esc((S.strategies || []).find((s) => s.id === j.input.strategy)?.name || j.input.strategy)} strategy` : ''} · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''} · ${r.period ? `${dateFmt(r.period.from)} to ${dateFmt(r.period.to)}` : r.from ? `${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">${j.input.strategy ? `The ${esc((S.strategies || []).find((x) => x.id === j.input.strategy)?.name || '')} strategy applied to your settings: ` : 'Your settings: '}${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, ${r.period ? `trades from ${new Date(r.period.from).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} to ${new Date(r.period.to).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : `last ${s.txs} transactions per wallet`}.</div></div></div></div>
+    ${r.truncated?.length ? `<div class="banner warn"><div><b>Very active wallet${r.truncated.length > 1 ? 's' : ''}.</b> ${r.truncated.map((x) => `${esc(short(x.wallet))} had more than 5,000 transactions in these dates, so only back to ${x.oldestMs ? new Date(x.oldestMs).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'part of the period'} was included`).join('; ')}. Pick a shorter period for the full picture.</div></div>` : ''}
+    ${!r.from ? `<div class="card"><div class="empty"><h3>No SOL swaps found</h3>${r.period ? 'These wallets made no token trades in these dates. Try a longer period.' : 'These wallets have no token trades in the transactions read. Try a longer history.'}</div></div>` : `
     <div class="grid stats">
       <div class="card stat"><div class="k">${ICON.coin}Total profit</div><div class="v num ${cls(r.totalSol)}">${signed(r.totalSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${r.roiPct != null ? `${pct(r.roiPct)} on ${sol(r.spentSol, 2)} SOL spent` : ''}</div></div>
       <div class="card stat"><div class="k">${ICON.star}Win rate</div><div class="v num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '–'}</div><div class="s">${r.wins} of ${r.closed} sells in profit</div></div>
       <div class="card stat"><div class="k">${pixelSvg(HEART)}Worst dip</div><div class="v num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">largest drop from a high point</div></div>
       <div class="card stat"><div class="k">${ICON.key}Trades copied</div><div class="v num">${copied}</div><div class="s">${skippedTotal} skipped by your limits</div></div>
     </div>
-    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Profit over time</h2><span class="spacer"></span><span class="muted" style="font-size:12px">closed trades only · realized ${signed(r.realizedSol, 3)} SOL</span></div><div class="bt-curve">${curveSvg(r.curve, r.from, r.to)}</div></div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Profit over time</h2><span class="spacer"></span><span class="muted" style="font-size:12px">closed trades only · realized ${signed(r.realizedSol, 3)} SOL</span></div><div class="bt-curve">${curveSvg(r.curve, r.period?.from ?? r.from, r.period?.to ?? r.to)}</div></div>
     <div class="grid two" style="margin-bottom:16px">
       <div class="card"><div class="card-h"><h2>By wallet</h2></div><div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th class="r">Their buys</th><th class="r">Copied</th><th class="r">Win rate</th><th class="r">Profit</th><th></th></tr></thead><tbody>
         ${r.wallets.map((w) => `<tr><td>${wname(w.wallet)}</td><td class="r num">${w.signals}</td><td class="r num">${w.copied}</td><td class="r num">${w.closed ? Math.round((w.wins / w.closed) * 100) + '%' : '–'}</td><td class="r num ${cls(w.pnlSol)}">${signed(w.pnlSol, 3)}</td>
           <td class="r">${inList(w.wallet) ? '<span class="muted" style="font-size:12.5px">Copying</span>' : `<button class="btn sm" data-add="${esc(w.wallet)}">Copy</button>`}</td></tr>`).join('')}</tbody></table></div></div>
       <div class="card"><div class="card-h"><h2>Skipped and still open</h2></div><div class="card-b stack">
         <div class="row" style="gap:6px">${skippedTotal ? Object.entries(r.skipped).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="chip">${esc(k)} <b>${n}</b></span>`).join('') : '<span class="muted">Nothing was skipped.</span>'}</div>
-        <div class="muted" style="font-size:13px">${r.open.length ? `${r.open.length} position${r.open.length > 1 ? 's' : ''} would still be open: cost ${sol(r.open.reduce((a, o) => a + o.costSol, 0), 3)} SOL${r.unrealizedSol != null ? `, worth ${signed(r.unrealizedSol, 3)} SOL vs cost at today's prices` : `. ${unpriced} couldn't be priced today (likely dead) and count as a total loss`}.` : 'No positions would still be open.'}</div>
+        <div class="muted" style="font-size:13px">${r.open.length ? `${r.open.length} position${r.open.length > 1 ? 's' : ''} would still be open: cost ${sol(r.open.reduce((a, o) => a + o.costSol, 0), 3)} SOL${r.unrealizedSol != null ? `, worth ${signed(r.unrealizedSol, 3)} SOL vs cost at ${r.period?.valuedAtEnd ? `prices on ${dateFmt(r.period.to)}` : 'today\'s prices'}` : `. ${unpriced} couldn't be priced ${r.period?.valuedAtEnd ? `for ${dateFmt(r.period.to)}` : 'today'} (no price history, often a dead token) and count as a total loss`}.` : 'No positions would still be open.'}</div>
         ${r.best ? `<div class="muted" style="font-size:13px">Best trade <b class="pos">${signed(r.best.pnl, 3)}</b> · worst <b class="${cls(r.worst.pnl)}">${signed(r.worst.pnl, 3)}</b> SOL</div>` : ''}
       </div></div>
     </div>
@@ -1146,10 +1408,31 @@ function btResult(j) {
       ${r.trades.slice(0, 100).map((t) => `<tr><td class="muted num">${dateFmt(t.t)} ${new Date(t.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td><span class="tag ${t.side}">${t.side}</span></td><td>${tokenLink(t.mint)}</td><td>${wname(t.wallet)}</td><td class="r num">${sol(t.sol, 3)}</td><td class="r num ${cls(t.pnl)}">${t.pnl != null ? signed(t.pnl, 3) : ''}</td><td class="muted" style="font-size:12.5px">${esc(t.reason || '')}</td></tr>`).join('')}
       </tbody></table></div></div>`}
     ${r.unreadable ? `<div class="banner warn"><div><b>${r.unreadable} of ${r.read} transactions couldn't be read</b> (the connection was rate-limiting), so some trades may be missing and the numbers are less certain. A private RPC (Settings → Connection) fixes this.</div></div>` : ''}
-    <div class="banner info"><div><b>How to read this.</b> It replays these wallets' real trades with your current settings, buying ${s.delayPct}% higher and selling ${s.delayPct}% lower than they did, because you always trade after them, plus network fees. It sells when they sell${r.exitsReplayed?.withPrices ? `, and your stop-loss, take-profits and trailing stop were replayed from price history for ${r.exitsReplayed.withPrices} of ${r.exitsReplayed.tokens} tokens (${r.exitsReplayed.exitSells} sells came from them)` : '. Stop-loss and take-profits were not replayed'}. Rug protection isn't replayed. Past results don't predict future ones.</div></div>`;
+    <div class="banner info"><div><b>How to read this.</b> It replays these wallets' real trades with your current settings, buying ${s.delayPct}% higher and selling ${s.delayPct}% lower than they did, because you always trade after them, plus network fees. It sells when they sell${r.exitsReplayed?.withPrices ? `, and your stop-loss, take-profits and trailing stop were replayed from price history for ${r.exitsReplayed.withPrices} of ${r.exitsReplayed.tokens} tokens (${r.exitsReplayed.exitSells} sells came from them)` : '. Stop-loss and take-profits were not replayed'}. Minimum token age and crash protection are replayed too; liquidity and holder filters and the liquidity-drain check aren't (no record of them for past moments). Past results don't predict future ones.</div></div>`;
+}
+function optResult(j) {
+  const o = j.result, cur = o.current, best = o.best;
+  const sameAsNow = (r) => r.setup.id === 'current';
+  const row = (r, i) => `<tr${sameAsNow(r) ? ' style="background:var(--panel-2)"' : ''}><td class="muted num">${i + 1}</td><td>${esc(r.setup.name)}${sameAsNow(r) ? ' <span class="tag paper">now</span>' : ''}</td>
+    <td class="r num ${cls(r.totalSol)}">${signed(r.totalSol, 3)}</td><td class="r num ${cls(r.roiPct)}">${r.roiPct != null ? pct(r.roiPct) : '—'}</td>
+    <td class="r num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '—'}</td><td class="r num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'}</td><td class="r num muted">${r.closed}</td>
+    <td class="r">${sameAsNow(r) ? '' : `<button class="btn sm ${i === 0 ? 'primary' : ''}" data-apply-setup="${esc(r.setup.id)}" data-job="${j.id}">Use</button>`}</td></tr>`;
+  const verdict = {
+    better: `<div class="banner info"><div><b>${esc(best.setup.name)}</b> would have made <b class="pos">${signed(best.totalSol, 3)} SOL</b>, against <b class="${cls(cur.totalSol)}">${signed(cur.totalSol, 3)} SOL</b> with your current settings.</div><button class="btn sm primary" data-apply-setup="${esc(best.setup.id)}" data-job="${j.id}">Use these settings</button></div>`,
+    small: `<div class="banner warn"><div><b>No clear winner.</b> The best setup beat your current settings by only ${sol(best.totalSol - cur.totalSol, 3)} SOL, which could just be luck in this period. Keeping your settings is reasonable; try a longer period to be sure.</div></div>`,
+    current: `<div class="banner info"><div><b>Your current settings were the best</b> of the 16 compared for this period.</div></div>`,
+    'all-lose': `<div class="banner danger"><div><b>Every exit setup lost money</b> on ${j.input.wallets.length > 1 ? 'these wallets' : 'this wallet'} in this period (the best lost ${sol(-best.totalSol, 3)} SOL). Changing exits won't fix it: the problem is the wallet${j.input.wallets.length > 1 ? 's' : ''} you're copying.</div></div>`,
+    'few-trades': `<div class="banner warn"><div><b>Only ${cur.closed} trade${cur.closed === 1 ? '' : 's'} to compare on</b>, too few to trust the ranking. Try a longer period or more wallets.</div></div>`,
+  }[o.verdict];
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Best exit settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${o.period ? ` · ${dateFmt(o.period.from)} to ${dateFmt(o.period.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">The same trades replayed with 16 exit setups, ${o.delayPct}% copy-delay cost. Price history was found for ${o.priced.withPrices} of ${o.priced.tokens} tokens; without it a token can only exit when the wallet sells.</div></div></div></div>
+    ${verdict}
+    <div class="card" style="margin-bottom:16px"><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Exit setup</th><th class="r">Profit (SOL)</th><th class="r">Return</th><th class="r">Win rate</th><th class="r">Worst dip</th><th class="r">Sells</th><th></th></tr></thead><tbody>${o.results.map(row).join('')}</tbody></table></div></div>
+    ${o.unreadable ? `<div class="banner warn"><div><b>${o.unreadable} of ${o.read} transactions couldn't be read</b>, so the comparison is less certain. A private RPC fixes this.</div></div>` : ''}
+    <div class="banner info"><div><b>How to read this.</b> Each row replays exactly the same copied trades; only the stop-loss, take-profits and trailing stop change. The best setup for the past isn't guaranteed to be the best next week, so prefer a clear winner over a longer period.</div></div>`;
 }
 function renderBacktest(el) {
-  const list = S.jobs.filter((j) => j.kind === 'backtest');
+  const list = S.jobs.filter((j) => j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare');
   const j = list.find((x) => x.id === S.btJob) || list[0];
   const mine = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
   el.innerHTML = `
@@ -1158,25 +1441,56 @@ function renderBacktest(el) {
         <div class="stack"><textarea class="input mono" id="bt-wallets" rows="4" placeholder="Wallet addresses, one per line (up to 5)">${esc(S.btWallets || '')}</textarea>
           <div class="row"><button class="btn sm ghost" id="bt-mine" ${mine.length ? '' : 'disabled'}>Use the wallets I copy</button></div></div>
         <div class="stack">
-          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Strategy <select class="input" id="bt-strat" style="width:auto;height:32px"><option value="">My current settings</option>${(S.strategies || []).map((s) => `<option value="${esc(s.id)}" ${S.btStrat === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Period <select class="input" id="bt-period" style="width:auto;height:32px">${BT_PERIODS.map(([v, l]) => `<option value="${v}" ${(S.btPeriod || '7d') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <div class="row muted" id="bt-dates" style="gap:8px;font-size:13px;justify-content:space-between;display:${S.btPeriod === 'custom' ? 'flex' : 'none'}">From <input class="input" type="date" id="bt-from" style="width:auto;height:32px" min="${isoDay(Date.now() - 180 * 864e5)}" max="${isoDay(Date.now())}" value="${S.btFrom || isoDay(Date.now() - 7 * 864e5)}"> to <input class="input" type="date" id="bt-to" style="width:auto;height:32px" min="${isoDay(Date.now() - 180 * 864e5)}" max="${isoDay(Date.now())}" value="${S.btTo || isoDay(Date.now())}"></div>
+          <label class="row muted" id="bt-txs-row" style="gap:8px;font-size:13px;justify-content:space-between;display:${S.btPeriod === 'txs' ? 'flex' : 'none'}">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
           <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Copy-delay cost <span class="with-unit" style="width:120px"><input type="number" id="bt-delay" min="0" max="50" step="0.5" value="${S.btDelay ?? 5}"><span>%</span></span></label>
           <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.${(() => { const g = measuredGap(); return g.n >= 5 ? ` <b>Your measured gap: ${g.median.toFixed(1)}%</b> over ${g.n} trades. <a href="#" id="bt-use-gap">Use it</a>` : ''; })()}</div>
-          <label class="row muted" style="gap:8px;font-size:13px"><input type="checkbox" id="bt-exits" ${S.btExits === false ? '' : 'checked'}> Replay my stop-loss and take-profits (slower: loads price history, ~5 s per token)</label>
+          <label class="muted" style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer"><input type="checkbox" id="bt-exits" style="flex:none;margin-top:3px" ${S.btExits === false ? '' : 'checked'}><span>Replay my stop-loss and take-profits (slower: loads price history, ~5 s per token)</span></label>
           <button class="btn primary" id="bt-go">Run backtest</button>
+          <div class="row" style="gap:8px"><button class="btn" id="bt-cmp" style="flex:1" title="Replay the same trades with all 5 strategies and your current settings">Compare strategies</button><button class="btn" id="bt-opt" style="flex:1" title="Compare 16 exit setups on the same wallets and period">Find my best settings</button></div>
         </div>
       </div></div>
-    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
+    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.kind === 'optimize' ? 'Best settings · ' : x.kind === 'compare' ? 'Strategies · ' : x.input.strategy ? `${esc((S.strategies || []).find((s) => s.id === x.input.strategy)?.name || '')} · ` : ''}${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
     ${!j ? `<div class="card"><div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No backtests yet</h3>Enter wallets above, or press <b>Backtest</b> next to any wallet on the Wallets or Find wallets pages.</div></div>`
-      : j.status === 'done' ? btResult(j)
+      : j.status === 'done' ? (j.kind === 'optimize' ? optResult(j) : j.kind === 'compare' ? compareResult(j) : btResult(j))
       : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
       : `<div class="card"><div class="empty"><span class="spinner"></span><h3 style="margin-top:12px">Running the backtest…</h3>${esc(j.progress)}</div></div>`}`;
+  $('#bt-period').onchange = (e) => {
+    S.btPeriod = e.target.value;
+    $('#bt-dates').style.display = S.btPeriod === 'custom' ? 'flex' : 'none';
+    $('#bt-txs-row').style.display = S.btPeriod === 'txs' ? 'flex' : 'none';
+  };
   const ug = $('#bt-use-gap');
   if (ug) ug.onclick = (e) => { e.preventDefault(); $('#bt-delay').value = Math.max(0, +measuredGap().median.toFixed(1)); };
   $('#bt-mine').onclick = () => { $('#bt-wallets').value = mine.join('\n'); };
+  $('#bt-cmp').onclick = () => {
+    const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    S.btDelay = Number($('#bt-delay').value); S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value; S.btTxs = Number($('#bt-txs').value);
+    if (S.btPeriod === 'custom' && S.btFrom > S.btTo) return toast('The start date must be before the end date', true);
+    startCompare(wallets);
+  };
+  el.querySelectorAll('[data-use-strat]').forEach((b) => (b.onclick = () => useStrategy(b.dataset.useStrat)));
+  $('#bt-opt').onclick = async () => {
+    const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    S.btDelay = Number($('#bt-delay').value); S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value; S.btTxs = Number($('#bt-txs').value);
+    if (S.btPeriod === 'custom' && S.btFrom > S.btTo) return toast('The start date must be before the end date', true);
+    const j = await act(() => api('POST', '/api/jobs/optimize', { wallets, ...btPeriodBody(), delayPct: S.btDelay }));
+    if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); render(); }
+  };
+  el.querySelectorAll('[data-apply-setup]').forEach((b) => (b.onclick = async () => {
+    const r = S.jobs.find((x) => x.id === Number(b.dataset.job))?.result?.results.find((x) => x.setup.id === b.dataset.applySetup);
+    if (!r || !(await confirmModal({ title: 'Use these exit settings?', confirm: 'Use them', body: `<p><b>${esc(r.setup.name)}</b></p><p>This replaces your stop-loss, take-profits and trailing stop in Settings → Selling. Wallets with their own exit settings keep them. You can change it back any time.</p>` }))) return;
+    const res = await act(() => api('POST', '/api/apply-exits', { jobId: Number(b.dataset.job), setupId: b.dataset.applySetup }), 'Exit settings updated');
+    if (res) { S.config = res.config; if (res.restarted) toast('Bot restarted with the new settings'); render(); }
+  }));
   $('#bt-go').onclick = () => {
     const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     S.btTxs = Number($('#bt-txs').value); S.btDelay = Number($('#bt-delay').value); S.btExits = $('#bt-exits').checked;
-    startBacktest(wallets, S.btTxs, S.btDelay);
+    S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value; S.btStrat = $('#bt-strat').value;
+    if (S.btPeriod === 'custom' && S.btFrom > S.btTo) return toast('The start date must be before the end date', true);
+    startBacktest(wallets, S.btTxs, S.btDelay, S.btStrat || undefined);
   };
   el.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.add, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list')));
 }
@@ -1561,6 +1875,7 @@ const FIELDS = [
     { k: 'filters.skipIfNoMarketData', label: 'Skip tokens with no market data', type: 'toggle', help: "Brand-new launches may not be listed yet. On = skip them, off = only the other safety checks apply." },
   ]},
   { title: 'Limits', desc: 'Caps that protect your balance.', fields: [
+    { k: 'paper.startSol', label: 'Paper wallet starts with', unit: 'SOL', help: 'Paper mode only: a pretend balance for experiments. Paper buys stop when it runs out. Reset it on the Dashboard.' },
     { k: 'risk.maxOpenPositions', label: 'Max tokens held at once', unit: 'tokens', step: 1 },
     { k: 'risk.maxTotalExposureSol', label: 'Max SOL in open positions', unit: 'SOL' },
     { k: 'risk.skipIfAlreadyHolding', label: "Don't buy more of a token you hold", type: 'toggle' },
@@ -1569,6 +1884,11 @@ const FIELDS = [
     { k: 'risk.dailyLossLimitSol', label: 'Daily loss limit', unit: 'SOL', help: 'Stop new buys for the rest of the day after losing this much. Sells and exits keep running. 0 = off.' },
     { k: 'risk.pauseAfterLosses', label: 'Pause after losses in a row', unit: 'trades', step: 1, help: 'A cool-down after a losing streak. 0 = off.' },
     { k: 'risk.pauseMinutes', label: 'Pause length', unit: 'min', step: 1 },
+  ]},
+  { title: 'New wallets', desc: 'Let new wallets prove themselves before they get full size, and pause any wallet that keeps losing.', fields: [
+    { k: 'trial.enabled', label: 'Start new wallets on trial', type: 'toggle', help: 'New wallets copy at ¼ size, then ½, then full size as they make you money.' },
+    { k: 'trial.winsToStepUp', label: 'Profitable copies to step up', unit: 'copies', step: 1 },
+    { k: 'trial.pauseAfterLosses', label: 'Pause a wallet after', unit: 'losses in a row', step: 1, help: 'Applies to every wallet. Positions already open from it still follow its sells. 0 = off.' },
   ]},
   { title: 'Safety checks', desc: 'Run before every buy to avoid scams and illiquid tokens.', fields: [
     { k: 'safety.slippageBps', label: 'Max slippage', unit: '%', toView: (v) => v / 100, fromView: (v) => Math.round(v * 100), help: 'How much worse than the quoted price a trade may fill.' },
@@ -1835,6 +2155,8 @@ function connectEvents() {
   });
   es.addEventListener('connection', (e) => { S.connection = JSON.parse(e.data); renderChrome(); });
   es.addEventListener('scout', (e) => { S.scout = JSON.parse(e.data); });
+  es.addEventListener('trades-reset', () => load());
+  es.addEventListener('health', (e) => { S.health = JSON.parse(e.data); if (S.page === 'wallets') render(); });
   es.addEventListener('ai', (e) => {
     const d = JSON.parse(e.data);
     if (!S.ai) return;
@@ -1845,8 +2167,10 @@ function connectEvents() {
   es.addEventListener('job', (e) => {
     const j = JSON.parse(e.data);
     upsertJob(j);
+    if (j.kind === 'quickstart') quickStartUpdate(j);
     if (S.page === 'research') { if (j.kind === 'scout') render(); else renderJobs(); }
-    if (S.page === 'backtest' && j.kind === 'backtest') render();
+    if (S.page === 'backtest' && (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare')) render();
+    if (S.page === 'wallets' && j.kind === 'health') render();
     if (S.page === 'autopilot' && j.kind === 'scout') renderAutopilot($('#content'), true);
   });
   es.onerror = () => { $('#run-pill').innerHTML = '<span class="pill"><span class="dot bad"></span>Disconnected</span>'; };
@@ -1857,7 +2181,7 @@ async function load() {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
     const firstLoad = !S.loadedOnce; S.loadedOnce = true;
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout });
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, strategies: d.strategies || [], health: d.health || null });
     render();
     if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }

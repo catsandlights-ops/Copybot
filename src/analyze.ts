@@ -6,6 +6,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { getTx, mapLimit, short, withRetry } from './util';
+import { historyCache } from './history';
 
 
 export type Report = {
@@ -26,28 +27,83 @@ export type Report = {
 
 const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : 0);
 
-/** `stats.failed` counts transactions that couldn't be read (RPC errors), so callers can warn about gaps. */
-export async function fetchSwaps(conn: Connection, wallet: string, maxTxs: number, onProgress?: (n: number, total: number) => void, opts: { tries?: number; stats?: { read: number; failed: number } } = {}): Promise<Swap[]> {
+export type FetchStats = { read: number; failed: number; cached?: number; truncated?: boolean; oldestMs?: number | null };
+
+/**
+ * A wallet's SOL swaps, newest first in the chain's order.
+ *  - by count: the last `maxTxs` transactions
+ *  - by date (`since`/`until`, ms): every transaction in that window, up to `maxTxs`
+ * `stats.failed` counts transactions that couldn't be read (RPC errors); `stats.truncated` is set
+ * when the date window had more than `maxTxs` transactions (then `stats.oldestMs` is how far back it got).
+ */
+export async function fetchSwaps(
+  conn: Connection,
+  wallet: string,
+  maxTxs: number,
+  onProgress?: (n: number, total: number) => void,
+  opts: { tries?: number; stats?: FetchStats; since?: number; until?: number; onScan?: (n: number) => void } = {},
+): Promise<Swap[]> {
   const pk = new PublicKey(wallet);
   const sigs: string[] = [];
+  const byDate = opts.since !== undefined;
   let before: string | undefined;
-  while (sigs.length < maxTxs) {
-    const page = await withRetry(() => conn.getSignaturesForAddress(pk, { limit: Math.min(1000, maxTxs - sigs.length), before }));
-    if (!page.length) break;
-    sigs.push(...page.filter((s) => !s.err).map((s) => s.signature));
+  let scanned = 0;
+  let reachedStart = false;
+  // Bots can send hundreds of thousands of (mostly failed) transactions; never read further back than this.
+  const maxScan = Math.max(maxTxs * 10, 50_000);
+  while (sigs.length < maxTxs && scanned < maxScan) {
+    const page = await withRetry(() => conn.getSignaturesForAddress(pk, { limit: byDate ? 1000 : Math.min(1000, maxTxs - sigs.length), before }));
+    if (!page.length) {
+      reachedStart = true;
+      break;
+    }
+    scanned += page.length;
+    opts.onScan?.(scanned);
+    for (const s of page) {
+      if (s.err) continue;
+      const t = s.blockTime ? s.blockTime * 1000 : null;
+      if (byDate && t !== null && (t < opts.since! || (opts.until !== undefined && t > opts.until))) continue;
+      if (sigs.length < maxTxs) sigs.push(s.signature);
+    }
     before = page[page.length - 1].signature;
-    if (page.length < 1000) break;
+    const oldest = page[page.length - 1].blockTime;
+    if (opts.stats) opts.stats.oldestMs = oldest ? oldest * 1000 : null;
+    if (byDate && oldest && oldest * 1000 < opts.since!) {
+      reachedStart = true;
+      break;
+    }
+    if (page.length < 1000) {
+      reachedStart = true;
+      break;
+    }
   }
+  if (opts.stats && byDate) opts.stats.truncated = !reachedStart;
+  // Transactions read before come from the on-disk cache; only new ones are downloaded.
   let done = 0;
+  let fresh = 0;
   const swaps = await mapLimit(sigs, 4, async (sig) => {
+    const cached = historyCache.get(wallet, sig);
+    if (cached) {
+      if (opts.stats) {
+        opts.stats.read++;
+        opts.stats.cached = (opts.stats.cached ?? 0) + 1;
+      }
+      onProgress?.(++done, sigs.length);
+      return cached.swap;
+    }
     const tx = await getTx(sig, opts.tries ?? 2).catch(() => {
       if (opts.stats) opts.stats.failed++;
-      return null;
+      return undefined;
     });
     if (opts.stats) opts.stats.read++;
     onProgress?.(++done, sigs.length);
-    return tx ? decodeSwap(tx, wallet) : null;
+    if (tx === undefined || tx === null) return null; // errors and not-found aren't cached, so they're retried next time
+    const swap = decodeSwap(tx, wallet);
+    historyCache.set(wallet, sig, swap);
+    fresh++;
+    return swap;
   });
+  if (fresh) historyCache.save(wallet);
   return swaps.filter((s): s is Swap => !!s && s.quote === 'SOL');
 }
 

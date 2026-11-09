@@ -111,6 +111,7 @@ const series = (startMin: number, rows: [number, number, number][]) => ({
 
 test('stop-loss fires from candles before the wallet sells', () => {
   const c = cfg();
+  c.protect.crashPct = 0; // this test is about the stop-loss
   c.exits = { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
   c.risk.stopLossPct = 40;
   // Price USD 1.0 at the buy, then crashes to 0.5 (−50%), they sell an hour later at 3x.
@@ -128,6 +129,7 @@ test('stop-loss fires from candles before the wallet sells', () => {
 
 test('staged take-profits from candle highs, then their sell closes the rest', () => {
   const c = cfg();
+  c.protect.crashPct = 0;
   c.exits = { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
   c.risk.stopLossPct = 90;
   const prices = new Map([['M', series(-5, [[1, 1, 1], [1, 1, 1], [1, 2.2, 2], [2, 4.5, 4], [3.5, 4, 3.8]])]]);
@@ -148,4 +150,77 @@ test('usdAt finds the covering candle and ignores stale data', async () => {
   assert.equal(usdAt(s, 30_000), 1);
   assert.equal(usdAt(s, -1), null);
   assert.equal(usdAt(s, 60_000 + 3 * 60_000), null);
+});
+
+test('a past period stops at its end and values what is still held at that date', () => {
+  const c = cfg();
+  c.exits = { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
+  c.risk.stopLossPct = 95;
+  // Bought at USD 1.0; at the end of the period (40 min) the price is 2.0; they sell at 5x later, outside the period.
+  const prices = new Map([['M', series(-5, [[1, 1, 1], [1, 1, 1], [1, 1.5, 1.5], [1.5, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]])]]);
+  const swaps = [sw({ side: 'buy', mint: 'M', wallet: A }, 0), sw({ side: 'sell', mint: 'M', wallet: A, quoteAmount: 5, tokenPre: 1_000_000n }, 90)];
+  const endAt = (T0 + 40 * 60) * 1000;
+  const r = runBacktest(swaps, c, { ...noCost, endAt }, new Map([['M', 9e-6]]), prices);
+  assert.equal(r.closed, 0); // their 5x sell is after the period
+  assert.equal(r.open.length, 1);
+  assert.ok(Math.abs(r.open[0].valueSol! - 0.2) < 1e-9); // 2x at the period's end, not today's mark
+  assert.ok(Math.abs(r.totalSol - 0.1) < 1e-9);
+});
+
+test('fetchSwaps by date: only transactions inside the window are read; long windows are capped', async () => {
+  const http = await import('node:http');
+  const srv = http.createServer((_q, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"jsonrpc":"2.0","id":1,"result":null}'); });
+  await new Promise<void>((ok) => srv.listen(0, '127.0.0.1', ok));
+  process.env.RPC_URL = `http://127.0.0.1:${(srv.address() as any).port}`;
+  const { fetchSwaps } = await import('./analyze');
+  // 2,500 signatures, one per minute going back from t=10,000 min.
+  const all = Array.from({ length: 2500 }, (_, i) => ({ signature: `s${i}`, blockTime: (10_000 - i) * 60, err: null }));
+  const conn = {
+    getSignaturesForAddress: async (_pk: unknown, o: { limit: number; before?: string }) => {
+      const start = o.before ? all.findIndex((s) => s.signature === o.before) + 1 : 0;
+      return all.slice(start, start + o.limit);
+    },
+  } as any;
+  const stats: any = { read: 0, failed: 0 };
+  await fetchSwaps(conn, 'So11111111111111111111111111111111111111112', 5000, undefined, { tries: 1, stats, since: 9_000 * 60_000, until: 9_499 * 60_000 });
+  assert.equal(stats.read, 500); // minutes 9000..9499
+  assert.equal(stats.truncated, false);
+  const capped: any = { read: 0, failed: 0 };
+  await fetchSwaps(conn, 'So11111111111111111111111111111111111111112', 100, undefined, { tries: 1, stats: capped, since: 8_000 * 60_000 });
+  assert.equal(capped.read, 100);
+  assert.equal(capped.truncated, true);
+  srv.close();
+});
+
+test('replays minimum token age and crash protection from price history', () => {
+  const c = cfg();
+  c.exits = { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 };
+  c.risk.stopLossPct = 95;
+  // Token launched 10 minutes before the buy.
+  const young = { ...series(-5, [[1, 1, 1], [1, 1, 1], [1, 1, 1]]), createdAt: (T0 - 600) * 1000 };
+  c.filters.minTokenAgeMin = 60;
+  c.protect.crashPct = 0;
+  const swaps = [sw({ side: 'buy', mint: 'Y', wallet: A }, 0)];
+  assert.equal(runBacktest(swaps, c, noCost, new Map(), new Map([['Y', young]])).skipped['token too new'], 1);
+  c.filters.minTokenAgeMin = 5;
+  assert.equal(runBacktest(swaps, c, noCost, new Map(), new Map([['Y', young]])).skipped['token too new'], undefined);
+  // Crash: 1.0 → 0.55 inside one 5-minute candle triggers dump protection at 35%.
+  c.filters.minTokenAgeMin = 0;
+  c.protect = { liquidityDropPct: 0, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 0 };
+  const crash = series(-5, [[1, 1, 1], [1, 1, 1], [0.55, 1, 0.6], [0.6, 0.6, 0.6]]);
+  const r = runBacktest([...swaps, sw({ side: 'sell', mint: 'Y', wallet: A, quoteAmount: 0.3, tokenPre: 1_000_000n }, 30)], c, noCost, new Map(), new Map([['Y', crash]]));
+  const s = r.trades.find((t) => t.side === 'sell')!;
+  assert.match(s.reason!, /dump protection: fell 45%/);
+  assert.ok(Math.abs(s.pnl! + 0.045) < 1e-9); // sold at 0.55x, better than their 0.3x
+});
+
+test('fetchSwaps by date stops scanning a wallet that spams failed transactions', async () => {
+  const { fetchSwaps } = await import('./analyze');
+  // 200,000 failed transactions in the window: nothing to read, but the scan must stop.
+  let calls = 0;
+  const conn = { getSignaturesForAddress: async () => (calls++, Array.from({ length: 1000 }, (_, i) => ({ signature: `f${calls}-${i}`, blockTime: 9_999 * 60, err: { x: 1 } }))) } as any;
+  const stats: any = { read: 0, failed: 0 };
+  await fetchSwaps(conn, 'So11111111111111111111111111111111111111112', 5000, undefined, { tries: 1, stats, since: 1 });
+  assert.equal(calls, 50);
+  assert.equal(stats.truncated, true);
 });

@@ -23,14 +23,16 @@ import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
 import * as markets from './markets';
 import { getSolUsd } from './market';
-import { marketSkipReason, walletRecords } from './rules';
+import { experimentPicks, healthVerdict, marketSkipReason, median, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
+import { optimizeExits } from './optimize';
+import { applyStrategy, compareStrategies, STRATEGIES, strategyById } from './strategies';
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
-import { passesBasics, pickCandidates, pickTokens, rulePicks, ScoutReport, ScoutResult } from './scout';
+import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -106,6 +108,7 @@ function broadcast(type: string, data: unknown) {
 let statusTimer: NodeJS.Timeout | null = null;
 engine.on('log', (e) => broadcast('log', e));
 engine.on('trade', (t) => broadcast('trade', t));
+engine.on('config', (c) => broadcast('config', c));
 
 // ---------- phone alerts ----------
 const alertQueue = new alerts.AlertQueue(async (text) => {
@@ -145,7 +148,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover' | 'scout' | 'backtest';
+  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare' | 'health' | 'quickstart';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -158,13 +161,13 @@ const jobs: Job[] = [];
 const BACKTESTS_FILE = 'data/backtests.json';
 try {
   const saved = JSON.parse(fs.readFileSync(BACKTESTS_FILE, 'utf8'));
-  if (Array.isArray(saved)) jobs.push(...saved.filter((j) => j?.kind === 'backtest' && j.status === 'done').slice(0, 10));
+  if (Array.isArray(saved)) jobs.push(...saved.filter((j) => (j?.kind === 'backtest' || j?.kind === 'optimize' || j?.kind === 'compare') && j.status === 'done').slice(0, 12));
 } catch {
   /* none yet */
 }
 function saveBacktests() {
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(BACKTESTS_FILE, JSON.stringify(jobs.filter((j) => j.kind === 'backtest' && j.status === 'done').slice(0, 10)));
+  fs.writeFileSync(BACKTESTS_FILE, JSON.stringify(jobs.filter((j) => (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare') && j.status === 'done').slice(0, 12)));
 }
 let jobSeq = jobs.reduce((a, j) => Math.max(a, j.id), 0);
 let jobChain: Promise<void> = Promise.resolve();
@@ -174,7 +177,7 @@ function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) =
   const job: Job = { id: ++jobSeq, kind, status: 'queued', progress: 'Waiting…', input, createdAt: Date.now() };
   jobs.unshift(job);
   // Keep the list short, but never drop a saved backtest just because other jobs ran.
-  while (jobs.length > 20) jobs.splice(jobs.map((j) => j.kind === 'backtest').lastIndexOf(false), 1);
+  while (jobs.length > 20) jobs.splice(jobs.map((j) => j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare').lastIndexOf(false), 1);
   const progress = (p: string) => {
     job.progress = p;
     broadcast('job', job);
@@ -186,7 +189,7 @@ function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) =
     try {
       job.result = await run(progress);
       job.status = 'done';
-      if (job.kind === 'backtest') saveBacktests();
+      if (job.kind === 'backtest' || job.kind === 'optimize' || job.kind === 'compare') saveBacktests();
       progress('Done');
     } catch (e) {
       job.status = 'error';
@@ -262,13 +265,13 @@ let walletReviewBusy = false;
 const scoutView = (r: ScoutReport): ai.CandidateView => ({
   address: r.wallet,
   source: 'scout',
-  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, topTraderOn: r.topTraderOn, notes: r.notes },
+  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, caughtRecentPumpOn: r.pumpOn ?? [], topTraderOn: r.topTraderOn, backtestCopyingItWithOurSettings: r.bt ?? null, notes: r.notes },
 });
 
 /** Wallets the AI may add: the ones the user analyzed or discovered, plus the latest scout results. */
 function aiCandidates(): ai.CandidateView[] {
   const out = new Map<string, ai.CandidateView>();
-  for (const r of lastScout?.reports ?? []) if (passesBasics(r)) out.set(r.wallet, scoutView(r));
+  for (const r of lastScout?.reports ?? []) if (passesBasics(r) && (!r.bt || passesBacktest(r))) out.set(r.wallet, scoutView(r));
   for (const j of jobs) {
     if (j.status !== 'done') continue;
     if (j.kind === 'scout') continue; // covered by lastScout
@@ -326,6 +329,7 @@ async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary:
     }
     if (applied.length) {
       const clean = sanitizeConfig(next, false);
+      trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
       for (const ch of applied) engine.log(`Claude: ${ch.action} ${ch.address.slice(0, 4)}…${ch.address.slice(-4)}${ch.action === 'pause' ? '' : ` (size ×${ch.sizeMultiplier}${ch.budgetSol ? `, budget ${ch.budgetSol} SOL` : ''})`}: ${ch.reason}`, 'ai');
     }
@@ -346,6 +350,44 @@ let lastScout: ScoutResult | null = (() => {
 })();
 let scoutRunning = false;
 
+/** The user's median copy gap (%) in the current mode, once there are 5+ measured trades. */
+function measuredCopyGap(): number | null {
+  const g = engine.readTrades().filter((t: any) => t.mode === engine.cfg.mode && typeof t.gapPct === 'number').map((t: any) => t.gapPct as number);
+  return g.length >= 5 ? Math.max(0, median(g)!) : null;
+}
+
+/** What copying one wallet over its fetched history would have made with the user's settings. */
+async function quickBacktest(wallet: string, swaps: import('./decode').Swap[], delayPct: number): Promise<import('./scout').ScoutBacktest> {
+  const cfg = structuredClone(engine.cfg);
+  if (!cfg.wallets.some((w) => w.address === wallet)) cfg.wallets.push({ address: wallet, label: wallet.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
+  const opts = { delayPct, feeSol: 0.0002 };
+  const first = runBacktest(swaps, cfg, opts);
+  const marks = new Map<string, number | null>();
+  for (const o of first.open.slice(0, 8)) {
+    const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
+    const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
+    marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+  }
+  const r = runBacktest(swaps, cfg, opts, marks);
+  return { totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, delayPct };
+}
+
+// Tokens scanned by recent searches go to the back of the line next time, so searches vary.
+const SCOUT_HISTORY = 'data/scout-history.json';
+function recentScoutMints(): Set<string> {
+  try {
+    const l = JSON.parse(fs.readFileSync(SCOUT_HISTORY, 'utf8'));
+    return new Set(Array.isArray(l) ? l.filter((m) => typeof m === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+function rememberScoutMints(mints: string[]) {
+  const l = [...mints, ...recentScoutMints()].filter((m, i, a) => a.indexOf(m) === i).slice(0, 18);
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(SCOUT_HISTORY, JSON.stringify(l));
+}
+
 function startScout(auto: boolean) {
   if (scoutRunning || jobs.some((j) => j.kind === 'scout' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'The wallet scout is already running.');
   scoutRunning = true;
@@ -361,19 +403,28 @@ function startScout(auto: boolean) {
 async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   const notes: string[] = [];
   const at = Date.now();
-  progress('Looking for tokens that pumped recently…');
-  const rows = [...(await markets.pools('trending').catch(() => [])), ...(await markets.pools('new').catch(() => []))];
-  const tokens = pickTokens(rows, at, 5);
-  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 24h with real liquidity, 3h to 7 days old). Try again later.');
+  progress('Looking for tokens that are moving: trending, new launches and top volume…');
+  const rows = await markets.scoutPools();
+  const tokens = pickTokens(rows, at, 6, recentScoutMints());
+  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 6 or 24 hours with real liquidity, 1 hour to 14 days old). Try again later.');
   const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
 
+  // 1. "Caught the pump": recent big buyers now well in profit (every token, fast).
+  const pump = new Map<string, string[]>();
+  for (const [i, t] of tokens.entries()) {
+    progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding buyers who caught the move…`);
+    const trades = await markets.poolTrades(t.pool, 300).catch(() => []);
+    for (const w of pumpBuyers(trades, t.priceUsd, 40).keys()) pump.set(w, [...(pump.get(w) ?? []), t.symbol]);
+  }
+  // 2. True early buyers, for tokens quiet enough to read back to their launch.
   const conn = makeConnection();
   const perMint = new Map<string, Map<string, number>>();
-  for (const [i, t] of tokens.entries()) {
-    progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding early buyers…`);
+  const quiet = tokens.filter((t) => t.quiet).slice(0, 3);
+  for (const [i, t] of quiet.entries()) {
+    progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol})…`);
     perMint.set(
       t.mint,
-      await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol} is a very busy token, so its "early buyers" here are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): ${m}`)),
+      await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol}: its "early buyers" are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol}): ${m}`)),
     );
   }
   const top = new Map<string, string[]>();
@@ -385,15 +436,27 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     }
   }
   const mine = new Set(engine.cfg.wallets.map((w) => w.address));
-  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 12);
+  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 15, pump);
   if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
 
   const reports: ScoutReport[] = [];
+  const history = new Map<string, import('./decode').Swap[]>();
   for (const [i, c] of cands.entries()) {
     const swaps = await fetchSwaps(conn, c.wallet, 500, (n, t) => {
       if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
     }).catch(() => null);
-    if (swaps) reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn });
+    if (swaps) {
+      history.set(c.wallet, swaps);
+      reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
+    }
+  }
+  // Backtest the promising ones with the user's own settings and copy delay: a wallet that made
+  // money for itself can still lose money for someone copying it a few seconds later.
+  const delayPct = measuredCopyGap() ?? 5;
+  const promising = reports.filter(passesBasics).slice(0, 8);
+  for (const [i, r] of promising.entries()) {
+    progress(`Backtesting ${i + 1}/${promising.length} with your settings…`);
+    r.bt = await quickBacktest(r.wallet, history.get(r.wallet) ?? [], delayPct);
   }
   reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
 
@@ -404,12 +467,16 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   const max = autoAdd ? Math.min(cfg.ai.scoutMaxPicks, free) : cfg.ai.scoutMaxPicks;
   if (autoAdd && !free) notes.push(`You already copy ${cfg.ai.maxWallets} wallets (the autopilot's maximum), so nothing new was added.`);
   // Only wallets that pass the basic checks can be picked, by Claude or by the rules.
-  const eligible = reports.filter(passesBasics);
-  let picks = rulePicks(eligible, max);
+  const basics = reports.filter(passesBasics);
+  const eligible = basics.filter(passesBacktest);
+  const btNote = (r: ScoutReport) => (r.bt ? ` Copying it with your settings would have made ${r.bt.totalSol >= 0 ? '+' : ''}${r.bt.totalSol.toFixed(3)} SOL over ${r.bt.closed} trades.` : '');
+  let picks = rulePicks(eligible, max).map((p) => ({ ...p, reason: p.reason + btNote(eligible.find((r) => r.wallet === p.address)!) }));
   let pickedBy: ScoutResult['pickedBy'] = 'rules';
   let summary = picks.length
-    ? 'Ranked by win rate, return and number of trades.'
-    : `None of the ${reports.length} wallets checked passed the basics: 10+ finished trades, profitable overall, not a bot, and not selling within 2 minutes. Most wallets that catch one pump don't keep winning.`;
+    ? `Ranked by win rate, return and number of trades, among wallets whose backtest with your settings made money.`
+    : basics.length
+      ? `${basics.length} wallet${basics.length > 1 ? 's' : ''} looked good on ${basics.length > 1 ? 'their' : 'its'} own record, but a backtest with your settings and a ${delayPct.toFixed(1)}% copy delay showed copying ${basics.length > 1 ? 'them' : 'it'} would have lost money, so nothing was picked.`
+      : `None of the ${reports.length} wallets checked passed the basics: 10+ finished trades, profitable overall, not a bot, and not selling within 2 minutes. Most wallets that catch one pump don't keep winning.`;
   if (max > 0 && eligible.length && hasSecret('ANTHROPIC_API_KEY')) {
     progress('Claude is choosing…');
     const recs = walletRecords(engine.readTrades(), cfg.mode);
@@ -422,21 +489,30 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     } else notes.push(`Claude wasn't available (${ai.aiStatus(cfg).lastError ?? 'no answer'}), so the picks are rule-based.`);
   }
 
+  // Suggest a strategy that suits each pick's trading style.
+  picks = picks.map((p) => {
+    const rep = reports.find((r) => r.wallet === p.address);
+    if (!rep) return p;
+    const s = suggestStrategy(rep);
+    return { ...p, strategy: s.id, strategyWhy: s.why };
+  });
   const added: string[] = [];
   if (autoAdd && picks.length) {
     const next = structuredClone(engine.cfg);
     for (const p of picks) {
       if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= cfg.ai.maxWallets) continue;
-      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol });
+      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy } : {}) });
       added.push(p.address);
     }
     if (added.length) {
       const clean = sanitizeConfig(next, false);
+      trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
       for (const a of added) engine.log(`Wallet scout: now copying ${a.slice(0, 4)}…${a.slice(-4)}: ${picks.find((p) => p.address === a)!.reason}`, 'ai');
     }
   }
   const result: ScoutResult = { at, tokens, reports, picks, pickedBy, summary, added, notes };
+  rememberScoutMints(tokens.map((t) => t.mint));
   lastScout = result;
   fs.mkdirSync('data', { recursive: true });
   fs.writeFileSync(SCOUT_FILE, JSON.stringify(result));
@@ -522,6 +598,124 @@ async function applyChange(change: () => void) {
   return wasRunning;
 }
 
+/**
+ * Wallets new to the list start on trial (quarter size). Wallets turned back on after a pause
+ * start counting afresh. Applies to wallets added from the UI, the scout or the autopilot.
+ */
+function trialAndResume(next: import('./config').Config) {
+  const prev = new Map(engine.cfg.wallets.map((w) => [w.address, w]));
+  for (const w of next.wallets) {
+    const before = prev.get(w.address);
+    if (!before) {
+      if (next.trial.enabled && w.trialStage === undefined) w.trialStage = 0;
+      w.since = Date.now();
+    } else if (!before.enabled && w.enabled) {
+      w.since = Date.now();
+      delete w.pausedReason;
+    }
+  }
+}
+
+// ---------- wallet health check ----------
+const HEALTH_FILE = 'data/health.json';
+type HealthRow = { address: string; label: string; verdict: import('./rules').HealthVerdict; totalSol: number; roiPct: number | null; closed: number; wins: number; copied: number; unreadable: number; coveredFrom: number | null };
+let lastHealth: { at: number; period: { from: number; to: number }; delayPct: number; wallets: HealthRow[] } | null = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(HEALTH_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+
+// ---------- backtest data (shared by Backtest and "Find my best settings") ----------
+type BacktestSpec = { wallets: string[]; delayPct: number; replayExits: boolean; range: { from: number; to: number } | null; txs: number; endAt?: number; strategy: string | null; input: Record<string, unknown> };
+
+function backtestSpec(b: any): BacktestSpec {
+  const wallets = addressList(b.wallets, 5, 'wallet address');
+  const delayPct = Math.min(50, Math.max(0, Number.isFinite(Number(b.delayPct)) ? Number(b.delayPct) : 5));
+  const replayExits = b.replayExits !== false;
+  const now = Date.now();
+  let range: { from: number; to: number } | null = null;
+  if (b.from !== undefined) {
+    const from = Number(b.from);
+    const to = b.to === undefined || b.to === null ? now : Math.min(now, Number(b.to));
+    if (!Number.isFinite(from) || !Number.isFinite(to)) throw new HttpError(400, 'Pick a start and end date.');
+    if (to <= from) throw new HttpError(400, 'The end date must be after the start date.');
+    if (from < now - 180 * 86_400_000) throw new HttpError(400, 'The start date can be at most 180 days ago.');
+    if (to - from > 90 * 86_400_000) throw new HttpError(400, 'Pick a period of at most 90 days.');
+    range = { from, to };
+  }
+  const txs = range ? 5000 : Math.min(2000, Math.max(100, Number(b.txs) || 600));
+  const endAt = range && range.to < now - 30 * 60_000 ? range.to : undefined; // past period: value holdings at its end
+  const strategy = b.strategy === undefined || b.strategy === null ? null : strategyById(b.strategy)?.id ?? null;
+  if (b.strategy && !strategy) throw new HttpError(400, 'Unknown strategy');
+  return { wallets, delayPct, replayExits, range, txs, endAt, strategy, input: { wallets, txs: range ? null : txs, from: range?.from ?? null, to: range?.to ?? null, delayPct, replayExits, strategy } };
+}
+
+/**
+ * Everything a backtest needs: the wallets' swaps (cached on disk), the user's settings, price
+ * candles (for replaying exits, or valuing holdings at the end of a past period) and today's prices.
+ * `widestOpen`: price every token any exit setup might still hold (for comparing setups).
+ */
+async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => void, wantCandles: boolean, widestOpen = false) {
+  const conn = makeConnection();
+  const swaps: import('./decode').Swap[] = [];
+  const stats: import('./analyze').FetchStats = { read: 0, failed: 0 };
+  const truncated: { wallet: string; oldestMs: number | null }[] = [];
+  const { range, wallets, txs } = spec;
+  for (const [i, w] of wallets.entries()) {
+    const ws: import('./analyze').FetchStats = { read: 0, failed: 0 };
+    swaps.push(
+      ...(await fetchSwaps(
+        conn,
+        w,
+        txs,
+        (n, t) => {
+          if (n % 25 === 0 || n === t) progress(`Wallet ${i + 1}/${wallets.length}: reading transaction ${n} of ${t}`);
+        },
+        { tries: 5, stats: ws, ...(range ? { since: range.from, until: range.to, onScan: (n: number) => progress(`Wallet ${i + 1}/${wallets.length}: finding transactions in your dates (${n} checked)…`) } : {}) },
+      )),
+    );
+    stats.read += ws.read;
+    stats.failed += ws.failed;
+    if (ws.truncated) truncated.push({ wallet: w, oldestMs: ws.oldestMs ?? null });
+  }
+  // Your current settings (or a strategy applied to them); wallets you don't copy yet use size ×1 and no budget.
+  const cfg = spec.strategy ? applyStrategy(engine.cfg, strategyById(spec.strategy)!) : structuredClone(engine.cfg);
+  for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
+  const opts = { delayPct: spec.delayPct, feeSol: 0.0002, endAt: spec.endAt };
+  // "Follow their sells only" leaves the most positions open, so it shows every token that might need a price.
+  // (and with no minimum buy size, so it also sees every token any strategy could buy).
+  const probeCfg = widestOpen
+    ? { ...structuredClone(cfg), buy: { ...cfg.buy, minTargetBuySol: 0 }, exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 }, risk: { ...cfg.risk, stopLossPct: 100, takeProfitPct: 0 } }
+    : cfg;
+  const probe = runBacktest(swaps, probeCfg, opts);
+  const stillOpen = new Set(probe.open.map((o) => o.mint));
+  const bought = [...new Set(swaps.filter((s) => s.side === 'buy' && probe.trades.some((t) => t.mint === s.mint)).map((s) => s.mint))];
+  const prices = new Map<string, import('./backtest').PriceSeries>();
+  const needCandles = (wantCandles ? bought : spec.endAt ? bought.filter((m) => stillOpen.has(m)) : []).slice(0, 40);
+  for (const [i, mint] of needCandles.entries()) {
+    progress(`Loading price history (${i + 1}/${needCandles.length})…`);
+    const times = swaps.filter((s) => s.mint === mint && s.blockTime).map((s) => s.blockTime! * 1000);
+    const from = Math.min(...times);
+    const to = stillOpen.has(mint) ? spec.endAt ?? Date.now() : Math.max(...times) + 3_600_000;
+    const h = await markets.priceHistory(mint, from, to).catch(() => null);
+    if (h) prices.set(mint, h);
+  }
+  // A period that ends now: price what would still be held at today's prices.
+  const marks = new Map<string, number | null>();
+  if (!spec.endAt) {
+    const open = (needCandles.length ? runBacktest(swaps, probeCfg, opts, new Map(), prices) : probe).open.slice(0, 25);
+    for (const [i, o] of open.entries()) {
+      progress(`Pricing open positions (${i + 1}/${open.length})…`);
+      const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
+      const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
+      marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+    }
+  }
+  return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
+}
+
 // ---------- routes ----------
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url || '/', 'http://localhost');
@@ -571,9 +765,72 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       connection: connectionInfo(),
       jobs,
       scout: lastScout,
+      strategies: STRATEGIES,
+      health: lastHealth,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
       ui: uiPrefs,
     });
+  }
+
+  if (route === 'POST /api/jobs/quickstart') {
+    if (engine.cfg.mode !== 'paper') throw new HttpError(400, 'Quick experiments only run in paper mode.');
+    if (engine.running) throw new HttpError(409, 'The bot is already running.');
+    if (jobs.some((j) => j.kind === 'quickstart' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'Already setting up an experiment.');
+    const job = addJob('quickstart', {}, async (progress) => {
+      progress('Looking at tokens that are moving right now…');
+      const tokens = pickTokens(await markets.scoutPools(), Date.now(), 6, new Set());
+      if (!tokens.length) throw new Error('No tokens are moving enough right now. Try again in a while, or add wallets yourself.');
+      const caught = new Map<string, { tokens: string[]; bestGainPct: number }>();
+      for (const [i, t] of tokens.entries()) {
+        progress(`Finding traders who caught ${t.symbol}'s move (${i + 1}/${tokens.length})…`);
+        const trades = await markets.poolTrades(t.pool, 300).catch(() => []);
+        for (const [w, gain] of pumpBuyers(trades, t.priceUsd, 40)) {
+          const c = caught.get(w) ?? { tokens: [], bestGainPct: 0 };
+          c.tokens.push(t.symbol);
+          c.bestGainPct = Math.max(c.bestGainPct, gain);
+          caught.set(w, c);
+        }
+      }
+      const picks = experimentPicks(caught, new Set(engine.cfg.wallets.map((w) => w.address)), 3);
+      if (!picks.length) throw new Error("Couldn't find active traders right now. Try again in a while, or use Find wallets.");
+      if (engine.cfg.mode !== 'paper') throw new Error('Switched to live mode, so the experiment was cancelled.');
+      progress('Starting the bot in paper mode…');
+      const next = structuredClone(engine.cfg);
+      for (const p of picks) next.wallets.push({ address: p.wallet, label: `experiment-${p.wallet.slice(0, 4)}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
+      const clean = sanitizeConfig(next, false);
+      trialAndResume(clean);
+      await applyChange(() => saveConfig(clean));
+      if (!engine.running) await engine.start();
+      engine.log(`Paper experiment started: copying ${picks.length} trader${picks.length > 1 ? 's' : ''} who caught recent moves (${picks.map((p) => p.tokens.join('/')).join(', ')}).`, 'system');
+      return { added: picks };
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/paper/reset') {
+    if (engine.cfg.mode !== 'paper') throw new HttpError(400, 'Switch to paper mode to reset paper results.');
+    const stamp = Date.now();
+    await applyChange(() => {
+      fs.mkdirSync('data', { recursive: true });
+      // Keep a copy, then start fresh: paper positions, paper P&L and paper trades.
+      if (fs.existsSync('data/state-paper.json')) fs.renameSync('data/state-paper.json', `data/state-paper.reset-${stamp}.json`);
+      if (fs.existsSync('data/trades.jsonl')) {
+        const lines = fs.readFileSync('data/trades.jsonl', 'utf8').split('\n').filter(Boolean);
+        const isPaper = (l: string) => {
+          try {
+            return JSON.parse(l).mode === 'paper';
+          } catch {
+            return false;
+          }
+        };
+        fs.writeFileSync(`data/trades-paper.reset-${stamp}.jsonl`, lines.filter(isPaper).join('\n') + '\n');
+        fs.writeFileSync('data/trades.jsonl.tmp', lines.filter((l) => !isPaper(l)).map((l) => l + '\n').join(''));
+        fs.renameSync('data/trades.jsonl.tmp', 'data/trades.jsonl');
+      }
+    });
+    engine.log(`Paper results reset: the paper wallet is back to ${engine.cfg.paper.startSol} SOL. The old results were kept in the data folder.`, 'system');
+    broadcast('trades-reset', {});
+    return send(res, 200, { ok: true, status: engine.snapshot() });
   }
 
   if (route === 'POST /api/start') {
@@ -595,6 +852,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     } catch (e) {
       throw e instanceof HttpError ? e : new HttpError(400, (e as Error).message);
     }
+    trialAndResume(cfg);
     const restarted = await applyChange(() => saveConfig(cfg));
     return send(res, 200, { ok: true, restarted, config: engine.cfg });
   }
@@ -864,59 +1122,101 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   if (route === 'POST /api/jobs/backtest') {
-    const b = await readBody(req);
-    const wallets = addressList(b.wallets, 5, 'wallet address');
-    const txs = Math.min(2000, Math.max(100, Number(b.txs) || 600));
-    const delayPct = Math.min(50, Math.max(0, Number.isFinite(Number(b.delayPct)) ? Number(b.delayPct) : 5));
-    const replayExits = b.replayExits !== false;
-    const job = addJob('backtest', { wallets, txs, delayPct, replayExits }, async (progress) => {
-      const conn = makeConnection();
-      const swaps = [];
-      const stats = { read: 0, failed: 0 };
-      for (const [i, w] of wallets.entries()) {
-        swaps.push(
-          ...(await fetchSwaps(
-            conn,
-            w,
-            txs,
-            (n, t) => {
-              if (n % 25 === 0 || n === t) progress(`Wallet ${i + 1}/${wallets.length}: reading transaction ${n} of ${t}`);
-            },
-            { tries: 5, stats },
-          )),
-        );
-      }
-      // Your current settings; wallets you don't copy yet use size ×1 and no budget.
-      const cfg = structuredClone(engine.cfg);
-      for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
-      const opts = { delayPct, feeSol: 0.0002 };
-      let first = runBacktest(swaps, cfg, opts);
-      // Price candles for the tokens we'd have bought, so stop-loss and take-profits can be replayed.
-      const prices = new Map<string, import('./backtest').PriceSeries>();
-      if (replayExits) {
-        const bought = [...new Set(swaps.filter((s) => s.side === 'buy' && first.trades.some((t) => t.mint === s.mint)).map((s) => s.mint))];
-        const stillOpen = new Set(first.open.map((o) => o.mint));
-        for (const [i, mint] of bought.slice(0, 40).entries()) {
-          progress(`Loading price history for exits (${i + 1}/${Math.min(40, bought.length)})…`);
-          const times = swaps.filter((s) => s.mint === mint && s.blockTime).map((s) => s.blockTime! * 1000);
-          const from = Math.min(...times);
-          const to = stillOpen.has(mint) ? Date.now() : Math.max(...times) + 3_600_000;
-          const h = await markets.priceHistory(mint, from, to).catch(() => null);
-          if (h) prices.set(mint, h);
-        }
-        first = runBacktest(swaps, cfg, opts, new Map(), prices);
-      }
-      // Price what would still be held today.
-      const marks = new Map<string, number | null>();
-      for (const [i, o] of first.open.slice(0, 25).entries()) {
-        progress(`Pricing open positions (${i + 1}/${Math.min(25, first.open.length)})…`);
-        const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
-        const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
-        marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
-      }
-      return { ...runBacktest(swaps, cfg, opts, marks, prices), unreadable: stats.failed, read: stats.read, settings: { delayPct, txs, sizing: cfg.buy.sizing, fixedSol: cfg.buy.fixedSol, percentOfTarget: cfg.buy.percentOfTarget, copySells: cfg.sell.copySells } };
+    const spec = backtestSpec(await readBody(req));
+    const job = addJob('backtest', spec.input, async (progress) => {
+      const d = await loadBacktestData(spec, progress, spec.replayExits);
+      return {
+        ...runBacktest(d.swaps, d.cfg, d.opts, d.marks, d.prices),
+        unreadable: d.stats.failed,
+        read: d.stats.read,
+        period: spec.range ? { from: spec.range.from, to: spec.range.to, valuedAtEnd: !!d.opts.endAt } : null,
+        truncated: d.truncated,
+        settings: { delayPct: spec.delayPct, txs: spec.range ? null : spec.txs, sizing: d.cfg.buy.sizing, fixedSol: d.cfg.buy.fixedSol, percentOfTarget: d.cfg.buy.percentOfTarget, copySells: d.cfg.sell.copySells },
+      };
     });
     return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/jobs/optimize') {
+    const spec = backtestSpec(await readBody(req));
+    const job = addJob('optimize', spec.input, async (progress) => {
+      const d = await loadBacktestData(spec, progress, true, true);
+      progress('Comparing exit settings…');
+      const o = optimizeExits(d.swaps, d.cfg, d.opts, d.marks, d.prices);
+      return { ...o, unreadable: d.stats.failed, read: d.stats.read, period: spec.range, truncated: d.truncated, priced: { tokens: d.bought, withPrices: d.prices.size }, delayPct: spec.delayPct };
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/strategy') {
+    const s = strategyById((await readBody(req)).id);
+    if (!s) throw new HttpError(400, 'Unknown strategy');
+    const next = applyStrategy(engine.cfg, s);
+    next.strategy = s.id;
+    let clean;
+    try {
+      clean = sanitizeConfig(next, true);
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    const restarted = await applyChange(() => saveConfig(clean));
+    engine.log(`Strategy changed to ${s.name}.`, 'system');
+    return send(res, 200, { ok: true, restarted, config: engine.cfg });
+  }
+
+  if (route === 'POST /api/jobs/health') {
+    const b = await readBody(req);
+    const wallets = engine.cfg.wallets.slice(0, 15);
+    if (!wallets.length) throw new HttpError(400, 'Add wallets to copy first.');
+    if (jobs.some((j) => j.kind === 'health' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A wallet check is already running.');
+    const delayPct = Number.isFinite(Number(b.delayPct)) ? Math.min(50, Math.max(0, Number(b.delayPct))) : measuredCopyGap() ?? 5;
+    const base = backtestSpec({ wallets: [wallets[0].address], from: b.from ?? Date.now() - 7 * 86_400_000, to: b.to ?? Date.now(), delayPct });
+    const job = addJob('health', { wallets: wallets.map((w) => w.address), from: base.range!.from, to: base.range!.to, delayPct }, async (progress) => {
+      const rows: HealthRow[] = [];
+      for (const [i, w] of wallets.entries()) {
+        // A quick check: the latest 1,500 transactions in the period are plenty to judge a wallet.
+        const spec = { ...base, wallets: [w.address], txs: 1500, input: {} };
+        const d = await loadBacktestData(spec, (p) => progress(`Wallet ${i + 1}/${wallets.length} (${w.label}): ${p.replace(/^Wallet 1\/1: /, '')}`), true);
+        // The wallet's own settings, as it trades today (its strategy, exits and size).
+        d.cfg.wallets = d.cfg.wallets.map((x) => (x.address === w.address ? { ...x, enabled: true } : x));
+        const r = runBacktest(d.swaps, d.cfg, d.opts, d.marks, d.prices);
+        const copied = r.trades.filter((t) => t.side === 'buy').length;
+        rows.push({ address: w.address, label: w.label, verdict: healthVerdict({ copied, closed: r.closed, totalSol: r.totalSol, read: d.stats.read, unreadable: d.stats.failed }), totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, copied, unreadable: d.stats.failed, coveredFrom: d.truncated[0]?.oldestMs ?? null });
+      }
+      lastHealth = { at: Date.now(), period: base.range!, delayPct, wallets: rows };
+      fs.mkdirSync('data', { recursive: true });
+      fs.writeFileSync(HEALTH_FILE, JSON.stringify(lastHealth));
+      broadcast('health', lastHealth);
+      return lastHealth;
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/jobs/compare') {
+    const spec = backtestSpec({ ...(await readBody(req)), strategy: null });
+    const job = addJob('compare', spec.input, async (progress) => {
+      const d = await loadBacktestData(spec, progress, true, true);
+      progress('Comparing strategies…');
+      const c = compareStrategies(d.swaps, d.cfg, d.opts, d.marks, d.prices);
+      return { ...c, unreadable: d.stats.failed, read: d.stats.read, period: spec.range, truncated: d.truncated, priced: { tokens: d.bought, withPrices: d.prices.size }, delayPct: spec.delayPct };
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/apply-exits') {
+    const b = await readBody(req);
+    const job = jobs.find((j) => j.id === Number(b.jobId) && j.kind === 'optimize' && j.status === 'done');
+    if (!job) throw new HttpError(404, 'That comparison is no longer available. Run it again.');
+    const pick = (job.result as any).results.find((r: any) => r.setup.id === b.setupId);
+    if (!pick) throw new HttpError(400, 'Unknown setting');
+    const next = structuredClone(engine.cfg);
+    next.risk.stopLossPct = pick.setup.stopLossPct;
+    next.risk.takeProfitPct = pick.setup.takeProfitPct;
+    next.exits = { ...pick.setup.exits };
+    const clean = sanitizeConfig(next, true);
+    const restarted = await applyChange(() => saveConfig(clean));
+    engine.log(`Exit settings changed to: ${pick.setup.name}`, 'system');
+    return send(res, 200, { ok: true, restarted, config: engine.cfg });
   }
 
   if (route === 'POST /api/jobs/scout') {

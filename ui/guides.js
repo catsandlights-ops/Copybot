@@ -10,6 +10,39 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'whats-new-07', cat: 'news', mins: 4, title: "What's new in Copybot 0.7",
+    teaser: 'Ready-made strategies, smarter wallet picking, a wallet check-up, better backtests and a profit chart.',
+    body: `
+<p>Copybot 0.7 is about trading smarter: picking better wallets, trading them the right way, and knowing which ones to drop.</p>
+<h3>Strategies</h3>
+<ul>
+<li><b>Five ready-made strategies</b> on the new <b>Strategies</b> page: Balanced, Sniper, Whale follower, Momentum and Conservative. Each shows exactly which settings it changes before you switch, and never touches your SOL per buy, limits or safety checks.</li>
+<li><b>A strategy per wallet:</b> press <b>Strategy</b> next to a wallet to give it its own, like Sniper for a fast flipper and Whale follower for a patient big buyer.</li>
+<li><b>Compare strategies:</b> replay the wallets you copy with all five side by side and use the winner. If every strategy loses money, Copybot tells you the wallet is the problem.</li>
+</ul>
+<h3>Picking and keeping good wallets</h3>
+<ul>
+<li><b>Check my wallets</b> (Wallets page): backtests each wallet you copy on its own and marks it <i>worth keeping</i>, <i>losing you money</i> or <i>too few trades</i>, with one-click pause.</li>
+<li><b>The wallet scout looks wider:</b> trending, new and top-volume tokens, different coins each search, and wallets that <b>caught a move</b> on busy tokens.</li>
+<li><b>The scout backtests before it picks:</b> a wallet is only picked if copying it with <i>your</i> settings would have made money, and it suggests a strategy for each pick.</li>
+<li><b>Trial period:</b> new wallets start at ¼ size and grow as they make you money. Any wallet pauses after 5 losing copies in a row (Settings → New wallets).</li>
+</ul>
+<h3>Better backtests</h3>
+<ul>
+<li><b>Backtest by date:</b> the last 24 hours, 3, 7 or 30 days, or your own dates.</li>
+<li><b>Find my best settings:</b> compares 16 stop-loss and take-profit setups on the same trades.</li>
+<li>Backtests now also replay <b>minimum token age</b> and <b>crash protection</b>.</li>
+<li><b>Much faster:</b> wallet history is saved on your computer, so checking the same wallet again only downloads what's new.</li>
+</ul>
+<h3>Also new</h3>
+<ul>
+<li><b>One-press paper experiment:</b> press <b>Start bot</b> with no wallets in paper mode and Copybot picks 3 traders who just caught moves on different tokens, and starts copying them with a pretend <b>10 SOL paper wallet</b>. Nothing is spent.</li>
+<li><b>Paper wallet:</b> the Dashboard shows your paper balance; paper buys stop when it runs out, and <b>Reset</b> starts a fresh experiment (old results are kept in the data folder).</li>
+<li><b>Profit chart</b> on the Dashboard: your real results over 24 hours, 7 days, 30 days or all time.</li>
+</ul>
+<p class="tip">Start with <b>Check my wallets</b>. If a wallet is losing you money, no strategy will fix it: pause it and let the scout find a better one.</p>`,
+  },
+  {
     id: 'whats-new-06', cat: 'news', mins: 4, title: "What's new in Copybot 0.6",
     teaser: 'The wallet scout, backtesting, rug protection, phone alerts, faster trades and much more.',
     body: `
@@ -82,7 +115,7 @@ window.GUIDES = [
 <li><b>Add a fast connection.</b> Settings → Connection → paste a free Helius RPC link. See <a href="#" data-guide="rpc">Connect a fast RPC</a>. The free public connection misses trades.</li>
 <li><b>Find wallets worth copying.</b> Use <b>Find wallets</b> or the top traders in <b>Markets</b>, then check each one's record with <b>Analyze</b>. See <a href="#" data-guide="finding-wallets">Finding wallets worth copying</a>.</li>
 <li><b>Add 2–3 wallets</b> on the Wallets page. Spreading across a few traders means one bad week doesn't sink you.</li>
-<li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices but never spends money.</li>
+<li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices, using a pretend 10 SOL wallet, and never spends money. No wallets yet? Press Start anyway and Copybot picks a few active traders for a quick experiment.</li>
 <li><b>Review after a few days.</b> The Wallets scoreboard shows which wallets actually made <i>you</i> money. Pause the ones that didn't.</li>
 </ol>
 <p class="tip">Only go live after paper mode has been profitable for a while, and only with money you can afford to lose. See <a href="#" data-guide="going-live">Going live safely</a>.</p>`,
