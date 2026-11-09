@@ -323,7 +323,7 @@ export class BotEngine extends EventEmitter {
         const why = await new Promise<string | null>((resolve) => {
           this.enqueue(async () => resolve(await this.orderBuyNow(o.mint, act.buySol).catch((e) => (e as Error).message)));
         });
-        if (why) this.log(`  skipped: ${why}`, 'skip');
+        if (why) this.log(`  skipped: ${plainSkip(why)}`, 'skip');
         replace(afterAttempt(o, !why, why ?? `bought ${act.buySol} SOL`, Date.now()));
       } else if ('sellFraction' in act) {
         const pnl = await new Promise<number | null>((resolve) => {
@@ -838,7 +838,7 @@ export class BotEngine extends EventEmitter {
     return new Promise((resolve) => {
       this.enqueue(async () => {
         const out = await this.scannerBuyNow(sig).catch((e) => (e as Error).message);
-        if (out) this.log(`  skipped: ${out}`, 'skip');
+        if (out) this.log(`  skipped: ${plainSkip(out)}`, 'skip');
         resolve(out);
       });
     });
