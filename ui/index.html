@@ -1065,12 +1065,12 @@ function renderJobs() { const el = $('#jobs'); if (el) { el.innerHTML = jobsHtml
 function jobsHtml() {
   if (!S.jobs.length) return '<div class="empty">Results from discovery and analysis show up here.</div>';
   return S.jobs.map((j) => {
-    const title = j.kind === 'optimize' ? `Best settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
+    const title = j.kind === 'compare' ? `Strategies compared · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'optimize' ? `Best settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'backtest' ? `Backtest · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : j.kind === 'scout' ? `Wallet scout${j.input.auto ? ' (automatic)' : ''}` : j.kind === 'analyze' ? `Track record · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}` : `Early buyers · ${j.input.mints.length} token${j.input.mints.length > 1 ? 's' : ''}`;
     const head = `<div class="job-h">${j.status === 'running' || j.status === 'queued' ? '<span class="spinner"></span>' : j.status === 'error' ? '<span class="dot bad"></span>' : '<span class="dot ok"></span>'}
       <b style="font-weight:600">${title}</b><span class="muted" style="font-size:12.5px">${esc(j.status === 'error' ? j.error : j.progress)}</span><span class="spacer" style="flex:1"></span><span class="muted" style="font-size:12px">${time(j.createdAt)}</span></div>`;
     if (j.status !== 'done') return `<div class="job">${head}</div>`;
     if (j.kind === 'scout') return `<div class="job">${head}<div class="muted" style="padding:0 18px 12px;font-size:13px">Results are shown in the Wallet scout card above.</div></div>`;
-    if (j.kind === 'backtest' || j.kind === 'optimize') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the results →</a></div></div>`;
+    if (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare') return `<div class="job">${head}<div style="padding:0 18px 12px"><a href="#" data-bt-open="${j.id}">See the results →</a></div></div>`;
     return `<div class="job">${head}${j.kind === 'analyze' ? analyzeTable(j.result) : discoverTable(j.result)}</div>`;
   }).join('');
 }
@@ -1148,16 +1148,49 @@ function renderStrategies(el) {
     <div class="card" style="margin-bottom:16px"><div class="card-b row" style="justify-content:space-between;gap:12px">
       <div><div style="font-size:17px;font-weight:650">Your strategy: ${act ? esc(list.find((s) => s.id === act).name) : lastS ? `${esc(lastS.name)} <span class="tag paper">modified</span>` : 'Custom'}</div>
         <div class="muted" style="font-size:13px;margin-top:4px">A strategy sets how Copybot trades: which buys to copy, which tokens to skip, and when to sell. It never changes your SOL per buy, your limits or the safety checks.${act ? '' : ' Your settings don\'t match a preset exactly, so you\'re on your own mix.'}</div></div>
-      <button class="btn ghost" onclick="go('settings')">Fine-tune in Settings</button>
+      <div class="row" style="gap:8px"><button class="btn primary" id="st-compare">Compare on my wallets</button><button class="btn ghost" onclick="go('settings')">Fine-tune in Settings</button></div>
     </div></div>
     <div class="strat-grid">${list.map(card).join('')}</div>
-    <div class="banner info" style="margin-top:16px"><div><b>Not sure?</b> Press <b>Backtest it</b> on two or three strategies: each one replays the wallets you copy over the last 7 days, so you can compare before switching.</div></div>`;
+    <div class="banner info" style="margin-top:16px"><div><b>Not sure?</b> Press <b>Compare on my wallets</b>: it replays the wallets you copy with every strategy over your chosen period (last 7 days by default) and ranks them.</div></div>`;
+  $('#st-compare').onclick = () => {
+    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    if (!wallets.length) return toast('Add wallets to copy first, or compare any wallets from the Backtest page', true);
+    startCompare(wallets);
+  };
   el.querySelectorAll('[data-use-strat]').forEach((b) => (b.onclick = () => useStrategy(b.dataset.useStrat)));
   el.querySelectorAll('[data-bt-strat]').forEach((b) => (b.onclick = () => {
     const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
     if (!wallets.length) return toast('Add wallets to copy first, or run a backtest with any wallets on the Backtest page', true);
     startBacktest(wallets, null, S.btDelay ?? 5, b.dataset.btStrat);
   }));
+}
+async function startCompare(wallets) {
+  const j = await act(() => api('POST', '/api/jobs/compare', { wallets, ...btPeriodBody(), delayPct: S.btDelay ?? 5 }));
+  if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); go('backtest'); }
+}
+function compareResult(j) {
+  const o = j.result, cur = o.current, best = o.best, list = S.strategies || [];
+  const nameOf = (r) => (r.id === 'current' ? `Your current settings${o.currentIs ? ` (${esc(list.find((s) => s.id === o.currentIs)?.name || '')})` : ''}` : esc(r.name));
+  const row = (r, i) => `<tr${r.id === 'current' ? ' style="background:var(--panel-2)"' : ''}><td class="muted num">${i + 1}</td>
+    <td><b>${nameOf(r)}</b>${r.id === 'current' ? ' <span class="tag paper">now</span>' : ` <span class="muted" style="font-size:12px">${esc(list.find((s) => s.id === r.id)?.risk || '')} risk</span>`}</td>
+    ${r.copied === 0 ? `<td colspan="6" class="muted" style="font-size:12.5px">No trades: ${r.id === 'current' ? 'your settings' : 'this strategy'} would have skipped every buy (e.g. their buys were under its minimum size).</td>` : `
+    <td class="r num ${cls(r.totalSol)}">${signed(r.totalSol, 3)}</td><td class="r num ${cls(r.roiPct)}">${r.roiPct != null ? pct(r.roiPct) : '—'}</td>
+    <td class="r num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '—'}</td><td class="r num ${r.maxDrawdownSol > 0 ? 'neg' : ''}">${r.maxDrawdownSol > 0 ? '−' + sol(r.maxDrawdownSol, 3) : '0'}</td>
+    <td class="r num muted">${r.copied}</td><td class="r num muted">${r.closed}</td>`}
+    <td class="r">${r.id === 'current' ? '' : `<button class="btn sm ${i === 0 && r.copied ? 'primary' : ''}" data-use-strat="${esc(r.id)}">Use</button>`}</td></tr>`;
+  const verdict = {
+    better: `<div class="banner info"><div><b>${nameOf(best)}</b> would have made <b class="pos">${signed(best.totalSol, 3)} SOL</b>, against <b class="${cls(cur.totalSol)}">${signed(cur.totalSol, 3)} SOL</b> with your current settings.</div><button class="btn sm primary" data-use-strat="${esc(best.id)}">Use ${esc(best.name)}</button></div>`,
+    small: `<div class="banner warn"><div><b>No clear winner.</b> ${nameOf(best)} beat your current settings by only ${sol(best.totalSol - cur.totalSol, 3)} SOL, which could be luck in this period. Try a longer period to be sure.</div></div>`,
+    current: `<div class="banner info"><div><b>Your current settings did best</b> on these wallets and dates.</div></div>`,
+    'all-lose': `<div class="banner danger"><div><b>Every strategy lost money on ${j.input.wallets.length > 1 ? 'these wallets' : 'this wallet'}</b> in this period (the best lost ${sol(-best.totalSol, 3)} SOL). That points to the wallet${j.input.wallets.length > 1 ? 's' : ''}, not your settings: no exit strategy fixes copying a losing trader. Consider pausing ${j.input.wallets.length > 1 ? 'them' : 'it'} or finding better wallets.</div></div>`,
+    'few-trades': `<div class="banner warn"><div><b>Too few trades to trust the ranking</b> (${Math.max(cur.closed, best.closed)} at most). Try a longer period or more wallets.</div></div>`,
+  }[o.verdict];
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Strategies compared · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${o.period ? ` · ${dateFmt(o.period.from)} to ${dateFmt(o.period.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">The same copied trades, replayed with each strategy and a ${o.delayPct}% copy-delay cost. Price history was found for ${o.priced.withPrices} of ${o.priced.tokens} tokens.</div></div></div></div>
+    ${verdict}
+    <div class="card" style="margin-bottom:16px"><div class="tbl-wrap"><table><thead><tr><th>#</th><th>Strategy</th><th class="r">Profit (SOL)</th><th class="r">Return</th><th class="r">Win rate</th><th class="r">Worst dip</th><th class="r">Buys</th><th class="r">Sells</th><th></th></tr></thead><tbody>${o.results.map(row).join('')}</tbody></table></div></div>
+    ${o.unreadable ? `<div class="banner warn"><div><b>${o.unreadable} of ${o.read} transactions couldn't be read</b>, so the comparison is less certain. A private RPC fixes this.</div></div>` : ''}
+    <div class="banner info"><div><b>What's compared.</b> Each strategy's minimum buy size, stop-loss, take-profits and trailing stop are replayed on the same trades. Its token filters (liquidity, token age, holders), "don't chase" and rug protection can't be: there's no record of those numbers at each past moment, so in real trading the stricter strategies will also skip some of these tokens. Past results don't predict future ones.</div></div>`;
 }
 async function useStrategy(id) {
   const s = S.strategies.find((x) => x.id === id);
@@ -1260,6 +1293,7 @@ function optResult(j) {
     better: `<div class="banner info"><div><b>${esc(best.setup.name)}</b> would have made <b class="pos">${signed(best.totalSol, 3)} SOL</b>, against <b class="${cls(cur.totalSol)}">${signed(cur.totalSol, 3)} SOL</b> with your current settings.</div><button class="btn sm primary" data-apply-setup="${esc(best.setup.id)}" data-job="${j.id}">Use these settings</button></div>`,
     small: `<div class="banner warn"><div><b>No clear winner.</b> The best setup beat your current settings by only ${sol(best.totalSol - cur.totalSol, 3)} SOL, which could just be luck in this period. Keeping your settings is reasonable; try a longer period to be sure.</div></div>`,
     current: `<div class="banner info"><div><b>Your current settings were the best</b> of the 16 compared for this period.</div></div>`,
+    'all-lose': `<div class="banner danger"><div><b>Every exit setup lost money</b> on ${j.input.wallets.length > 1 ? 'these wallets' : 'this wallet'} in this period (the best lost ${sol(-best.totalSol, 3)} SOL). Changing exits won't fix it: the problem is the wallet${j.input.wallets.length > 1 ? 's' : ''} you're copying.</div></div>`,
     'few-trades': `<div class="banner warn"><div><b>Only ${cur.closed} trade${cur.closed === 1 ? '' : 's'} to compare on</b>, too few to trust the ranking. Try a longer period or more wallets.</div></div>`,
   }[o.verdict];
   return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Best exit settings · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''}${o.period ? ` · ${dateFmt(o.period.from)} to ${dateFmt(o.period.to)}` : ''}</h2>
@@ -1270,7 +1304,7 @@ function optResult(j) {
     <div class="banner info"><div><b>How to read this.</b> Each row replays exactly the same copied trades; only the stop-loss, take-profits and trailing stop change. The best setup for the past isn't guaranteed to be the best next week, so prefer a clear winner over a longer period.</div></div>`;
 }
 function renderBacktest(el) {
-  const list = S.jobs.filter((j) => j.kind === 'backtest' || j.kind === 'optimize');
+  const list = S.jobs.filter((j) => j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare');
   const j = list.find((x) => x.id === S.btJob) || list[0];
   const mine = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
   el.innerHTML = `
@@ -1279,18 +1313,20 @@ function renderBacktest(el) {
         <div class="stack"><textarea class="input mono" id="bt-wallets" rows="4" placeholder="Wallet addresses, one per line (up to 5)">${esc(S.btWallets || '')}</textarea>
           <div class="row"><button class="btn sm ghost" id="bt-mine" ${mine.length ? '' : 'disabled'}>Use the wallets I copy</button></div></div>
         <div class="stack">
+          <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Strategy <select class="input" id="bt-strat" style="width:auto;height:32px"><option value="">My current settings</option>${(S.strategies || []).map((s) => `<option value="${esc(s.id)}" ${S.btStrat === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
           <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Period <select class="input" id="bt-period" style="width:auto;height:32px">${BT_PERIODS.map(([v, l]) => `<option value="${v}" ${(S.btPeriod || '7d') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <div class="row muted" id="bt-dates" style="gap:8px;font-size:13px;justify-content:space-between;display:${S.btPeriod === 'custom' ? 'flex' : 'none'}">From <input class="input" type="date" id="bt-from" style="width:auto;height:32px" min="${isoDay(Date.now() - 180 * 864e5)}" max="${isoDay(Date.now())}" value="${S.btFrom || isoDay(Date.now() - 7 * 864e5)}"> to <input class="input" type="date" id="bt-to" style="width:auto;height:32px" min="${isoDay(Date.now() - 180 * 864e5)}" max="${isoDay(Date.now())}" value="${S.btTo || isoDay(Date.now())}"></div>
           <label class="row muted" id="bt-txs-row" style="gap:8px;font-size:13px;justify-content:space-between;display:${S.btPeriod === 'txs' ? 'flex' : 'none'}">History <select class="input" id="bt-txs" style="width:auto;height:32px">${[300, 600, 1000, 2000].map((n) => `<option value="${n}" ${(S.btTxs || 600) === n ? 'selected' : ''}>last ${n} transactions</option>`).join('')}</select></label>
           <label class="row muted" style="gap:8px;font-size:13px;justify-content:space-between">Copy-delay cost <span class="with-unit" style="width:120px"><input type="number" id="bt-delay" min="0" max="50" step="0.5" value="${S.btDelay ?? 5}"><span>%</span></span></label>
           <div class="muted" style="font-size:12px">How much worse your price is than theirs because you trade a few seconds later. 3–10% is typical on meme coins.${(() => { const g = measuredGap(); return g.n >= 5 ? ` <b>Your measured gap: ${g.median.toFixed(1)}%</b> over ${g.n} trades. <a href="#" id="bt-use-gap">Use it</a>` : ''; })()}</div>
           <label class="muted" style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer"><input type="checkbox" id="bt-exits" style="flex:none;margin-top:3px" ${S.btExits === false ? '' : 'checked'}><span>Replay my stop-loss and take-profits (slower: loads price history, ~5 s per token)</span></label>
-          <div class="row" style="gap:8px"><button class="btn primary" id="bt-go" style="flex:1">Run backtest</button><button class="btn" id="bt-opt" style="flex:1" title="Compare 16 exit setups on the same wallets and period">Find my best settings</button></div>
+          <button class="btn primary" id="bt-go">Run backtest</button>
+          <div class="row" style="gap:8px"><button class="btn" id="bt-cmp" style="flex:1" title="Replay the same trades with all 5 strategies and your current settings">Compare strategies</button><button class="btn" id="bt-opt" style="flex:1" title="Compare 16 exit setups on the same wallets and period">Find my best settings</button></div>
         </div>
       </div></div>
-    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.kind === 'optimize' ? 'Best settings · ' : x.input.strategy ? `${esc((S.strategies || []).find((s) => s.id === x.input.strategy)?.name || '')} · ` : ''}${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
+    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.kind === 'optimize' ? 'Best settings · ' : x.kind === 'compare' ? 'Strategies · ' : x.input.strategy ? `${esc((S.strategies || []).find((s) => s.id === x.input.strategy)?.name || '')} · ` : ''}${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
     ${!j ? `<div class="card"><div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No backtests yet</h3>Enter wallets above, or press <b>Backtest</b> next to any wallet on the Wallets or Find wallets pages.</div></div>`
-      : j.status === 'done' ? (j.kind === 'optimize' ? optResult(j) : btResult(j))
+      : j.status === 'done' ? (j.kind === 'optimize' ? optResult(j) : j.kind === 'compare' ? compareResult(j) : btResult(j))
       : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
       : `<div class="card"><div class="empty"><span class="spinner"></span><h3 style="margin-top:12px">Running the backtest…</h3>${esc(j.progress)}</div></div>`}`;
   $('#bt-period').onchange = (e) => {
@@ -1301,6 +1337,13 @@ function renderBacktest(el) {
   const ug = $('#bt-use-gap');
   if (ug) ug.onclick = (e) => { e.preventDefault(); $('#bt-delay').value = Math.max(0, +measuredGap().median.toFixed(1)); };
   $('#bt-mine').onclick = () => { $('#bt-wallets').value = mine.join('\n'); };
+  $('#bt-cmp').onclick = () => {
+    const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
+    S.btDelay = Number($('#bt-delay').value); S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value; S.btTxs = Number($('#bt-txs').value);
+    if (S.btPeriod === 'custom' && S.btFrom > S.btTo) return toast('The start date must be before the end date', true);
+    startCompare(wallets);
+  };
+  el.querySelectorAll('[data-use-strat]').forEach((b) => (b.onclick = () => useStrategy(b.dataset.useStrat)));
   $('#bt-opt').onclick = async () => {
     const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     S.btDelay = Number($('#bt-delay').value); S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value; S.btTxs = Number($('#bt-txs').value);
@@ -1317,9 +1360,9 @@ function renderBacktest(el) {
   $('#bt-go').onclick = () => {
     const wallets = $('#bt-wallets').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     S.btTxs = Number($('#bt-txs').value); S.btDelay = Number($('#bt-delay').value); S.btExits = $('#bt-exits').checked;
-    S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value;
+    S.btPeriod = $('#bt-period').value; S.btFrom = $('#bt-from').value; S.btTo = $('#bt-to').value; S.btStrat = $('#bt-strat').value;
     if (S.btPeriod === 'custom' && S.btFrom > S.btTo) return toast('The start date must be before the end date', true);
-    startBacktest(wallets, S.btTxs, S.btDelay);
+    startBacktest(wallets, S.btTxs, S.btDelay, S.btStrat || undefined);
   };
   el.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.add, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list')));
 }
@@ -1994,7 +2037,7 @@ function connectEvents() {
     const j = JSON.parse(e.data);
     upsertJob(j);
     if (S.page === 'research') { if (j.kind === 'scout') render(); else renderJobs(); }
-    if (S.page === 'backtest' && (j.kind === 'backtest' || j.kind === 'optimize')) render();
+    if (S.page === 'backtest' && (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare')) render();
     if (S.page === 'autopilot' && j.kind === 'scout') renderAutopilot($('#content'), true);
   });
   es.onerror = () => { $('#run-pill').innerHTML = '<span class="pill"><span class="dot bad"></span>Disconnected</span>'; };

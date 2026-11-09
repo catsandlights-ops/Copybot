@@ -4,6 +4,8 @@
  * limit, reserve) or the safety checks; it only changes HOW the bot trades.
  */
 import type { Config } from './config';
+import { BacktestOpts, PriceSeries, runBacktest } from './backtest';
+import type { Swap } from './decode';
 
 type Patch = {
   buy?: Partial<Pick<Config['buy'], 'minTargetBuySol'>>;
@@ -119,3 +121,30 @@ export function strategyChanges(cfg: Config, s: Strategy): [string, unknown, unk
 
 /** Which strategy the current settings match exactly, if any. */
 export const activeStrategy = (cfg: Config) => STRATEGIES.find((s) => strategyChanges(cfg, s).length === 0)?.id ?? null;
+
+// ---------------- comparing strategies on the same history ----------------
+
+export type StrategyResult = { id: string; name: string; totalSol: number; roiPct: number | null; closed: number; wins: number; maxDrawdownSol: number; spentSol: number; copied: number };
+export type CompareResult = { results: StrategyResult[]; best: StrategyResult; current: StrategyResult; currentIs: string | null; verdict: 'better' | 'small' | 'current' | 'few-trades' | 'all-lose' };
+
+/**
+ * Replay the same swaps with the user's current settings and with every strategy.
+ * Per-wallet exit overrides are left out so the strategies' own exits are compared.
+ */
+export function compareStrategies(swaps: Swap[], cfg: Config, opts: BacktestOpts, marks: Map<string, number | null>, prices: Map<string, PriceSeries>): CompareResult {
+  const base = { ...structuredClone(cfg), wallets: cfg.wallets.map(({ exits: _x, ...w }) => w) };
+  const run = (id: string, name: string, c: Config): StrategyResult => {
+    const r = runBacktest(swaps, c, opts, marks, prices);
+    return { id, name, totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, maxDrawdownSol: r.maxDrawdownSol, spentSol: r.spentSol, copied: r.trades.filter((t) => t.side === 'buy').length };
+  };
+  const currentIs = activeStrategy(cfg);
+  const results = [run('current', 'Your current settings', base), ...STRATEGIES.filter((s) => s.id !== currentIs).map((s) => run(s.id, s.name, applyStrategy(base, s)))];
+  // A strategy that would have made no trades isn't a winner, it just sat out: rank those last.
+  results.sort((a, b) => Number(a.copied === 0) - Number(b.copied === 0) || b.totalSol - a.totalSol || a.maxDrawdownSol - b.maxDrawdownSol);
+  const best = results[0];
+  const current = results.find((r) => r.id === 'current')!;
+  const margin = best.totalSol - current.totalSol;
+  const verdict: CompareResult['verdict'] =
+    best.copied > 0 && best.totalSol <= 0 ? 'all-lose' : best.id === 'current' ? 'current' : Math.max(current.closed, best.closed) < 10 ? 'few-trades' : margin < Math.max(0.01, Math.max(current.spentSol, best.spentSol) * 0.1) ? 'small' : 'better';
+  return { results, best, current, currentIs, verdict };
+}

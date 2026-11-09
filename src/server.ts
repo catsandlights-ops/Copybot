@@ -28,7 +28,7 @@ import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
 import { optimizeExits } from './optimize';
-import { applyStrategy, STRATEGIES, strategyById } from './strategies';
+import { applyStrategy, compareStrategies, STRATEGIES, strategyById } from './strategies';
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
@@ -148,7 +148,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize';
+  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -161,13 +161,13 @@ const jobs: Job[] = [];
 const BACKTESTS_FILE = 'data/backtests.json';
 try {
   const saved = JSON.parse(fs.readFileSync(BACKTESTS_FILE, 'utf8'));
-  if (Array.isArray(saved)) jobs.push(...saved.filter((j) => (j?.kind === 'backtest' || j?.kind === 'optimize') && j.status === 'done').slice(0, 12));
+  if (Array.isArray(saved)) jobs.push(...saved.filter((j) => (j?.kind === 'backtest' || j?.kind === 'optimize' || j?.kind === 'compare') && j.status === 'done').slice(0, 12));
 } catch {
   /* none yet */
 }
 function saveBacktests() {
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(BACKTESTS_FILE, JSON.stringify(jobs.filter((j) => (j.kind === 'backtest' || j.kind === 'optimize') && j.status === 'done').slice(0, 12)));
+  fs.writeFileSync(BACKTESTS_FILE, JSON.stringify(jobs.filter((j) => (j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare') && j.status === 'done').slice(0, 12)));
 }
 let jobSeq = jobs.reduce((a, j) => Math.max(a, j.id), 0);
 let jobChain: Promise<void> = Promise.resolve();
@@ -177,7 +177,7 @@ function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) =
   const job: Job = { id: ++jobSeq, kind, status: 'queued', progress: 'Waiting…', input, createdAt: Date.now() };
   jobs.unshift(job);
   // Keep the list short, but never drop a saved backtest just because other jobs ran.
-  while (jobs.length > 20) jobs.splice(jobs.map((j) => j.kind === 'backtest' || j.kind === 'optimize').lastIndexOf(false), 1);
+  while (jobs.length > 20) jobs.splice(jobs.map((j) => j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare').lastIndexOf(false), 1);
   const progress = (p: string) => {
     job.progress = p;
     broadcast('job', job);
@@ -189,7 +189,7 @@ function addJob(kind: Job['kind'], input: unknown, run: (progress: (p: string) =
     try {
       job.result = await run(progress);
       job.status = 'done';
-      if (job.kind === 'backtest' || job.kind === 'optimize') saveBacktests();
+      if (job.kind === 'backtest' || job.kind === 'optimize' || job.kind === 'compare') saveBacktests();
       progress('Done');
     } catch (e) {
       job.status = 'error';
@@ -667,7 +667,10 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
   const opts = { delayPct: spec.delayPct, feeSol: 0.0002, endAt: spec.endAt };
   // "Follow their sells only" leaves the most positions open, so it shows every token that might need a price.
-  const probeCfg = widestOpen ? { ...structuredClone(cfg), exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 }, risk: { ...cfg.risk, stopLossPct: 100, takeProfitPct: 0 } } : cfg;
+  // (and with no minimum buy size, so it also sees every token any strategy could buy).
+  const probeCfg = widestOpen
+    ? { ...structuredClone(cfg), buy: { ...cfg.buy, minTargetBuySol: 0 }, exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 }, risk: { ...cfg.risk, stopLossPct: 100, takeProfitPct: 0 } }
+    : cfg;
   const probe = runBacktest(swaps, probeCfg, opts);
   const stillOpen = new Set(probe.open.map((o) => o.mint));
   const bought = [...new Set(swaps.filter((s) => s.side === 'buy' && probe.trades.some((t) => t.mint === s.mint)).map((s) => s.mint))];
@@ -1079,6 +1082,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const restarted = await applyChange(() => saveConfig(clean));
     engine.log(`Strategy changed to ${s.name}.`, 'system');
     return send(res, 200, { ok: true, restarted, config: engine.cfg });
+  }
+
+  if (route === 'POST /api/jobs/compare') {
+    const spec = backtestSpec({ ...(await readBody(req)), strategy: null });
+    const job = addJob('compare', spec.input, async (progress) => {
+      const d = await loadBacktestData(spec, progress, true, true);
+      progress('Comparing strategies…');
+      const c = compareStrategies(d.swaps, d.cfg, d.opts, d.marks, d.prices);
+      return { ...c, unreadable: d.stats.failed, read: d.stats.read, period: spec.range, truncated: d.truncated, priced: { tokens: d.bought, withPrices: d.prices.size }, delayPct: spec.delayPct };
+    });
+    return send(res, 200, job);
   }
 
   if (route === 'POST /api/apply-exits') {

@@ -33,7 +33,7 @@ Mac and Linux: build from source (see [Building it yourself](#building-it-yourse
 - **Wallet scoreboard:** your own profit, win rate and number of trades from each wallet you copy, with a "losing money" flag.
 
 ### Strategies
-Five ready-made trading styles on the **Strategies** page: **Balanced** (the defaults), **Sniper** (early, small, fast profits, tight stops), **Whale follower** (only big buys, ride winners longer), **Momentum** (tokens already moving, profits in steps) and **Conservative** (strict filters, tight stop, cost back early). Each shows exactly which settings it changes before you switch, can be backtested on your wallets first, and never changes your SOL per buy, limits, wallets or safety checks.
+Five ready-made trading styles on the **Strategies** page: **Balanced** (the defaults), **Sniper** (early, small, fast profits, tight stops), **Whale follower** (only big buys, ride winners longer), **Momentum** (tokens already moving, profits in steps) and **Conservative** (strict filters, tight stop, cost back early). Each shows exactly which settings it changes before you switch, and never changes your SOL per buy, limits, wallets or safety checks. On the Backtest page you can run a backtest with any strategy, or **Compare strategies** to replay the same trades with all five plus your current settings, ranked (buy-size rules and all exits are replayed; token filters and rug protection can't be, as there's no historical record of them).
 
 ### Exits and risk
 - **Staged exits:** take your cost back at 2x, take profit at +300% and +900%, and a **trailing stop** protects the rest.

@@ -24,7 +24,7 @@ export function exitSetups(current: Config): ExitSetup[] {
 }
 
 export type SetupResult = { setup: ExitSetup; totalSol: number; roiPct: number | null; closed: number; wins: number; maxDrawdownSol: number; spentSol: number };
-export type OptimizeResult = { results: SetupResult[]; best: SetupResult; current: SetupResult; verdict: 'better' | 'small' | 'current' | 'few-trades' };
+export type OptimizeResult = { results: SetupResult[]; best: SetupResult; current: SetupResult; verdict: 'better' | 'small' | 'current' | 'few-trades' | 'all-lose' };
 
 /** Replay every setup; rank by total profit. Ties go to the one with the smaller worst dip. */
 export function optimizeExits(swaps: Swap[], cfg: Config, opts: BacktestOpts, marks: Map<string, number | null>, prices: Map<string, PriceSeries>): OptimizeResult {
@@ -43,6 +43,6 @@ export function optimizeExits(swaps: Swap[], cfg: Config, opts: BacktestOpts, ma
   const current = results.find((r) => r.setup.id === 'current')!;
   const margin = best.totalSol - current.totalSol;
   const verdict: OptimizeResult['verdict'] =
-    best.setup.id === 'current' ? 'current' : current.closed < 10 ? 'few-trades' : margin < Math.max(0.01, current.spentSol * 0.1) ? 'small' : 'better';
+    best.closed > 0 && best.totalSol <= 0 ? 'all-lose' : best.setup.id === 'current' ? 'current' : current.closed < 10 ? 'few-trades' : margin < Math.max(0.01, current.spentSol * 0.1) ? 'small' : 'better';
   return { results, best, current, verdict };
 }
