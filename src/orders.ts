@@ -8,6 +8,7 @@ import { isAddress } from './config';
 export type OrderKind = 'buy' | 'sell' | 'dca';
 export type Order = {
   id: string;
+  chain?: import('./chains/types').ChainId; // missing on orders from before chains: Solana
   kind: OrderKind;
   mint: string;
   symbol: string;
@@ -39,7 +40,7 @@ export function makeOrder(b: any, now: number, id: string): Order | string {
   if (!kind) return 'Pick an order type';
   if (!isAddress(b.mint)) return 'Enter a valid token address';
   const symbol = String(b.symbol ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, 20);
-  const o: Order = { id, kind, mint: b.mint, symbol, done: 0, attempts: 0, status: 'active', createdAt: now, updatedAt: now };
+  const o: Order = { id, chain: 'solana', kind, mint: b.mint, symbol, done: 0, attempts: 0, status: 'active', createdAt: now, updatedAt: now };
   const hours = num(b.expiresInHours);
   if (kind === 'buy' || kind === 'sell') {
     if (b.cond !== 'below' && b.cond !== 'above') return 'Pick "at or below" or "at or above"';

@@ -2413,6 +2413,9 @@ function fieldHtml(f) {
   else if (f.type === 'text') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" maxlength="1000" placeholder="none">${esc(v || '')}</textarea>`;
   else if (f.type === 'list') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" placeholder="none">${esc((v || []).join('\n'))}</textarea>`;
   else ctl = `<div class="with-unit"><input type="number" inputmode="decimal" id="${id}" data-k="${f.k}" value="${esc(+Number(v).toFixed(9))}" step="${f.step || 'any'}" min="0"><span>${f.unit}</span></div>`;
+  // Amounts in the chain's coin also show their dollar value, so limits read the same on any chain.
+  const usd = f.unit === 'SOL' && S.chain?.usd && Number(v) > 0 ? `<div class="h" style="text-align:right;margin-top:2px">≈ $${(Number(v) * S.chain.usd).toLocaleString(undefined, { maximumFractionDigits: Number(v) * S.chain.usd < 10 ? 2 : 0 })}</div>` : '';
+  if (usd) ctl = `<div>${ctl}${usd}</div>`;
   return `<div class="field"><div><label class="l" for="${id}">${f.label}</label>${f.help ? `<div class="h">${typeof f.help === 'function' ? f.help() : f.help}</div>` : ''}</div>${ctl}</div>`;
 }
 
@@ -2738,7 +2741,7 @@ async function load() {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
     const firstLoad = !S.loadedOnce; S.loadedOnce = true;
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, tune: d.tune || null, strategies: d.strategies || [], health: d.health || null });
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, tune: d.tune || null, chain: d.chain || null, strategies: d.strategies || [], health: d.health || null });
     render();
     if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }

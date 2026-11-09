@@ -7,11 +7,14 @@
  * Dexscreener (token details, search), RSS/Atom news feeds, and optionally DexCheck
  * (whale trades, top traders) with the user's API key.
  */
-import { isAddress } from './config';
+import { chainIds, DEFAULT_CHAIN, getChain, type ChainId } from './chains';
 import { readSecret } from './env';
 import { sleep } from './util';
 
 const UA = 'Copybot (+https://github.com/catsandlights-ops/Copybot)';
+
+/** A chain's facts (network ids, native coin, main USD pool). */
+const M = (chain: ChainId) => getChain(chain).meta;
 
 // ---------------- small cache with in-flight de-duplication ----------------
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -80,7 +83,8 @@ const image = (v: unknown): string | null => {
     return null;
   }
 };
-const addr = (v: unknown): string | null => (isAddress(v) ? (v as string) : null);
+// Any address format of a chain Copybot knows (each chain's adapter defines its own).
+const addr = (v: unknown): string | null => (chainIds().some((c) => getChain(c).meta.isAddress(v)) ? (v as string) : null);
 
 // ---------------- overview: BTC / ETH / SOL ----------------
 export function overview() {
@@ -142,9 +146,9 @@ function mapPools(d: any): PoolRow[] {
   return out;
 }
 
-export function pools(kind: 'trending' | 'new') {
-  return cached(`pools:${kind}`, 60_000, async () =>
-    mapPools(await gecko(`/networks/solana/${kind === 'new' ? 'new_pools' : 'trending_pools'}?include=base_token&page=1`)),
+export function pools(kind: 'trending' | 'new', chain: ChainId = DEFAULT_CHAIN) {
+  return cached(`pools:${chain}:${kind}`, 60_000, async () =>
+    mapPools(await gecko(`/networks/${M(chain).geckoNetwork}/${kind === 'new' ? 'new_pools' : 'trending_pools'}?include=base_token&page=1`)),
   );
 }
 
@@ -172,10 +176,10 @@ function pairSummary(p: DsPair) {
 }
 
 /** Details for a token: its most liquid Solana pool, plus totals across pools. */
-export function token(mint: string) {
+export function token(mint: string, chain: ChainId = DEFAULT_CHAIN) {
   return cached(`token:${mint}`, 30_000, async () => {
     const d = await getJson(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
-    const pairs: DsPair[] = (d?.pairs ?? []).filter((p: DsPair) => p.chainId === 'solana' && p.baseToken?.address === mint);
+    const pairs: DsPair[] = (d?.pairs ?? []).filter((p: DsPair) => p.chainId === M(chain).dexscreenerId && p.baseToken?.address === mint);
     if (!pairs.length) return null;
     pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0) || (b.volume?.h24 ?? 0) - (a.volume?.h24 ?? 0));
     const known = pairs.filter((p) => typeof p.liquidity?.usd === 'number');
@@ -189,14 +193,14 @@ export function token(mint: string) {
 }
 
 /** Several tokens at once (Dexscreener accepts up to 30 addresses per call). Used for the watchlist. */
-export function tokens(mints: string[]) {
-  const list = [...new Set(mints)].filter(isAddress).slice(0, 30);
+export function tokens(mints: string[], chain: ChainId = DEFAULT_CHAIN) {
+  const list = [...new Set(mints)].filter(M(chain).isAddress).slice(0, 30);
   if (!list.length) return Promise.resolve([]);
   return cached(`tokens:${list.join(',')}`, 30_000, async () => {
     const d = await getJson(`https://api.dexscreener.com/latest/dex/tokens/${list.join(',')}`);
     const best = new Map<string, DsPair>();
     for (const p of d?.pairs ?? []) {
-      if (p.chainId !== 'solana' || !list.includes(p.baseToken?.address)) continue;
+      if (p.chainId !== M(chain).dexscreenerId || !list.includes(p.baseToken?.address)) continue;
       const cur = best.get(p.baseToken.address);
       if (!cur || (p.liquidity?.usd ?? 0) > (cur.liquidity?.usd ?? 0)) best.set(p.baseToken.address, p);
     }
@@ -204,15 +208,15 @@ export function tokens(mints: string[]) {
   });
 }
 
-export function search(q: string) {
+export function search(q: string, chain: ChainId = DEFAULT_CHAIN) {
   const query = q.replace(/[^\w\s.$-]/g, '').trim().slice(0, 60);
   if (query.length < 2) return Promise.resolve([]);
-  return cached(`search:${query.toLowerCase()}`, 30_000, async () => {
+  return cached(`search:${chain}:${query.toLowerCase()}`, 30_000, async () => {
     const d = await getJson(`https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`);
     const seen = new Set<string>();
     const out = [];
     for (const p of d?.pairs ?? []) {
-      if (p.chainId !== 'solana' || !isAddress(p.baseToken?.address) || seen.has(p.baseToken.address)) continue;
+      if (p.chainId !== M(chain).dexscreenerId || !M(chain).isAddress(p.baseToken?.address) || seen.has(p.baseToken.address)) continue;
       seen.add(p.baseToken.address);
       out.push(pairSummary(p));
       if (out.length >= 15) break;
@@ -226,10 +230,10 @@ const TIMEFRAMES = { '15m': ['minute', 15, 96], '1h': ['hour', 1, 72], '1d': ['d
 export type Timeframe = keyof typeof TIMEFRAMES;
 export const isTimeframe = (v: unknown): v is Timeframe => typeof v === 'string' && v in TIMEFRAMES;
 
-export function chart(pool: string, tf: Timeframe) {
+export function chart(pool: string, tf: Timeframe, chain: ChainId = DEFAULT_CHAIN) {
   const [unit, aggregate, limit] = TIMEFRAMES[tf];
   return cached(`chart:${pool}:${tf}`, 60_000, async () => {
-    const d = await gecko(`/networks/solana/pools/${pool}/ohlcv/${unit}?aggregate=${aggregate}&limit=${limit}&currency=usd`);
+    const d = await gecko(`/networks/${M(chain).geckoNetwork}/pools/${pool}/ohlcv/${unit}?aggregate=${aggregate}&limit=${limit}&currency=usd`);
     const rows: unknown[] = d?.data?.attributes?.ohlcv_list ?? [];
     return rows
       .map((r: any) => (Array.isArray(r) ? r.map(num) : []))
@@ -357,8 +361,8 @@ export type Candle = { t: number; l: number; h: number; c: number; v?: number };
  * Picks 5-minute candles for spans up to ~3 days, then 15-minute, then hourly (1000 candles max).
  * Returns null when the token has no pool or no data.
  */
-export async function priceHistory(mint: string, fromMs: number, toMs: number): Promise<{ step: number; candles: Candle[]; createdAt: number | null } | null> {
-  const pools = await gecko(`/networks/solana/tokens/${mint}/pools?page=1`);
+export async function priceHistory(mint: string, fromMs: number, toMs: number, chain: ChainId = DEFAULT_CHAIN): Promise<{ step: number; candles: Candle[]; createdAt: number | null } | null> {
+  const pools = await gecko(`/networks/${M(chain).geckoNetwork}/tokens/${mint}/pools?page=1`);
   const pool = addr(pools?.data?.[0]?.attributes?.address);
   if (!pool) return null;
   // The token's age: its oldest pool (a pump.fun token's bonding curve predates its later pools).
@@ -367,7 +371,7 @@ export async function priceHistory(mint: string, fromMs: number, toMs: number): 
   const span = Math.max(0, toMs - fromMs);
   const [tf, agg, step] = span <= 3.3 * 86_400_000 ? ['minute', 5, 300_000] : span <= 10 * 86_400_000 ? ['minute', 15, 900_000] : ['hour', 1, 3_600_000];
   const before = Math.floor(Math.min(Date.now(), toMs + step) / 1000);
-  const d = await gecko(`/networks/solana/pools/${pool}/ohlcv/${tf}?aggregate=${agg}&before_timestamp=${before}&limit=1000&currency=usd&token=${mint}`);
+  const d = await gecko(`/networks/${M(chain).geckoNetwork}/pools/${pool}/ohlcv/${tf}?aggregate=${agg}&before_timestamp=${before}&limit=1000&currency=usd&token=${mint}`);
   const rows: unknown[] = d?.data?.attributes?.ohlcv_list ?? [];
   const candles = rows
     .map((r: any) => (Array.isArray(r) ? r.map(num) : []))
@@ -379,22 +383,22 @@ export async function priceHistory(mint: string, fromMs: number, toMs: number): 
 }
 
 /** SOL's price change over the last hour and day (main SOL/USDC pool). Cached for 2 minutes. */
-export function solChange(): Promise<{ h1: number | null; h24: number | null }> {
-  return cached('sol-change', 120_000, async () => {
-    const d = await gecko('/networks/solana/pools/58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2');
+export function solChange(chain: ChainId = DEFAULT_CHAIN): Promise<{ h1: number | null; h24: number | null }> {
+  return cached(`native-change:${chain}`, 120_000, async () => {
+    const d = await gecko(`/networks/${M(chain).geckoNetwork}/pools/${M(chain).nativeUsdPool}`);
     const c = d?.data?.attributes?.price_change_percentage ?? {};
     return { h1: num(c.h1), h24: num(c.h24) };
   });
 }
 
 /**
- * SOL's USD price per day (UTC day start -> closing price), from the main SOL/USDC pool on
+ * SOL`s USD price per day (UTC day start -> closing price), from the main SOL/USDC pool on
  * GeckoTerminal. Covers up to 1000 days back. Cached for an hour.
  */
-export function solUsdDaily(): Promise<Map<number, number>> {
-  return cached('sol-daily', 3_600_000, async () => {
-    const pool = '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2'; // Raydium SOL/USDC
-    const d = await gecko(`/networks/solana/pools/${pool}/ohlcv/day?aggregate=1&limit=1000&currency=usd&token=So11111111111111111111111111111111111111112`);
+export function solUsdDaily(chain: ChainId = DEFAULT_CHAIN): Promise<Map<number, number>> {
+  return cached(`native-daily:${chain}`, 3_600_000, async () => {
+    const pool = M(chain).nativeUsdPool;
+    const d = await gecko(`/networks/${M(chain).geckoNetwork}/pools/${pool}/ohlcv/day?aggregate=1&limit=1000&currency=usd&token=${M(chain).native.wrapped}`);
     const out = new Map<number, number>();
     for (const r of d?.data?.attributes?.ohlcv_list ?? []) {
       const t = num(r?.[0]);
@@ -408,14 +412,14 @@ export function solUsdDaily(): Promise<Map<number, number>> {
 
 // ---------------- wallet scout sources ----------------
 /** Many places to look for tokens that are moving: trending over 1h/6h/24h, new launches, top volume. */
-export function scoutPools(): Promise<PoolRow[]> {
-  return cached('scout:pools', 5 * 60_000, async () => {
+export function scoutPools(chain: ChainId = DEFAULT_CHAIN): Promise<PoolRow[]> {
+  return cached(`scout:pools:${chain}`, 5 * 60_000, async () => {
     const paths = [
-      '/networks/solana/trending_pools?include=base_token&duration=1h&page=1',
-      '/networks/solana/trending_pools?include=base_token&duration=6h&page=1',
-      '/networks/solana/trending_pools?include=base_token&duration=24h&page=1',
-      '/networks/solana/new_pools?include=base_token&page=1',
-      '/networks/solana/pools?include=base_token&page=1&sort=h24_volume_usd_desc',
+      `/networks/${M(chain).geckoNetwork}/trending_pools?include=base_token&duration=1h&page=1`,
+      `/networks/${M(chain).geckoNetwork}/trending_pools?include=base_token&duration=6h&page=1`,
+      `/networks/${M(chain).geckoNetwork}/trending_pools?include=base_token&duration=24h&page=1`,
+      `/networks/${M(chain).geckoNetwork}/new_pools?include=base_token&page=1`,
+      `/networks/${M(chain).geckoNetwork}/pools?include=base_token&page=1&sort=h24_volume_usd_desc`,
     ];
     const out: PoolRow[] = [];
     let failed = 0;
@@ -429,8 +433,8 @@ export function scoutPools(): Promise<PoolRow[]> {
 export type PoolTrade = { kind: 'buy' | 'sell'; wallet: string; t: number; usd: number; priceUsd: number };
 
 /** A pool's latest trades over `minUsd` (up to 300), with the token's USD price on each. */
-export async function poolTrades(pool: string, minUsd = 300): Promise<PoolTrade[]> {
-  const d = await gecko(`/networks/solana/pools/${pool}/trades?trade_volume_in_usd_greater_than=${minUsd}`);
+export async function poolTrades(pool: string, minUsd = 300, chain: ChainId = DEFAULT_CHAIN): Promise<PoolTrade[]> {
+  const d = await gecko(`/networks/${M(chain).geckoNetwork}/pools/${pool}/trades?trade_volume_in_usd_greater_than=${minUsd}`);
   const out: PoolTrade[] = [];
   for (const r of d?.data ?? []) {
     const a = r.attributes ?? {};

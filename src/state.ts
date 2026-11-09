@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import type { ExitStep, GuardState } from './rules';
 
 export type Position = {
+  chain?: import('./chains/types').ChainId; // missing on records from before chains: Solana
   mint: string;
   decimals: number;
   amountRaw: string; // bigint as string
@@ -27,6 +28,8 @@ export function loadState(mode: string): { state: State; warning?: string } {
   try {
     const s = JSON.parse(fs.readFileSync(f, 'utf8')) as State;
     if (typeof s.positions !== 'object' || s.positions === null) throw new Error('bad format');
+    // Positions saved before chains existed are Solana positions.
+    for (const p of Object.values(s.positions)) p.chain ??= 'solana';
     return { state: { positions: s.positions, realizedPnlSol: Number(s.realizedPnlSol) || 0, guard: s.guard } };
   } catch {
     const backup = `${f}.corrupt-${Date.now()}`;

@@ -1,14 +1,16 @@
 import { Connection, Keypair } from '@solana/web3.js';
 import { Config } from './config';
-import { decodeSwap, WSOL } from './decode';
-import { Quote, executeSwap, quoteSell } from './jupiter';
+import { WSOL } from './decode';
+import type { Quote } from './jupiter';
 import { Position, State, saveState } from './state';
 import { appendJsonl, getTx, short } from './util';
 import { copyGapPct } from './rules';
 import { ORDER_SOURCE, SCANNER_SOURCE } from './config';
+import { getChain, type ChainAdapter } from './chains';
 
 export type Trade = {
   t: number;
+  chain?: import('./chains/types').ChainId; // missing on trades from before chains: Solana
   mode: 'paper' | 'live';
   side: 'buy' | 'sell';
   mint: string;
@@ -45,15 +47,18 @@ export class Trader {
     return this.cfg.mode === 'live';
   }
 
+  /** All trades go through the chain's adapter (today: Solana). */
+  chain: ChainAdapter = getChain('solana');
+
   private async swap(q: Quote): Promise<{ sig: string; tokenRaw: bigint; sol: number }> {
     const toToken = q.outputMint !== WSOL;
     const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: Number(toToken ? q.inAmount : q.outAmount) / 1e9 };
     if (!this.live) return { sig: 'PAPER', ...quoted };
     const kp = this.kp!;
     const x = this.cfg.execution;
-    const sig = await executeSwap(this.conn, kp, q, x.priorityLevel, x.priorityFeeMaxLamports, x.jitoTipLamports, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn') });
+    const sig = await this.chain.executeSwap({ conn: this.conn, kp, cfg: this.cfg }, q, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn') });
     const tx = await getTx(sig);
-    const s = tx && decodeSwap(tx, kp.publicKey.toBase58());
+    const s = tx && this.chain.decodeSwap(tx, kp.publicKey.toBase58());
     return s ? { sig, tokenRaw: s.tokenAmount, sol: s.quoteAmount } : { sig, ...quoted };
   }
 
@@ -71,13 +76,13 @@ export class Trader {
 
   async buy(mint: string, decimals: number, q: Quote, source: string, ref?: CopyRef) {
     const r = await this.swap(q);
-    const p: Position = this.state.positions[mint] ?? { mint, decimals, amountRaw: '0', costSol: 0, openedAt: Date.now(), sources: [] };
+    const p: Position = this.state.positions[mint] ?? { chain: this.chain.meta.id, mint, decimals, amountRaw: '0', costSol: 0, openedAt: Date.now(), sources: [] };
     p.amountRaw = (BigInt(p.amountRaw) + r.tokenRaw).toString();
     p.costSol += r.sol;
     if (!p.sources.includes(source)) p.sources.push(source);
     this.state.positions[mint] = p;
     const g = this.gap('buy', ref, r.sol, r.tokenRaw);
-    this.record({ t: Date.now(), mode: this.cfg.mode, side: 'buy', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source, sig: r.sig, ...g });
+    this.record({ t: Date.now(), chain: this.chain.meta.id, mode: this.cfg.mode, side: 'buy', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source, sig: r.sig, ...g });
     const note = g.gapPct !== undefined ? `, ${g.gapPct >= 0 ? `${g.gapPct.toFixed(1)}% above` : `${(-g.gapPct).toFixed(1)}% below`} their price${g.lagSec !== undefined ? `, ${g.lagSec}s after them` : ''}` : '';
     this.hooks.log(`BUY ${short(mint)} for ${r.sol.toFixed(4)} SOL (${source === SCANNER_SOURCE ? 'market scanner' : source === ORDER_SOURCE ? 'your order' : `copying ${this.hooks.name(source)}${note}`})`, 'buy');
   }
@@ -91,7 +96,7 @@ export class Trader {
     const amount = all ? held : (held * BigInt(Math.round(fraction * 1e6))) / 1_000_000n;
     if (amount <= 0n) return null;
 
-    const q = await quoteSell(mint, amount, this.cfg.safety.slippageBps);
+    const q = await getChain(p).quoteSell(mint, amount, this.cfg.safety.slippageBps);
     if (!q) {
       this.hooks.log(`SELL ${short(mint)} skipped: no route (${reason})`, 'warn');
       return null;
@@ -104,7 +109,7 @@ export class Trader {
     p.amountRaw = (held - r.tokenRaw > 0n ? held - r.tokenRaw : 0n).toString();
     p.costSol -= costPortion;
     if (all || BigInt(p.amountRaw) === 0n) delete this.state.positions[mint];
-    this.record({ t: Date.now(), mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sources: [...p.sources], sig: r.sig, ...this.gap('sell', ref, r.sol, r.tokenRaw) });
+    this.record({ t: Date.now(), chain: getChain(p).meta.id, mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sources: [...p.sources], sig: r.sig, ...this.gap('sell', ref, r.sol, r.tokenRaw) });
     this.hooks.log(`SELL ${short(mint)} ${(soldFrac * 100).toFixed(0)}% for ${r.sol.toFixed(4)} SOL, PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} (${reason})`, 'sell');
     return pnl;
   }

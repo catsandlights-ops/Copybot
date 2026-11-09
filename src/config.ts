@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { PublicKey } from '@solana/web3.js';
 import { strategyById } from './presets';
+import { DEFAULT_CHAIN, KNOWN_CHAINS } from './chains/types';
 
 /** sizeMultiplier scales every buy copied from this wallet; maxExposureSol caps SOL in its positions (0 = no cap). */
 export type ExitOverrides = Partial<{
@@ -19,6 +20,7 @@ export type ExitOverrides = Partial<{
  * since: when the current trial stage, or the wallet's last resume, began (results before it don't count).
  */
 export type WalletCfg = {
+  chain?: import('./chains/types').ChainId; // which blockchain this wallet trades on (missing = Solana)
   address: string;
   label: string;
   enabled: boolean;
@@ -421,6 +423,7 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       if (exits.tp1AtPct && exits.tp2AtPct && exits.tp2AtPct <= exits.tp1AtPct) fail(`${cleanLabel(w.label) || 'Wallet'}: take-profit 2 must be higher than take-profit 1`);
     }
     out.wallets.push({
+      chain: (KNOWN_CHAINS as readonly string[]).includes(w.chain) ? w.chain : DEFAULT_CHAIN,
       address: w.address,
       label: cleanLabel(w.label) || `trader-${out.wallets.length + 1}`,
       enabled: w.enabled !== false,

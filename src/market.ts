@@ -24,8 +24,8 @@ type Pair = {
 };
 
 /** Combine every Solana pool for the token: total liquidity, market cap, oldest pool's creation time. */
-export function summarizePairs(mint: string, pairs: Pair[]): MarketInfo | null {
-  const mine = pairs.filter((p) => p.chainId === 'solana' && (p.baseToken?.address === mint || p.quoteToken?.address === mint));
+export function summarizePairs(mint: string, pairs: Pair[], dexscreenerId = 'solana'): MarketInfo | null {
+  const mine = pairs.filter((p) => p.chainId === dexscreenerId && (p.baseToken?.address === mint || p.quoteToken?.address === mint));
   if (!mine.length) return null;
   const known = mine.filter((p) => typeof p.liquidity?.usd === 'number' && Number.isFinite(p.liquidity.usd));
   const liquidityUsd = known.length ? known.reduce((a, p) => a + Number(p.liquidity!.usd), 0) : null;

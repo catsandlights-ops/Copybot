@@ -6,9 +6,9 @@ import * as markets from './markets';
 import { downsample, pushPoint, type Pt } from './series';
 import { overHeld } from './scanner';
 import { loadKeypair, makeConnection } from './env';
-import { decodeSwap, Swap } from './decode';
-import { quoteBuy, quoteSell } from './jupiter';
-import { checkToken, tokenCreator } from './safety';
+import type { Swap } from './decode';
+import type { CheckResult } from './safety';
+import { getChain, type ChainAdapter } from './chains';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
@@ -115,6 +115,12 @@ export class BotEngine extends EventEmitter {
 
   private setLabels() {
     this.labels = new Map([[SCANNER_SOURCE, 'Market scanner'], [ORDER_SOURCE, 'Your order'], ...this.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
+  }
+
+  /** The chain the bot trades on (today: Solana), and what its adapter needs. */
+  chain: ChainAdapter = getChain('solana');
+  private ctx() {
+    return { conn: this.conn, kp: this.kp, cfg: this.cfg };
   }
 
   /** Track processed signatures without growing memory forever. */
@@ -293,7 +299,7 @@ export class BotEngine extends EventEmitter {
     const room = this.roomFor(mint, sol);
     if (room) return room;
     if (this.kp && this.cfg.mode === 'live') {
-      const bal = (await this.conn.getBalance(this.kp.publicKey)) / 1e9;
+      const bal = await this.chain.balance(this.ctx(), this.kp.publicKey.toBase58());
       if (bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
     }
     const checked = await this.tokenChecks(mint, sol, false);
@@ -436,7 +442,7 @@ export class BotEngine extends EventEmitter {
     if (!this.running || this.seen.has(tx.signature) || tx.meta?.err) return;
     for (const w of this.cfg.wallets) {
       if (!w.enabled || !tx.accountKeys.includes(w.address)) continue;
-      if (decodeSwap(tx, w.address)) {
+      if (this.chain.decodeSwap(tx, w.address)) {
         this.remember(tx.signature);
         this.onTx(tx, w.address);
         return;
@@ -445,7 +451,7 @@ export class BotEngine extends EventEmitter {
   }
 
   private onTx(tx: RawTx, wallet: string) {
-    const swap = decodeSwap(tx, wallet);
+    const swap = this.chain.decodeSwap(tx, wallet);
     if (!swap) return;
     const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
     this.log(`${this.labels.get(wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} for ${swap.quoteAmount.toFixed(3)} ${swap.quote} (${age.toFixed(1)}s ago)`, 'signal');
@@ -477,7 +483,7 @@ export class BotEngine extends EventEmitter {
    * All lookups start at the same time (they don't depend on each other), then the answers are
    * checked in the usual order. This takes about as long as the slowest lookup instead of all of them added up.
    */
-  private async tokenChecks(mint: string, sol: number, wantInfo: boolean, quiet = false): Promise<string | { info: MarketInfo | null; holders: HolderStats | null; check: Extract<Awaited<ReturnType<typeof checkToken>>, { ok: true }> }> {
+  private async tokenChecks(mint: string, sol: number, wantInfo: boolean, quiet = false): Promise<string | { info: MarketInfo | null; holders: HolderStats | null; check: Extract<CheckResult, { ok: true }> }> {
     const { cfg } = this;
     const f = cfg.filters;
     const started = Date.now();
@@ -490,9 +496,9 @@ export class BotEngine extends EventEmitter {
       wantMarket ? settle(getMarketInfo(mint)) : null,
       wantMarket ? getSolUsd().catch(() => null) : null,
       wantHolders ? settle(this.cachedHolders(mint)) : null,
-      checkToken(this.conn, cfg, mint, BigInt(Math.round(sol * 1e9))).catch((e) => ({ ok: false as const, reason: (e as Error).message })),
+      this.chain.checkToken(this.ctx(), mint, BigInt(Math.round(sol * 1e9))).catch((e) => ({ ok: false as const, reason: (e as Error).message })),
       // Who made this coin? Only waited for briefly, so it never slows a buy by more than 1.5 s.
-      wantCreator ? Promise.race([tokenCreator(this.conn, mint).catch(() => null), sleep(1500).then(() => null)]) : null,
+      wantCreator && this.chain.tokenCreator ? Promise.race([this.chain.tokenCreator(this.ctx(), mint).catch(() => null), sleep(1500).then(() => null)]) : null,
     ]);
     let info: MarketInfo | null = null;
     if (market) {
@@ -547,7 +553,7 @@ export class BotEngine extends EventEmitter {
     if (!this.cfg.safety.rugMemory) return;
     if (!this.rugs.mints.includes(mint)) this.rugs.mints.push(mint);
     this.saveRugs();
-    tokenCreator(this.conn, mint)
+    (this.chain.tokenCreator ? this.chain.tokenCreator(this.ctx(), mint) : Promise.resolve(null))
       .then((c) => {
         if (c && !this.rugs.creators.includes(c)) {
           this.rugs.creators.push(c);
@@ -650,7 +656,7 @@ export class BotEngine extends EventEmitter {
     // Market filters, holders, rug memory and token safety, with the wallet balance check, all at once.
     const useAi = cfg.ai.enabled && cfg.ai.decideBuys;
     const [bal, checked] = await Promise.all([
-      this.kp && cfg.mode === 'live' ? this.conn.getBalance(this.kp.publicKey).then((x) => x / 1e9) : null,
+      this.kp && cfg.mode === 'live' ? this.chain.balance(this.ctx(), this.kp.publicKey.toBase58()) : null,
       this.tokenChecks(s.mint, sol, useAi),
     ]);
     if (bal != null && bal - sol < r.solReserve) return skip(`wallet balance ${bal.toFixed(3)} SOL too low`);
@@ -700,7 +706,7 @@ export class BotEngine extends EventEmitter {
         sol = Math.min(resized, cap);
         if (sol < cfg.buy.minSol) return skip('no room left under your limits');
         lamports = BigInt(Math.round(sol * 1e9));
-        const again = await checkToken(this.conn, cfg, s.mint, lamports);
+        const again = await this.chain.checkToken(this.ctx(), s.mint, lamports);
         if (!again.ok) return skip(again.reason);
         check = again;
         drift = driftOf(check.buyQuote, lamports);
@@ -745,7 +751,7 @@ export class BotEngine extends EventEmitter {
     const room = this.roomFor(sig.mint, sol);
     if (room) return room;
     if (this.kp && this.cfg.mode === 'live') {
-      const bal = (await this.conn.getBalance(this.kp.publicKey)) / 1e9;
+      const bal = await this.chain.balance(this.ctx(), this.kp.publicKey.toBase58());
       if (bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
     }
     const checked = await this.tokenChecks(sig.mint, sol, false);
@@ -837,7 +843,7 @@ export class BotEngine extends EventEmitter {
   private async checkSkippedOutcomes() {
     for (const d of ai.pendingOutcomes().slice(0, 10)) {
       if (!d.probe || !d.mint) continue;
-      const q = await quoteBuy(d.mint, BigInt(d.probe.lamports), this.cfg.safety.slippageBps).catch(() => undefined);
+      const q = await this.chain.quoteBuy(d.mint, BigInt(d.probe.lamports), this.cfg.safety.slippageBps).catch(() => undefined);
       if (q === undefined) continue; // network trouble: try again next round
       // Fewer tokens for the same SOL = the price went up. No route at all usually means the token died.
       ai.setOutcome(d.id, q ? (Number(d.probe.tokensOut) / Number(q.outAmount) - 1) * 100 : -100);
@@ -950,7 +956,7 @@ export class BotEngine extends EventEmitter {
   async valuePositions() {
     for (const p of Object.values(this.state.positions)) {
       try {
-        const q = await quoteSell(p.mint, BigInt(p.amountRaw), this.cfg.safety.slippageBps);
+        const q = await getChain(p).quoteSell(p.mint, BigInt(p.amountRaw), this.cfg.safety.slippageBps);
         if (!q) continue;
         const valueSol = Number(q.outAmount) / 1e9;
         const now = Date.now();
@@ -985,7 +991,7 @@ export class BotEngine extends EventEmitter {
       return;
     }
     try {
-      this.walletBalance = (await this.conn.getBalance(this.kp.publicKey)) / 1e9;
+      this.walletBalance = await this.chain.balance(this.ctx(), this.kp.publicKey.toBase58());
       this.emit('status');
     } catch {
       /* keep the last known balance */

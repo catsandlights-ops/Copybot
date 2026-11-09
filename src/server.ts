@@ -559,7 +559,7 @@ const scanTried = new Map<string, number>(); // mint -> when the scanner last tr
 let scanBusy = false;
 
 // Every signal is written down and checked later against real prices: "is the scanner any good?"
-type SignalRec = { mint: string; symbol: string; kind: 'new' | 'old'; at: number; priceUsd: number; why: string; bought: boolean; skipped?: string; exits: ScanExits; outcome?: ExitReplay; checks?: number };
+type SignalRec = { chain?: import('./chains').ChainId; mint: string; symbol: string; kind: 'new' | 'old'; at: number; priceUsd: number; why: string; bought: boolean; skipped?: string; exits: ScanExits; outcome?: ExitReplay; checks?: number };
 const SIGNALS_FILE = 'data/signals.json';
 let signalLog: SignalRec[] = (() => {
   try {
@@ -582,7 +582,7 @@ const scanExits = (): ScanExits => {
 function noteSignal(s: CoinSignal, now: number) {
   // One entry per coin per 6 hours, like the scanner's own cooldown.
   if (!s.priceUsd || signalLog.some((r) => r.mint === s.mint && now - r.at < 6 * 3_600_000)) return null;
-  const rec: SignalRec = { mint: s.mint, symbol: s.symbol, kind: s.kind, at: now, priceUsd: s.priceUsd, why: s.why, bought: false, exits: scanExits() };
+  const rec: SignalRec = { chain: engine.chain.meta.id, mint: s.mint, symbol: s.symbol, kind: s.kind, at: now, priceUsd: s.priceUsd, why: s.why, bought: false, exits: scanExits() };
   signalLog.push(rec);
   return rec;
 }
@@ -1413,6 +1413,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       strategies: STRATEGIES,
       health: lastHealth,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
+      chain: { id: engine.chain.meta.id, name: engine.chain.meta.name, symbol: engine.chain.meta.native.symbol, usd: await engine.chain.nativeUsd().catch(() => null) },
       ui: uiPrefs,
     });
   }
