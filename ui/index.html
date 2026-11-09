@@ -964,7 +964,7 @@ function healthCard() {
   const n = (v) => h.wallets.filter((x) => x.verdict === v).length;
   const losers = h.wallets.filter((x) => x.verdict === 'losing' && S.config.wallets.some((w) => w.address === x.address && w.enabled !== false));
   const rows = h.wallets.map((x) => { const [c, l] = HEALTH_LABEL[x.verdict]; const on = S.config.wallets.find((w) => w.address === x.address)?.enabled !== false; return `<tr><td>${esc(x.label)}</td><td><span class="note ${c}">${l}</span></td>
-    <td class="r num ${cls(x.totalSol)}">${x.closed ? signed(x.totalSol, 3) : '—'}</td><td class="r num">${x.closed ? Math.round((x.wins / x.closed) * 100) + '%' : '—'}</td><td class="r num muted">${x.copied}</td>
+    <td class="r num ${cls(x.totalSol)}">${x.closed ? signed(x.totalSol, 3) : '—'}</td><td class="r num">${x.closed ? Math.round((x.wins / x.closed) * 100) + '%' : '—'}</td><td class="r num muted">${x.copied}${x.coveredFrom ? ` <span title="A very active wallet: only its trades since ${new Date(x.coveredFrom).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} were checked">*</span>` : ''}</td>
     <td class="r">${x.verdict === 'losing' && on ? `<button class="btn sm danger" data-health-pause="${esc(x.address)}">Pause</button>` : !on ? '<span class="muted" style="font-size:12.5px">Paused</span>' : ''}</td></tr>`; }).join('');
   return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Wallet check · ${dateFmt(h.period.from)} to ${dateFmt(h.period.to)}</h2>
       <div class="muted" style="font-size:12.5px">Each wallet backtested on its own with your settings and a ${(+h.delayPct).toFixed(1)}% copy delay. Checked ${ago(h.at)} ago.</div></div><span class="spacer"></span>

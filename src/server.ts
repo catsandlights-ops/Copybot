@@ -618,7 +618,7 @@ function trialAndResume(next: import('./config').Config) {
 
 // ---------- wallet health check ----------
 const HEALTH_FILE = 'data/health.json';
-type HealthRow = { address: string; label: string; verdict: import('./rules').HealthVerdict; totalSol: number; roiPct: number | null; closed: number; wins: number; copied: number; unreadable: number };
+type HealthRow = { address: string; label: string; verdict: import('./rules').HealthVerdict; totalSol: number; roiPct: number | null; closed: number; wins: number; copied: number; unreadable: number; coveredFrom: number | null };
 let lastHealth: { at: number; period: { from: number; to: number }; delayPct: number; wallets: HealthRow[] } | null = (() => {
   try {
     return JSON.parse(fs.readFileSync(HEALTH_FILE, 'utf8'));
@@ -1113,13 +1113,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const job = addJob('health', { wallets: wallets.map((w) => w.address), from: base.range!.from, to: base.range!.to, delayPct }, async (progress) => {
       const rows: HealthRow[] = [];
       for (const [i, w] of wallets.entries()) {
-        const spec = { ...base, wallets: [w.address], input: {} };
+        // A quick check: the latest 1,500 transactions in the period are plenty to judge a wallet.
+        const spec = { ...base, wallets: [w.address], txs: 1500, input: {} };
         const d = await loadBacktestData(spec, (p) => progress(`Wallet ${i + 1}/${wallets.length} (${w.label}): ${p.replace(/^Wallet 1\/1: /, '')}`), true);
         // The wallet's own settings, as it trades today (its strategy, exits and size).
         d.cfg.wallets = d.cfg.wallets.map((x) => (x.address === w.address ? { ...x, enabled: true } : x));
         const r = runBacktest(d.swaps, d.cfg, d.opts, d.marks, d.prices);
         const copied = r.trades.filter((t) => t.side === 'buy').length;
-        rows.push({ address: w.address, label: w.label, verdict: healthVerdict({ copied, closed: r.closed, totalSol: r.totalSol }), totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, copied, unreadable: d.stats.failed });
+        rows.push({ address: w.address, label: w.label, verdict: healthVerdict({ copied, closed: r.closed, totalSol: r.totalSol }), totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, copied, unreadable: d.stats.failed, coveredFrom: d.truncated[0]?.oldestMs ?? null });
       }
       lastHealth = { at: Date.now(), period: base.range!, delayPct, wallets: rows };
       fs.mkdirSync('data', { recursive: true });
