@@ -57,6 +57,9 @@ window.GUIDES = [
 <li><b>Trial period:</b> new wallets start at ¼ size and grow to full size as they make you money. Any wallet is paused after 5 losing copies in a row (Settings → New wallets).</li>
 <li><b>Strategies:</b> five ready-made trading styles (Balanced, Sniper, Whale follower, Momentum, Conservative) on the new Strategies page. Each shows exactly what it changes and never touches your SOL per buy, limits or safety checks.</li>
 <li><b>Backtest strategies:</b> pick a strategy on the Backtest page, or press <b>Compare strategies</b> to replay your wallets with all five and your current settings, ranked side by side. If every strategy loses, Copybot tells you the wallet is the problem.</li>
+<li><b>Strategy per wallet:</b> press <b>Strategy</b> next to a wallet to give it its own preset, like Sniper for a fast flipper. The wallet scout suggests one for each pick.</li>
+<li><b>Check my wallets</b> (Wallets page): backtests every wallet you copy on its own and marks each one worth keeping, losing you money, or too few trades, with one-click pause.</li>
+<li><b>Profit chart</b> on the Dashboard: your real results over 24 hours, 7 days, 30 days or all time.</li>
 <li><b>Faster:</b> wallet history is saved on your computer, so analyzing or backtesting the same wallet again is much quicker.</li>
 </ul>
 <p>New installs also get a short <b>setup guide</b> on first launch (you can run it again from Settings → Look).</p>`,

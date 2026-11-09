@@ -43,6 +43,9 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **Rug protection:** sells everything at once if a token's liquidity drains 50% from its high, its value crashes 35% within 5 minutes, or sellers outnumber buyers 3 to 1.
 - **Exits per wallet:** give any wallet its own stop-loss, take-profits and trailing stop.
 - **Copy gap:** measures how much worse your fills are than the copied wallet's, per wallet, on your real trades.
+- **Strategy per wallet:** give any wallet its own preset (its exits, stop-loss, minimum buy size and "don't chase"); the wallet scout suggests one for each pick from its holding time and buy size.
+- **Check my wallets:** backtests each copied wallet on its own with your settings and copy gap; marks it worth keeping, losing money, or too few trades, with one-click pause.
+- **Profit chart** on the Dashboard for 24h, 7 days, 30 days or all time.
 - **Trial period:** new wallets start at ¼ size, then ½, then full size after profitable copies; any wallet auto-pauses after 5 losing copies in a row.
 
 ### Safety checks before every buy

@@ -827,14 +827,32 @@ function renderDashboard(el) {
         ? `<div class="card stat"><div class="k">${ICON.coin}Trading wallet</div><div class="v num">${st.wallet.balance != null ? sol(st.wallet.balance, 3) : '…'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${walletLink(st.wallet.address)}</div></div>`
         : `<div class="card stat"><div class="k">${ICON.key}Copying</div><div class="v num">${enabled.length} <small style="font-size:13px" class="muted">wallet${enabled.length === 1 ? '' : 's'}</small></div><div class="s">${todays.length} trade${todays.length === 1 ? '' : 's'} today</div></div>`}
     </div>
+    ${pnlChart()}
     <div class="grid two">
       <div class="card"><div class="card-h"><h2>Open positions</h2><span class="spacer"></span>${n ? '<button class="btn sm ghost" id="refresh-pos">Refresh prices</button>' : ''}</div>${positions}</div>
       <div class="card"><div class="card-h"><h2>Live activity</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${st.running ? 'watching…' : ''}</span></div>
         <div class="feed" id="feed">${feedHtml()}</div></div>
     </div>`;
   el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
+  el.querySelectorAll('[data-pnl-range]').forEach((b) => (b.onclick = () => { S.pnlRange = b.dataset.pnlRange; render(); }));
   const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
 }
+/** Realized profit over time from your own sells (current mode), as a chart card on the Dashboard. */
+function pnlChart() {
+  const range = S.pnlRange || '7d', now = Date.now();
+  const from = range === 'all' ? 0 : now - { '1d': 1, '7d': 7, '30d': 30 }[range] * 864e5;
+  const sells = S.trades.filter((t) => t.mode === S.config.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.t >= from).sort((a, b) => a.t - b.t);
+  let run = 0;
+  const curve = sells.map((t) => [t.t, (run += t.pnl)]);
+  const start = range === 'all' ? sells[0]?.t ?? now : from;
+  const wins = sells.filter((t) => t.pnl > 0).length;
+  const seg = [['1d', '24h'], ['7d', '7 days'], ['30d', '30 days'], ['all', 'All']].map(([v, l]) => `<button data-pnl-range="${v}" class="${range === v ? 'on' : ''}">${l}</button>`).join('');
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><h2>Your profit over time</h2>
+      <span class="muted" style="font-size:12.5px;margin-left:8px">${sells.length ? `${signed(run, 3)} SOL from ${sells.length} sell${sells.length > 1 ? 's' : ''} · ${Math.round((wins / sells.length) * 100)}% in profit` : ''}</span>
+      <span class="spacer"></span><div class="seg">${seg}</div></div>
+    <div class="bt-curve">${curve.length >= 2 ? curveSvg(curve, start, now) : `<div class="muted" style="padding:28px 0;text-align:center">${sells.length ? 'One sell so far: the chart starts after the second.' : `No sells in ${range === 'all' ? S.config.mode + ' mode yet' : 'this period'}. Your profit shows here as positions close.`}</div>`}</div></div>`;
+}
+
 /** What the staged exits have done for a position, and what happens next. */
 function exitPlan(p) {
   const ww = S.config.wallets.find((w) => w.address === p.sources?.[0]);
