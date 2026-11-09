@@ -205,7 +205,8 @@ button.wz-choice:hover { border-color: var(--accent); }
 .chip { display: inline-block; white-space: nowrap; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); margin: 1px 0; }
 .chip.done { background: var(--green-bg); color: var(--green); }
 .chip.trail { background: var(--amber-bg); color: var(--amber); }
-.wallet-num { width: 96px; height: 30px; text-align: right; }
+.input.wallet-num { width: 84px; min-width: 76px; height: 30px; text-align: right; flex: none; }
+.wallet-row .note { white-space: nowrap; }
 .wallet-row .label-input { min-width: 120px; }
 
 /* forms */
@@ -932,7 +933,7 @@ function renderWallets(el) {
           return `<tr class="wallet-row">
             <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
             <td><input class="label-input" data-label="${i}" value="${esc(w.label || '')}" placeholder="Add a nickname"></td>
-            <td>${walletLink(w.address)}</td>
+            <td>${walletLink(w.address)}${w.trialStage !== undefined ? `<div class="notes"><span class="note" title="New wallets start small. After ${S.config.trial.winsToStepUp} profitable copies it moves up to ${w.trialStage === 0 ? 'half' : 'full'} size.">On trial · ${w.trialStage === 0 ? '¼' : '½'} size</span></div>` : ''}${!w.enabled && w.pausedReason ? `<div class="notes"><span class="note bad" title="Turn it back on to resume; its count starts again.">Auto-paused: ${esc(w.pausedReason)}</span></div>` : ''}</td>
             <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
             <td class="r num">${st.sells ? Math.round((st.wins / st.sells) * 100) + '%' : '—'}</td>
             <td class="r num muted">${st.sells || '—'}</td>
@@ -1626,6 +1627,11 @@ const FIELDS = [
     { k: 'risk.dailyLossLimitSol', label: 'Daily loss limit', unit: 'SOL', help: 'Stop new buys for the rest of the day after losing this much. Sells and exits keep running. 0 = off.' },
     { k: 'risk.pauseAfterLosses', label: 'Pause after losses in a row', unit: 'trades', step: 1, help: 'A cool-down after a losing streak. 0 = off.' },
     { k: 'risk.pauseMinutes', label: 'Pause length', unit: 'min', step: 1 },
+  ]},
+  { title: 'New wallets', desc: 'Let new wallets prove themselves before they get full size, and pause any wallet that keeps losing.', fields: [
+    { k: 'trial.enabled', label: 'Start new wallets on trial', type: 'toggle', help: 'New wallets copy at ¼ size, then ½, then full size as they make you money.' },
+    { k: 'trial.winsToStepUp', label: 'Profitable copies to step up', unit: 'copies', step: 1 },
+    { k: 'trial.pauseAfterLosses', label: 'Pause a wallet after', unit: 'losses in a row', step: 1, help: 'Applies to every wallet. Positions already open from it still follow its sells. 0 = off.' },
   ]},
   { title: 'Safety checks', desc: 'Run before every buy to avoid scams and illiquid tokens.', fields: [
     { k: 'safety.slippageBps', label: 'Max slippage', unit: '%', toView: (v) => v / 100, fromView: (v) => Math.round(v * 100), help: 'How much worse than the quoted price a trade may fill.' },

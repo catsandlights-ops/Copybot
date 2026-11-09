@@ -48,6 +48,15 @@ window.GUIDES = [
 <li><b>Jito tips</b> (Settings → Speed): in live mode, pay a small tip so trades land sooner when the network is busy.</li>
 <li><b>Fast trade detection</b> with a Helius RPC that includes Enhanced WebSockets: Copybot sees the copied trade without an extra lookup.</li>
 </ul>
+<h3>Smarter wallet picking (0.6.1)</h3>
+<ul>
+<li><b>The scout looks wider:</b> trending, new and top-volume tokens, up to 6 per search, and different coins each time. It also finds wallets that <b>caught a move</b> on busy tokens.</li>
+<li><b>The scout backtests before it picks:</b> a wallet is only picked if copying it with <i>your</i> settings and copy delay would have made money.</li>
+<li><b>Backtest by date:</b> last 24 hours, 3, 7 or 30 days, or your own dates.</li>
+<li><b>Find my best settings</b> (Backtest page): compares 16 stop-loss and take-profit setups on the same trades and lets you use the winner.</li>
+<li><b>Trial period:</b> new wallets start at ¼ size and grow to full size as they make you money. Any wallet is paused after 5 losing copies in a row (Settings → New wallets).</li>
+<li><b>Faster:</b> wallet history is saved on your computer, so analyzing or backtesting the same wallet again is much quicker.</li>
+</ul>
 <p>New installs also get a short <b>setup guide</b> on first launch (you can run it again from Settings → Look).</p>`,
   },
   {

@@ -13,7 +13,21 @@ export type ExitOverrides = Partial<{
   trailingStopPct: number;
 }>;
 /** `exits` overrides the global exit settings for positions copied from this wallet. */
-export type WalletCfg = { address: string; label: string; enabled: boolean; sizeMultiplier: number; maxExposureSol: number; exits?: ExitOverrides };
+/**
+ * trialStage: 0 = quarter size, 1 = half size, absent = full size (new wallets start on trial).
+ * since: when the current trial stage, or the wallet's last resume, began (results before it don't count).
+ */
+export type WalletCfg = {
+  address: string;
+  label: string;
+  enabled: boolean;
+  sizeMultiplier: number;
+  maxExposureSol: number;
+  exits?: ExitOverrides;
+  trialStage?: 0 | 1;
+  since?: number;
+  pausedReason?: string;
+};
 const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
   stopLossPct: 'risk.stopLossPct',
   recoverCostAtPct: 'exits.recoverCostAtPct',
@@ -94,6 +108,8 @@ export type Config = {
     fastStream: boolean; // Helius enhanced websocket for faster signals (needs a Helius RPC)
   };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
+  /** New wallets start small and grow as they prove themselves; any wallet pauses after a losing streak. */
+  trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number };
   /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
   alerts: { trades: boolean; errors: boolean; guard: boolean; autopilot: boolean };
   /** Claude autopilot. Off until the user turns it on and adds an Anthropic API key. */
@@ -143,6 +159,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
+  trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
@@ -188,6 +205,8 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'execution.jitoTipLamports': [0, 10_000_000, 'Jito tip', (v) => `${v / 1e9} SOL`],
   'monitor.pollIntervalSec': [1, 300, 'Backup check interval'],
   'monitor.exitCheckIntervalSec': [5, 3_600, 'Stop-loss check interval'],
+  'trial.winsToStepUp': [1, 50, 'Profitable copies to step up'],
+  'trial.pauseAfterLosses': [0, 50, 'Pause a wallet after losses in a row'],
   'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],
   'ai.walletReviewHours': [1, 720, 'Review wallets every'],
   'ai.maxWallets': [1, 50, 'Max wallets for the AI'],
@@ -195,7 +214,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
@@ -298,6 +317,9 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       sizeMultiplier: num(w.sizeMultiplier, 0.1, 10, 1, 'Size multiplier'),
       maxExposureSol: num(w.maxExposureSol, 0, 10_000, 0, 'Wallet budget'),
       ...(Object.keys(exits).length ? { exits } : {}),
+      ...(w.trialStage === 0 || w.trialStage === 1 ? { trialStage: w.trialStage } : {}),
+      ...(typeof w.since === 'number' && Number.isFinite(w.since) && w.since > 0 ? { since: w.since } : {}),
+      ...(typeof w.pausedReason === 'string' && w.pausedReason && w.enabled === false ? { pausedReason: w.pausedReason.replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, 120) } : {}),
     });
   }
 
@@ -327,7 +349,13 @@ export function loadConfig(): Config {
     // Upgrade from before staged exits: the old all-or-nothing take-profit default (150%) would fire
     // before the new steps, so turn it off. A value the user chose themselves is kept.
     if (!raw.exits && raw.risk?.takeProfitPct === 150) raw.risk.takeProfitPct = 0;
-    return sanitizeConfig(raw, false);
+    const cfg = sanitizeConfig(raw, false);
+    // Upgrade to wallet trials/auto-pause: existing wallets are judged on results from now on.
+    if (cfg.wallets.some((w) => !w.since)) {
+      for (const w of cfg.wallets) w.since ??= Date.now();
+      saveConfig(cfg);
+    }
+    return cfg;
   } catch {
     // Unreadable file: keep a copy for the user and start from defaults.
     fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.broken-${Date.now()}`);

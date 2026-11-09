@@ -211,3 +211,26 @@ test('per-wallet exits: overrides apply to positions opened by that wallet only,
   assert.equal(planExit({ costSol: 1 }, 0.8, exitConfigFor(c, [W])).action?.fraction, 1);
   assert.equal(planExit({ costSol: 1 }, 0.8, c).action, null);
 });
+
+test('wallet trial: steps up after enough profitable copies; any wallet pauses after a losing streak', async () => {
+  const { walletLifecycle, trialFactor } = await import('./rules');
+  const t = { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 };
+  assert.deepEqual([trialFactor(0), trialFactor(1), trialFactor(undefined)], [0.25, 0.5, 1]);
+  assert.deepEqual(walletLifecycle({ trialStage: 0 }, [0.1, -0.05, 0.2], t), { stepUp: false, pause: null });
+  assert.deepEqual(walletLifecycle({ trialStage: 0 }, [0.1, -0.05, 0.2, 0.01], t), { stepUp: true, pause: null });
+  assert.deepEqual(walletLifecycle({}, [0.1, 0.2, 0.3], t), { stepUp: false, pause: null }); // already full size
+  assert.equal(walletLifecycle({}, [0.5, -0.1, -0.1, -0.1, -0.1, -0.1], t).pause, '5 losing copies in a row');
+  assert.equal(walletLifecycle({}, [-0.1, -0.1, -0.1, -0.1], t).pause, null);
+  assert.equal(walletLifecycle({}, [-0.1, -0.1, -0.1, -0.1, -0.1], { ...t, pauseAfterLosses: 0 }).pause, null); // off
+  assert.equal(walletLifecycle({ trialStage: 1 }, [1, 1, 1], { ...t, enabled: false }).stepUp, false);
+});
+
+test('config keeps trial fields; existing wallets get a start date on upgrade', async () => {
+  const { sanitizeConfig } = await import('./config');
+  const W = 'So11111111111111111111111111111111111111112';
+  const c = sanitizeConfig({ wallets: [{ address: W, label: 'a', enabled: false, trialStage: 1, since: 5, pausedReason: '5 losing copies<script>' }] }, true);
+  assert.equal(c.wallets[0].trialStage, 1);
+  assert.equal(c.wallets[0].since, 5);
+  assert.equal(c.wallets[0].pausedReason, '5 losing copiesscript');
+  assert.equal(sanitizeConfig({ wallets: [{ address: W, label: 'a', trialStage: 7 }] }, true).wallets[0].trialStage, undefined);
+});

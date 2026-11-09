@@ -10,6 +10,8 @@ import { getHolderStats, HolderStats } from './solscan';
 import { hasSecret, onRpcSwitch, rpcUrl } from './env';
 import { FastStream, heliusWsUrl } from './stream';
 import type { RawTx } from './util';
+import { trialFactor, walletLifecycle } from './rules';
+import { saveConfig } from './config';
 import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
@@ -91,7 +93,10 @@ export class BotEngine extends EventEmitter {
     this.trader = new Trader(this.conn, this.cfg, this.state, this.kp, {
       log: (m, l) => this.log(m, l),
       trade: (t: Trade) => {
-        if (t.side === 'sell' && typeof t.pnl === 'number') this.afterSell(t.pnl);
+        if (t.side === 'sell' && typeof t.pnl === 'number') {
+          this.afterSell(t.pnl);
+          this.walletProgress(t.sources ?? []);
+        }
         this.emit('trade', t);
         this.emit('status');
         setTimeout(() => this.valuePositions(), 1500); // price new positions right away
@@ -183,6 +188,38 @@ export class BotEngine extends EventEmitter {
     }
   }
 
+  /** Trial step-ups and auto-pauses for the wallets a sell was copied from. Saved without a restart. */
+  private walletProgress(sources: string[]) {
+    const trades = this.readTrades();
+    let changed = false;
+    for (const addr of sources) {
+      const w = this.cfg.wallets.find((x) => x.address === addr);
+      if (!w || !w.enabled) continue;
+      const pnls = trades
+        .filter((t: any) => t.mode === this.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.includes(addr) && t.t >= (w.since ?? 0))
+        .map((t: any) => t.pnl as number);
+      const { stepUp, pause } = walletLifecycle(w, pnls, this.cfg.trial);
+      if (pause) {
+        w.enabled = false;
+        w.pausedReason = pause;
+        this.log(`Paused ${w.label}: ${pause}. Open positions from it still follow its sells. Turn it back on in Wallets.`, 'warn');
+        changed = true;
+      } else if (stepUp) {
+        w.trialStage = w.trialStage === 0 ? 1 : undefined;
+        if (w.trialStage === undefined) delete w.trialStage;
+        w.since = Date.now();
+        this.log(`${w.label} passed its trial step: now copying at ${w.trialStage === 1 ? 'half' : 'full'} size.`, 'system');
+        changed = true;
+      }
+    }
+    if (changed) {
+      saveConfig(this.cfg);
+      this.labels = new Map(this.cfg.wallets.map((w) => [w.address, w.label]));
+      this.emit('config', this.cfg);
+      this.emit('status');
+    }
+  }
+
   /** Let the bot buy again today despite the daily limit / losing-streak pause. */
   resumeBuying() {
     this.state.guard = { ...this.guard, pausedUntil: 0, lossStreak: 0, resumedDay: localDay(Date.now()) };
@@ -246,7 +283,8 @@ export class BotEngine extends EventEmitter {
     // Size: base amount × this wallet's multiplier, then the min/max limits.
     const w = cfg.wallets.find((x) => x.address === s.wallet);
     let sol = cfg.buy.sizing === 'percent' && s.quote === 'SOL' ? (s.quoteAmount * cfg.buy.percentOfTarget) / 100 : cfg.buy.fixedSol;
-    sol *= w?.sizeMultiplier ?? 1;
+    if (w && !w.enabled) return skip(`${w.label} is paused${w.pausedReason ? ` (${w.pausedReason})` : ''}`);
+    sol *= (w?.sizeMultiplier ?? 1) * trialFactor(w?.trialStage);
     sol = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol));
     if (exposure(state) + sol > r.maxTotalExposureSol) return skip('max total exposure reached');
     if (w && w.maxExposureSol > 0) {

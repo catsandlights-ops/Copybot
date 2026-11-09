@@ -107,6 +107,7 @@ function broadcast(type: string, data: unknown) {
 let statusTimer: NodeJS.Timeout | null = null;
 engine.on('log', (e) => broadcast('log', e));
 engine.on('trade', (t) => broadcast('trade', t));
+engine.on('config', (c) => broadcast('config', c));
 
 // ---------- phone alerts ----------
 const alertQueue = new alerts.AlertQueue(async (text) => {
@@ -327,6 +328,7 @@ async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary:
     }
     if (applied.length) {
       const clean = sanitizeConfig(next, false);
+      trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
       for (const ch of applied) engine.log(`Claude: ${ch.action} ${ch.address.slice(0, 4)}…${ch.address.slice(-4)}${ch.action === 'pause' ? '' : ` (size ×${ch.sizeMultiplier}${ch.budgetSol ? `, budget ${ch.budgetSol} SOL` : ''})`}: ${ch.reason}`, 'ai');
     }
@@ -496,6 +498,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     }
     if (added.length) {
       const clean = sanitizeConfig(next, false);
+      trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
       for (const a of added) engine.log(`Wallet scout: now copying ${a.slice(0, 4)}…${a.slice(-4)}: ${picks.find((p) => p.address === a)!.reason}`, 'ai');
     }
@@ -585,6 +588,24 @@ async function applyChange(change: () => void) {
   broadcast('config', engine.cfg);
   broadcast('status', engine.snapshot());
   return wasRunning;
+}
+
+/**
+ * Wallets new to the list start on trial (quarter size). Wallets turned back on after a pause
+ * start counting afresh. Applies to wallets added from the UI, the scout or the autopilot.
+ */
+function trialAndResume(next: import('./config').Config) {
+  const prev = new Map(engine.cfg.wallets.map((w) => [w.address, w]));
+  for (const w of next.wallets) {
+    const before = prev.get(w.address);
+    if (!before) {
+      if (next.trial.enabled && w.trialStage === undefined) w.trialStage = 0;
+      w.since = Date.now();
+    } else if (!before.enabled && w.enabled) {
+      w.since = Date.now();
+      delete w.pausedReason;
+    }
+  }
 }
 
 // ---------- backtest data (shared by Backtest and "Find my best settings") ----------
@@ -744,6 +765,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     } catch (e) {
       throw e instanceof HttpError ? e : new HttpError(400, (e as Error).message);
     }
+    trialAndResume(cfg);
     const restarted = await applyChange(() => saveConfig(cfg));
     return send(res, 200, { ok: true, restarted, config: engine.cfg });
   }

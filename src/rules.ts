@@ -151,6 +151,26 @@ export function dangerReason(d: DangerInputs, p: Config['protect']): string | nu
 }
 
 // ---------------------------------------------------------------------------
+// Wallet trial period and auto-pause
+// ---------------------------------------------------------------------------
+
+/** Size factor for a wallet on trial: quarter, then half, then full. */
+export const trialFactor = (stage?: 0 | 1) => (stage === 0 ? 0.25 : stage === 1 ? 0.5 : 1);
+
+/**
+ * After a sell copied from this wallet: should it step up its trial size, or be paused?
+ * `pnls` = profit of each sell copied from it since `since`, oldest first.
+ */
+export function walletLifecycle(w: { trialStage?: 0 | 1 }, pnls: number[], t: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number }): { stepUp: boolean; pause: string | null } {
+  const n = t.pauseAfterLosses;
+  if (n > 0 && pnls.length >= n && pnls.slice(-n).every((p) => p < 0)) {
+    return { stepUp: false, pause: `${n} losing copies in a row` };
+  }
+  const wins = pnls.filter((p) => p > 0).length;
+  return { stepUp: t.enabled && w.trialStage !== undefined && wins >= t.winsToStepUp, pause: null };
+}
+
+// ---------------------------------------------------------------------------
 // Copy gap: how much worse our fill was than the copied wallet's
 // ---------------------------------------------------------------------------
 
