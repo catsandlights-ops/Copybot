@@ -9,6 +9,7 @@ import { loadKeypair, makeConnection } from './env';
 import type { Swap } from './decode';
 import type { CheckResult } from './safety';
 import { chainOf, getChain, type ChainAdapter, type ChainId } from './chains';
+import { skipCategory, type SignalStats } from './readiness';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
@@ -105,6 +106,7 @@ export class BotEngine extends EventEmitter {
       this.log(this.keyError, 'error');
     }
     this.orders = this.loadOrders();
+    this.loadSigStats();
     const { state, warning } = loadState(this.cfg.mode);
     this.state = state;
     if (warning) this.log(warning, 'error');
@@ -196,6 +198,7 @@ export class BotEngine extends EventEmitter {
     this.exitLoop(gen);
     this.orderLoop(gen);
     this.moodLoop(gen);
+    (async () => { while (gen === this.gen) { await sleep(120_000); this.saveSigStats(); } })();
     this.balanceLoop(gen);
     this.aiLoop(gen);
     const wsu = this.cfg.execution.fastStream ? heliusWsUrl(rpcUrl()) : null;
@@ -218,6 +221,7 @@ export class BotEngine extends EventEmitter {
     this.stream = null;
     for (const w of this.watchers) w.stop();
     this.watchers = [];
+    this.saveSigStats();
     for (const id of this.subs) await this.conn.removeOnLogsListener(id).catch(() => {});
     this.subs = [];
     this.log('Bot stopped', 'system');
@@ -481,6 +485,25 @@ export class BotEngine extends EventEmitter {
     }
   }
 
+  // ---------- signal counts per wallet (seen, copied, skip reasons), saved per mode ----------
+  sigStats: SignalStats = {};
+  private sigDirty = false;
+  private sigFile = () => `data/signal-stats-${this.cfg.mode}.json`;
+  loadSigStats() {
+    try {
+      const j = JSON.parse(fs.readFileSync(this.sigFile(), 'utf8'));
+      this.sigStats = j && typeof j === 'object' ? j : {};
+    } catch {
+      this.sigStats = {};
+    }
+  }
+  saveSigStats() {
+    if (!this.sigDirty) return;
+    this.sigDirty = false;
+    fs.mkdirSync('data', { recursive: true });
+    fs.writeFileSync(this.sigFile(), JSON.stringify(this.sigStats));
+  }
+
   /** Watchers for wallets on other chains. */
   private watchers: { stop(): void }[] = [];
 
@@ -647,7 +670,15 @@ export class BotEngine extends EventEmitter {
   private async onTargetBuy(s: Swap) {
     const { cfg, state } = this;
     const r = cfg.risk;
-    const skip = (why: string) => this.log(`  skipped: ${why}`, 'skip');
+    // Count every signal and why it was skipped (for the "ready for live?" report).
+    const st = (this.sigStats[s.wallet] ??= { seen: 0, copied: 0, skips: {} });
+    st.seen++;
+    this.sigDirty = true;
+    const skip = (why: string) => {
+      const c = skipCategory(why);
+      st.skips[c] = (st.skips[c] ?? 0) + 1;
+      this.log(`  skipped: ${why}`, 'skip');
+    };
 
     const now = Date.now();
     const b = cfg.buy;
@@ -764,6 +795,7 @@ export class BotEngine extends EventEmitter {
       }
     }
     await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined, chain);
+    st.copied++;
     if (addOn && state.positions[s.mint]) {
       state.positions[s.mint].addedOn = true;
       saveState(state, cfg.mode);

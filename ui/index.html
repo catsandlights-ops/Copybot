@@ -2449,6 +2449,8 @@ function renderSettings(el) {
 
       <div class="card" id="remote-card">${remoteCardHtml()}</div>
 
+      <div class="card" id="ready-card">${readyHtml()}</div>
+
       <div class="card"><div class="card-h"><h2>Trading mode</h2></div><div class="card-b row" style="justify-content:space-between">
         <div style="max-width:560px" class="muted">${live ? '<b style="color:var(--red)">Live:</b> the bot spends real SOL from your trading wallet.' : '<b style="color:var(--text)">Paper:</b> trades are simulated with real prices. Paper and live positions are tracked separately.'}</div>
         <div class="seg" id="mode-seg"><button data-m="paper" class="${!live ? 'on' : ''}">Paper</button><button data-m="live" class="${live ? 'on live' : ''}">Live</button></div>
@@ -2493,6 +2495,7 @@ function renderSettings(el) {
   bindRemote();
   bindNetStatus();
   bindBackup();
+  bindReady();
   el.querySelectorAll('[data-k]').forEach((i) => (i.oninput = i.onchange = () => { S.dirty = true; $('#savebar').style.display = 'flex'; }));
   $('#s-reset').onclick = () => { S.dirty = false; render(); };
   $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));
@@ -2541,6 +2544,24 @@ function netStatusHtml() {
   return `<div class="card-h"><div><h2>Connection status</h2><div class="muted" style="font-size:12.5px">Copybot depends on several outside services. ${st ? `Checked ${ago(st.at)} ago: <b class="${st.summary.level === 'bad' ? 'neg' : st.summary.level === 'warn' ? '' : 'pos'}">${esc(st.summary.text)}</b>.` : 'Check them all at once.'} Checked again every 15 minutes while the bot runs.</div></div><span class="spacer"></span><button class="btn sm" id="ns-check" ${S.nsBusy ? 'disabled' : ''}>${S.nsBusy ? 'Checking…' : 'Check now'}</button></div>
     ${rows ? `<div class="card-b" style="padding-top:0">${rows}</div>` : ''}`;
 }
+// ----- ready for live? -----
+function loadReady() { return api('GET', '/api/readiness').then((r) => { S.ready = r; const el = $('#ready-card'); if (el) { el.innerHTML = readyHtml(); bindReady(); } return r; }).catch(() => null); }
+function readyHtml() {
+  const r = S.ready;
+  if (!r) { setTimeout(loadReady, 0); return '<div class="card-h"><h2>Ready for live?</h2></div><div class="card-b muted">Checking your paper results…</div>'; }
+  const tag = { ready: ['buy', 'Ready'], risky: ['paper', 'Risky'], no: ['sell', 'Not profitable'], 'not-yet': ['paper', 'Needs more data'] };
+  const lvl = { ready: 'info', partly: 'warn', 'not-yet': 'warn' }[r.overall.level];
+  return `<div class="card-h"><div><h2>Ready for live?</h2><div class="muted" style="font-size:12.5px">Your paper results per source, how often trades were missed, and the settings that protect real money. A source needs ${10} closed trades over ${3} days, a profit, and few missed trades.</div></div><span class="spacer"></span><button class="btn sm" id="ready-refresh">Refresh</button></div>
+    <div class="card-b stack">
+      <div class="banner ${lvl}" style="margin:0"><div><b>${esc(r.overall.text)}</b></div></div>
+      ${r.sources.length ? `<div class="tbl-wrap"><table><thead><tr><th>Source</th><th class="r">Paper profit</th><th class="r">Won</th><th class="r" title="Money won ÷ money lost">Win/loss ratio</th><th class="r">Worst dip</th><th class="r" title="Trades missed because a service was busy">Missed</th><th>Verdict</th></tr></thead><tbody>
+        ${r.sources.map((s) => `<tr><td><b>${esc(s.name)}</b>${s.chain === 'base' ? ' <span class="chip">Base</span>' : ''}<div class="muted" style="font-size:12px">${s.closed} closed · ${s.days} days</div></td><td class="r num ${cls(s.pnlSol)}">${s.closed ? signed(s.pnlSol, 3) : '–'}</td><td class="r num">${s.closed ? Math.round((s.wins / s.closed) * 100) + '%' : '–'}</td><td class="r num">${s.profitFactor == null ? (s.wins && s.closed === s.wins ? 'all won' : '–') : s.profitFactor + '×'}</td><td class="r num">${s.worstDipSol ? '−' + sol(s.worstDipSol, 3) : '–'}</td><td class="r num">${s.missedPct == null ? '–' : s.missedPct + '%'}</td><td><span class="tag ${tag[s.verdict][0]}">${tag[s.verdict][1]}</span><div class="muted" style="font-size:12px;max-width:340px">${esc(s.why)}</div></td></tr>`).join('')}
+      </tbody></table></div>` : '<div class="muted">No paper trades yet. Run the bot in paper mode for a few days first.</div>'}
+      <div><div style="font-weight:600;margin-bottom:4px">Before real money</div>${r.checklist.map((c) => `<div class="row" style="gap:8px;align-items:flex-start;padding:3px 0"><span class="${c.ok ? 'pos' : 'neg'}" style="font-weight:700;width:14px">${c.ok ? '✓' : '✕'}</span><div><div>${esc(c.text)}</div>${c.ok ? '' : `<div class="muted" style="font-size:12.5px">${esc(c.fix)}</div>`}</div></div>`).join('')}</div>
+    </div>`;
+}
+function bindReady() { const b = $('#ready-refresh'); if (b) b.onclick = () => { S.ready = null; const el = $('#ready-card'); el.innerHTML = readyHtml(); }; }
+
 function bindBackup() {
   const save = $('#bk-save'); if (save) save.onclick = async () => {
     try {
@@ -2714,8 +2735,9 @@ async function setMode(mode) {
   if (mode === S.config.mode) return;
   if (S.dirty) return toast('Save or discard your other changes first', true);
   if (mode === 'live') {
+    const rd = await loadReady();
     const ok = await confirmModal({ title: 'Switch to live trading?', danger: true, confirm: 'Switch to live',
-      body: `<p>From now on the bot spends <b>real SOL</b>. Before you switch:</p><ul><li>You've run paper mode for a few days and like the results</li><li>You're using a separate wallet with only money you can lose</li><li>You're on a private RPC (Helius), not the public one</li></ul>` });
+      body: `${rd ? `<div class="banner ${rd.overall.level === 'ready' ? 'info' : 'warn'}" style="margin:0 0 10px"><div><b>Ready for live?</b> ${esc(rd.overall.text)} Details in Settings → Ready for live?</div></div>` : ''}<p>From now on the bot spends <b>real SOL</b>. Before you switch:</p><ul><li>You've run paper mode for a few days and like the results</li><li>You're using a separate wallet with only money you can lose</li><li>You're on a private RPC (Helius), not the public one</li></ul>` });
     if (!ok) return;
   }
   const r = await act(() => api('PUT', '/api/config', { ...S.config, mode }), mode === 'live' ? 'Live mode on' : 'Paper mode on');

@@ -15,7 +15,7 @@ import crypto from 'node:crypto';
 import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
-import { isAddress, sanitizeConfig, saveConfig, SCANNER_SOURCE } from './config';
+import { isAddress, ORDER_SOURCE, sanitizeConfig, saveConfig, SCANNER_SOURCE } from './config';
 import { coinSignals, entryRulesFor, exitVariants, replayExit, replaySignals, RULES, signalStats, type CoinSignal, type ExitReplay, type ScanExits } from './scanner';
 import * as remote from './remote';
 import QRCode from 'qrcode';
@@ -23,6 +23,7 @@ import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report
 import { describeOrder, makeOrder } from './orders';
 import { chainOf } from './chains';
 import { buildBackup, checkBackup, restoreBackup } from './backup';
+import { liveChecklist, overallVerdict, sourceReport } from './readiness';
 import { runChecks, summary as statusSummary, type Check, type CheckResult } from './status';
 import { baseRpc } from './chains/base';
 import { getChain as getChainAdapter } from './chains';
@@ -1477,6 +1478,34 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   if (route === 'POST /api/status/check') return send(res, 200, await checkStatus());
+
+  if (route === 'GET /api/readiness') {
+    // Paper results per source, with the paper-mode signal counts.
+    let stats: import('./readiness').SignalStats = {};
+    try {
+      stats = engine.cfg.mode === 'paper' ? (engine.saveSigStats(), engine.sigStats) : JSON.parse(fs.readFileSync('data/signal-stats-paper.json', 'utf8'));
+    } catch {
+      /* none yet */
+    }
+    const trades = readTrades(1e9);
+    const now = Date.now();
+    const sources = [
+      ...engine.cfg.wallets.map((w) => sourceReport(w.address, w.label, chainOf(w), trades, stats[w.address], getChainAdapter(chainOf(w)).liveTrading, now)),
+      sourceReport(SCANNER_SOURCE, 'Market scanner', 'solana', trades, undefined, true, now),
+      sourceReport(ORDER_SOURCE, 'Your orders', 'solana', trades, undefined, true, now),
+    ].filter((s) => s.buys > 0 || engine.cfg.wallets.some((w) => w.address === s.source));
+    const c = engine.cfg;
+    const checklist = liveChecklist({
+      hasKey: !!engine.kp,
+      privateRpc: !rpcUrl().includes('api.mainnet-beta.solana.com'),
+      dailyLossLimitSol: c.risk.dailyLossLimitSol,
+      stopLossPct: c.risk.stopLossPct,
+      maxTotalExposureSol: c.risk.maxTotalExposureSol,
+      connectionOk: lastStatus ? lastStatus.summary.level !== 'bad' : null,
+      autopilotBudgetOk: !c.ai.enabled || c.ai.dailyBudgetUsd <= 20,
+    });
+    return send(res, 200, { at: now, sources, checklist, overall: overallVerdict(sources, checklist) });
+  }
 
   // ---------- backup and restore (secrets are never included) ----------
   if (route === 'GET /api/backup') {
