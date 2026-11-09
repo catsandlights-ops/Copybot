@@ -23,7 +23,7 @@ import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
 import * as markets from './markets';
 import { getSolUsd } from './market';
-import { marketSkipReason, median, walletRecords } from './rules';
+import { healthVerdict, marketSkipReason, median, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
@@ -32,7 +32,7 @@ import { applyStrategy, compareStrategies, STRATEGIES, strategyById } from './st
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
-import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, ScoutReport, ScoutResult } from './scout';
+import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -148,7 +148,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare';
+  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare' | 'health';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -489,12 +489,19 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
     } else notes.push(`Claude wasn't available (${ai.aiStatus(cfg).lastError ?? 'no answer'}), so the picks are rule-based.`);
   }
 
+  // Suggest a strategy that suits each pick's trading style.
+  picks = picks.map((p) => {
+    const rep = reports.find((r) => r.wallet === p.address);
+    if (!rep) return p;
+    const s = suggestStrategy(rep);
+    return { ...p, strategy: s.id, strategyWhy: s.why };
+  });
   const added: string[] = [];
   if (autoAdd && picks.length) {
     const next = structuredClone(engine.cfg);
     for (const p of picks) {
       if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= cfg.ai.maxWallets) continue;
-      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol });
+      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy } : {}) });
       added.push(p.address);
     }
     if (added.length) {
@@ -608,6 +615,17 @@ function trialAndResume(next: import('./config').Config) {
     }
   }
 }
+
+// ---------- wallet health check ----------
+const HEALTH_FILE = 'data/health.json';
+type HealthRow = { address: string; label: string; verdict: import('./rules').HealthVerdict; totalSol: number; roiPct: number | null; closed: number; wins: number; copied: number; unreadable: number };
+let lastHealth: { at: number; period: { from: number; to: number }; delayPct: number; wallets: HealthRow[] } | null = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(HEALTH_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
 
 // ---------- backtest data (shared by Backtest and "Find my best settings") ----------
 type BacktestSpec = { wallets: string[]; delayPct: number; replayExits: boolean; range: { from: number; to: number } | null; txs: number; endAt?: number; strategy: string | null; input: Record<string, unknown> };
@@ -748,6 +766,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       jobs,
       scout: lastScout,
       strategies: STRATEGIES,
+      health: lastHealth,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
       ui: uiPrefs,
     });
@@ -1082,6 +1101,33 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const restarted = await applyChange(() => saveConfig(clean));
     engine.log(`Strategy changed to ${s.name}.`, 'system');
     return send(res, 200, { ok: true, restarted, config: engine.cfg });
+  }
+
+  if (route === 'POST /api/jobs/health') {
+    const b = await readBody(req);
+    const wallets = engine.cfg.wallets.slice(0, 15);
+    if (!wallets.length) throw new HttpError(400, 'Add wallets to copy first.');
+    if (jobs.some((j) => j.kind === 'health' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A wallet check is already running.');
+    const delayPct = Number.isFinite(Number(b.delayPct)) ? Math.min(50, Math.max(0, Number(b.delayPct))) : measuredCopyGap() ?? 5;
+    const base = backtestSpec({ wallets: [wallets[0].address], from: b.from ?? Date.now() - 7 * 86_400_000, to: b.to ?? Date.now(), delayPct });
+    const job = addJob('health', { wallets: wallets.map((w) => w.address), from: base.range!.from, to: base.range!.to, delayPct }, async (progress) => {
+      const rows: HealthRow[] = [];
+      for (const [i, w] of wallets.entries()) {
+        const spec = { ...base, wallets: [w.address], input: {} };
+        const d = await loadBacktestData(spec, (p) => progress(`Wallet ${i + 1}/${wallets.length} (${w.label}): ${p.replace(/^Wallet 1\/1: /, '')}`), true);
+        // The wallet's own settings, as it trades today (its strategy, exits and size).
+        d.cfg.wallets = d.cfg.wallets.map((x) => (x.address === w.address ? { ...x, enabled: true } : x));
+        const r = runBacktest(d.swaps, d.cfg, d.opts, d.marks, d.prices);
+        const copied = r.trades.filter((t) => t.side === 'buy').length;
+        rows.push({ address: w.address, label: w.label, verdict: healthVerdict({ copied, closed: r.closed, totalSol: r.totalSol }), totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, copied, unreadable: d.stats.failed });
+      }
+      lastHealth = { at: Date.now(), period: base.range!, delayPct, wallets: rows };
+      fs.mkdirSync('data', { recursive: true });
+      fs.writeFileSync(HEALTH_FILE, JSON.stringify(lastHealth));
+      broadcast('health', lastHealth);
+      return lastHealth;
+    });
+    return send(res, 200, job);
   }
 
   if (route === 'POST /api/jobs/compare') {

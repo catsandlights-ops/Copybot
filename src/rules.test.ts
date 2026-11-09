@@ -234,3 +234,11 @@ test('config keeps trial fields; existing wallets get a start date on upgrade', 
   assert.equal(c.wallets[0].pausedReason, '5 losing copiesscript');
   assert.equal(sanitizeConfig({ wallets: [{ address: W, label: 'a', trialStage: 7 }] }, true).wallets[0].trialStage, undefined);
 });
+
+test('healthVerdict', async () => {
+  const { healthVerdict } = await import('./rules');
+  assert.equal(healthVerdict({ copied: 0, closed: 0, totalSol: 0 }), 'quiet');
+  assert.equal(healthVerdict({ copied: 3, closed: 2, totalSol: 1 }), 'unclear');
+  assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: 0.1 }), 'keep');
+  assert.equal(healthVerdict({ copied: 5, closed: 4, totalSol: -0.1 }), 'losing');
+});

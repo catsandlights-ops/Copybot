@@ -31,7 +31,7 @@ export type ScoutReport = Report & { earlyOn: string[]; topTraderOn: string[]; p
 
 /** A wallet is only picked if copying it would have made money for the user, over a few trades at least. */
 export const passesBacktest = (r: ScoutReport) => !!r.bt && r.bt.closed >= 3 && r.bt.totalSol > 0;
-export type ScoutPick = { address: string; sizeMultiplier: number; budgetSol: number; reason: string };
+export type ScoutPick = { address: string; sizeMultiplier: number; budgetSol: number; reason: string; strategy?: string; strategyWhy?: string };
 export type ScoutResult = {
   at: number;
   tokens: ScoutToken[];
@@ -147,4 +147,18 @@ export function rulePicks(reports: Report[], max = 3): ScoutPick[] {
       budgetSol: 0,
       reason: `${Math.round(r.winRate * 100)}% win rate on ${r.closedTokens} closed trades, ${r.roiPct.toFixed(0)}% return, holds ~${r.medianHoldMin < 60 ? `${r.medianHoldMin.toFixed(0)} min` : `${(r.medianHoldMin / 60).toFixed(1)} h`}.`,
     }));
+}
+
+/**
+ * Which ready-made strategy suits a wallet's style, from how long it holds and how big it buys.
+ * Never suggests a strategy whose minimum buy size would skip the wallet's typical buys.
+ */
+export function suggestStrategy(r: Pick<Report, 'medianHoldMin' | 'medianBuySol' | 'closedTokens'>): { id: string; why: string } {
+  const hold = r.medianHoldMin;
+  const buy = r.medianBuySol;
+  const holdTxt = hold < 60 ? `${Math.max(1, Math.round(hold))} min` : `${(hold / 60).toFixed(1)} h`;
+  if (buy >= 5 && hold >= 60) return { id: 'whale', why: `buys big (about ${buy.toFixed(1)} SOL) and holds about ${holdTxt}` };
+  if (hold > 0 && hold < 30) return { id: 'sniper', why: `a fast trader: usually sells within ${holdTxt}` };
+  if (hold >= 30 && hold < 240 && buy >= 0.5) return { id: 'momentum', why: `rides moves for about ${holdTxt}` };
+  return { id: 'balanced', why: `holds about ${holdTxt}, a mixed style` };
 }

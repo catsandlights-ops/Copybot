@@ -106,3 +106,16 @@ test('passesBacktest: only wallets that would have made money for us, over 3+ tr
   assert.equal(passesBacktest(r({ totalSol: 0.5, roiPct: 90, closed: 2, wins: 2, delayPct: 5 })), false); // too few to tell
   assert.equal(passesBacktest(r()), false);
 });
+
+test('suggestStrategy matches the wallet style and never picks one that would skip its buys', async () => {
+  const { suggestStrategy } = await import('./scout');
+  const { strategyById } = await import('./presets');
+  assert.equal(suggestStrategy({ medianHoldMin: 8, medianBuySol: 1, closedTokens: 20 }).id, 'sniper');
+  assert.equal(suggestStrategy({ medianHoldMin: 180, medianBuySol: 12, closedTokens: 20 }).id, 'whale');
+  assert.equal(suggestStrategy({ medianHoldMin: 90, medianBuySol: 1.5, closedTokens: 20 }).id, 'momentum');
+  assert.equal(suggestStrategy({ medianHoldMin: 600, medianBuySol: 0.8, closedTokens: 20 }).id, 'balanced');
+  // A 0.3 SOL buyer holding for an hour: Momentum's 0.5 SOL minimum would skip its buys.
+  const s = suggestStrategy({ medianHoldMin: 60, medianBuySol: 0.3, closedTokens: 20 });
+  assert.ok(strategyById(s.id)!.patch.buy!.minTargetBuySol! <= 0.3, s.id);
+  assert.match(suggestStrategy({ medianHoldMin: 8, medianBuySol: 1, closedTokens: 20 }).why, /8 min/);
+});

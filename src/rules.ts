@@ -171,6 +171,18 @@ export function walletLifecycle(w: { trialStage?: 0 | 1 }, pnls: number[], t: { 
 }
 
 // ---------------------------------------------------------------------------
+// Wallet health check
+// ---------------------------------------------------------------------------
+
+export type HealthVerdict = 'keep' | 'losing' | 'unclear' | 'quiet';
+/** From one wallet's backtest with the user's settings: worth keeping, losing money, too few trades, or no trades. */
+export function healthVerdict(r: { copied: number; closed: number; totalSol: number }): HealthVerdict {
+  if (r.copied === 0) return 'quiet';
+  if (r.closed < 3) return 'unclear';
+  return r.totalSol > 0 ? 'keep' : 'losing';
+}
+
+// ---------------------------------------------------------------------------
 // Copy gap: how much worse our fill was than the copied wallet's
 // ---------------------------------------------------------------------------
 
