@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { liveChecklist, overallVerdict, skipCategory, sourceReport, type PaperTrade } from './readiness';
+import { liveChecklist, overallVerdict, plainSkip, skipCategory, sourceReport, type PaperTrade } from './readiness';
 
 const D = 86_400_000;
 const now = 100 * D;
@@ -58,4 +58,13 @@ test('checklist and overall verdict', () => {
   assert.equal(overallVerdict([ready], liveChecklist(good)).level, 'ready');
   assert.equal(overallVerdict([ready], bad).level, 'partly');
   assert.equal(overallVerdict([{ ...ready, verdict: 'not-yet' }], liveChecklist(good)).level, 'not-yet');
+});
+
+test('plainSkip: raw "too many requests" errors read plainly and still count as busy', () => {
+  const raw = '429 Too Many Requests:  {"jsonrpc":"2.0","error":{"code": 429, "message":"Connection rate limits exceeded"}, "id": "x" }';
+  const why = plainSkip(raw);
+  assert.match(why, /Solana node is busy/);
+  assert.equal(skipCategory(why), 'busy');
+  assert.equal(plainSkip('liquidity $925 is below $10.0K'), 'liquidity $925 is below $10.0K');
+  assert.equal(plainSkip('Jupiter is busy (HTTP 429); try again in a moment'), 'Jupiter is busy (HTTP 429); try again in a moment');
 });

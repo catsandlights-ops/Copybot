@@ -8,6 +8,13 @@ export type SkipCategory = 'filters' | 'safety' | 'limits' | 'busy' | 'other';
 export type SignalStats = Record<string, { seen: number; copied: number; skips: Partial<Record<SkipCategory, number>> }>;
 
 /** Which kind of reason a skipped buy had. "busy" = a missed trade (a service didn't answer). */
+/** Raw "too many requests" errors from a network node, in plain words (other reasons pass through). */
+export function plainSkip(why: string): string {
+  if (/^(Jupiter|KyberSwap|Base)/.test(why)) return why;
+  if (/\b429\b|Too Many Requests|rate limits? exceeded|too many requests/i.test(why)) return 'the Solana node is busy (too many requests on the free public RPC), so this coin couldn\'t be checked in time';
+  return why;
+}
+
 export function skipCategory(why: string): SkipCategory {
   if (/busy|rate|429|limit(ing|s)? exceeded|no answer|timed out|timeout|fetch failed|unavailable|couldn't (check|get)/i.test(why)) return 'busy';
   if (/honeypot|route|freeze|mint authority|token-2022|tax|round-trip|blacklist|rug|pausable|owner|holder|largest|top 10/i.test(why)) return 'safety';

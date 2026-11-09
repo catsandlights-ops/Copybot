@@ -10,7 +10,7 @@ import type { Swap } from './decode';
 import type { CheckResult } from './safety';
 import { chainOf, getChain, type ChainAdapter, type ChainId } from './chains';
 import { setBaseLive } from './chains/base';
-import { skipCategory, type SignalStats } from './readiness';
+import { skipCategory, type SignalStats, plainSkip } from './readiness';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
@@ -683,7 +683,9 @@ export class BotEngine extends EventEmitter {
     const st = (this.sigStats[s.wallet] ??= { seen: 0, copied: 0, skips: {} });
     st.seen++;
     this.sigDirty = true;
-    const skip = (why: string) => {
+    const skip = (raw: string) => {
+      const why = plainSkip(raw);
+      if (why !== raw) this.logError(new Error(raw)); // one tip a minute about a private RPC
       const c = skipCategory(why);
       st.skips[c] = (st.skips[c] ?? 0) + 1;
       this.log(`  skipped: ${why}`, 'skip');
