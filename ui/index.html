@@ -1353,7 +1353,7 @@ function scoutCard() {
         <div class="scout-steps"><span>1 · Moving tokens</span><span>2 · Buyers before the move</span><span>3 · Track records</span><span>4 · ${c.hasAnthropicKey ? 'Claude picks' : 'Best ranked'}</span></div></div>
       <div style="text-align:right">${run ? `<div class="row" style="gap:8px"><span class="spinner"></span><span class="muted" style="font-size:13px;max-width:280px">${esc(run.progress)}</span></div>` : `<button class="btn primary" id="scout-go">Find wallets for me</button>`}
         <div class="seg" style="margin-top:8px;justify-content:flex-end">${[['solana', 'Solana'], ['base', 'Base']].map(([k, l]) => `<button data-scout-chain="${k}" class="${(S.scoutChain || 'solana') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-        <div class="muted" style="font-size:12px;margin-top:6px">${(S.scoutChain || 'solana') === 'base' ? (c.baseRpcUrl && /alchemy/i.test(c.baseRpcUrl) ? 'Base: copied in paper mode for now' : 'Base needs a free Alchemy key (Settings → Connection)') : `Takes 5–15 minutes${c.usingPublicRpc ? ', slower on the public RPC' : ''}`}</div></div>
+        <div class="muted" style="font-size:12px;margin-top:6px">${(S.scoutChain || 'solana') === 'base' ? (c.baseRpcUrl && /alchemy/i.test(c.baseRpcUrl) ? 'Reads Base history through your Alchemy key' : 'Base needs a free Alchemy key (Settings → Connection)') : `Takes 5–15 minutes${c.usingPublicRpc ? ', slower on the public RPC' : ''}`}</div></div>
     </div>${result}</div>`;
 }
 function bindScout() {
