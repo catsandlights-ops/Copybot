@@ -23,14 +23,14 @@ import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
 import * as markets from './markets';
 import { getSolUsd } from './market';
-import { marketSkipReason, walletRecords } from './rules';
+import { marketSkipReason, median, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
-import { passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, ScoutReport, ScoutResult } from './scout';
+import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -262,13 +262,13 @@ let walletReviewBusy = false;
 const scoutView = (r: ScoutReport): ai.CandidateView => ({
   address: r.wallet,
   source: 'scout',
-  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, caughtRecentPumpOn: r.pumpOn ?? [], topTraderOn: r.topTraderOn, notes: r.notes },
+  stats: { swaps: r.swaps, days: r.days, tradesPerDay: r.tradesPerDay, closedTokens: r.closedTokens, winRate: r.winRate, realizedPnlSol: r.realizedPnlSol, roiPct: r.roiPct, medianBuySol: r.medianBuySol, medianHoldMin: r.medianHoldMin, earlyOnPumpedTokens: r.earlyOn, caughtRecentPumpOn: r.pumpOn ?? [], topTraderOn: r.topTraderOn, backtestCopyingItWithOurSettings: r.bt ?? null, notes: r.notes },
 });
 
 /** Wallets the AI may add: the ones the user analyzed or discovered, plus the latest scout results. */
 function aiCandidates(): ai.CandidateView[] {
   const out = new Map<string, ai.CandidateView>();
-  for (const r of lastScout?.reports ?? []) if (passesBasics(r)) out.set(r.wallet, scoutView(r));
+  for (const r of lastScout?.reports ?? []) if (passesBasics(r) && (!r.bt || passesBacktest(r))) out.set(r.wallet, scoutView(r));
   for (const j of jobs) {
     if (j.status !== 'done') continue;
     if (j.kind === 'scout') continue; // covered by lastScout
@@ -346,6 +346,28 @@ let lastScout: ScoutResult | null = (() => {
 })();
 let scoutRunning = false;
 
+/** The user's median copy gap (%) in the current mode, once there are 5+ measured trades. */
+function measuredCopyGap(): number | null {
+  const g = engine.readTrades().filter((t: any) => t.mode === engine.cfg.mode && typeof t.gapPct === 'number').map((t: any) => t.gapPct as number);
+  return g.length >= 5 ? Math.max(0, median(g)!) : null;
+}
+
+/** What copying one wallet over its fetched history would have made with the user's settings. */
+async function quickBacktest(wallet: string, swaps: import('./decode').Swap[], delayPct: number): Promise<import('./scout').ScoutBacktest> {
+  const cfg = structuredClone(engine.cfg);
+  if (!cfg.wallets.some((w) => w.address === wallet)) cfg.wallets.push({ address: wallet, label: wallet.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
+  const opts = { delayPct, feeSol: 0.0002 };
+  const first = runBacktest(swaps, cfg, opts);
+  const marks = new Map<string, number | null>();
+  for (const o of first.open.slice(0, 8)) {
+    const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
+    const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
+    marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+  }
+  const r = runBacktest(swaps, cfg, opts, marks);
+  return { totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, delayPct };
+}
+
 // Tokens scanned by recent searches go to the back of the line next time, so searches vary.
 const SCOUT_HISTORY = 'data/scout-history.json';
 function recentScoutMints(): Set<string> {
@@ -414,11 +436,23 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
 
   const reports: ScoutReport[] = [];
+  const history = new Map<string, import('./decode').Swap[]>();
   for (const [i, c] of cands.entries()) {
     const swaps = await fetchSwaps(conn, c.wallet, 500, (n, t) => {
       if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
     }).catch(() => null);
-    if (swaps) reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
+    if (swaps) {
+      history.set(c.wallet, swaps);
+      reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
+    }
+  }
+  // Backtest the promising ones with the user's own settings and copy delay: a wallet that made
+  // money for itself can still lose money for someone copying it a few seconds later.
+  const delayPct = measuredCopyGap() ?? 5;
+  const promising = reports.filter(passesBasics).slice(0, 8);
+  for (const [i, r] of promising.entries()) {
+    progress(`Backtesting ${i + 1}/${promising.length} with your settings…`);
+    r.bt = await quickBacktest(r.wallet, history.get(r.wallet) ?? [], delayPct);
   }
   reports.sort((a, b) => b.realizedPnlSol - a.realizedPnlSol);
 
@@ -429,12 +463,16 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   const max = autoAdd ? Math.min(cfg.ai.scoutMaxPicks, free) : cfg.ai.scoutMaxPicks;
   if (autoAdd && !free) notes.push(`You already copy ${cfg.ai.maxWallets} wallets (the autopilot's maximum), so nothing new was added.`);
   // Only wallets that pass the basic checks can be picked, by Claude or by the rules.
-  const eligible = reports.filter(passesBasics);
-  let picks = rulePicks(eligible, max);
+  const basics = reports.filter(passesBasics);
+  const eligible = basics.filter(passesBacktest);
+  const btNote = (r: ScoutReport) => (r.bt ? ` Copying it with your settings would have made ${r.bt.totalSol >= 0 ? '+' : ''}${r.bt.totalSol.toFixed(3)} SOL over ${r.bt.closed} trades.` : '');
+  let picks = rulePicks(eligible, max).map((p) => ({ ...p, reason: p.reason + btNote(eligible.find((r) => r.wallet === p.address)!) }));
   let pickedBy: ScoutResult['pickedBy'] = 'rules';
   let summary = picks.length
-    ? 'Ranked by win rate, return and number of trades.'
-    : `None of the ${reports.length} wallets checked passed the basics: 10+ finished trades, profitable overall, not a bot, and not selling within 2 minutes. Most wallets that catch one pump don't keep winning.`;
+    ? `Ranked by win rate, return and number of trades, among wallets whose backtest with your settings made money.`
+    : basics.length
+      ? `${basics.length} wallet${basics.length > 1 ? 's' : ''} looked good on ${basics.length > 1 ? 'their' : 'its'} own record, but a backtest with your settings and a ${delayPct.toFixed(1)}% copy delay showed copying ${basics.length > 1 ? 'them' : 'it'} would have lost money, so nothing was picked.`
+      : `None of the ${reports.length} wallets checked passed the basics: 10+ finished trades, profitable overall, not a bot, and not selling within 2 minutes. Most wallets that catch one pump don't keep winning.`;
   if (max > 0 && eligible.length && hasSecret('ANTHROPIC_API_KEY')) {
     progress('Claude is choosing…');
     const recs = walletRecords(engine.readTrades(), cfg.mode);

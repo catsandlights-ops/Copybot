@@ -25,7 +25,12 @@ export type ScoutToken = {
   quiet: boolean; // little enough history to read back to its launch (true early buyers)
 };
 export type ScoutCandidate = { wallet: string; earlyOn: string[]; earlySol: number; topTraderOn: string[]; pumpOn: string[] };
-export type ScoutReport = Report & { earlyOn: string[]; topTraderOn: string[]; pumpOn?: string[] };
+/** What copying the wallet would have made for the user (their settings, copy delay, fees). */
+export type ScoutBacktest = { totalSol: number; roiPct: number | null; closed: number; wins: number; delayPct: number };
+export type ScoutReport = Report & { earlyOn: string[]; topTraderOn: string[]; pumpOn?: string[]; bt?: ScoutBacktest };
+
+/** A wallet is only picked if copying it would have made money for the user, over a few trades at least. */
+export const passesBacktest = (r: ScoutReport) => !!r.bt && r.bt.closed >= 3 && r.bt.totalSol > 0;
 export type ScoutPick = { address: string; sizeMultiplier: number; budgetSol: number; reason: string };
 export type ScoutResult = {
   at: number;

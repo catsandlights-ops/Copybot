@@ -97,3 +97,12 @@ test('passesBasics: the hard floor for any scout pick', async () => {
   // The wallet the first real scout run surfaced: losing money and trading 269 times a day.
   assert.equal(passesBasics(rep({ closedTokens: 10, winRate: 0.4, realizedPnlSol: -1.44, roiPct: -6, tradesPerDay: 269, medianHoldMin: 72 })), false);
 });
+
+test('passesBacktest: only wallets that would have made money for us, over 3+ trades', async () => {
+  const { passesBacktest } = await import('./scout');
+  const r = (bt?: any) => ({ ...rep({}), earlyOn: [], topTraderOn: [], bt });
+  assert.equal(passesBacktest(r({ totalSol: 0.2, roiPct: 20, closed: 5, wins: 3, delayPct: 5 })), true);
+  assert.equal(passesBacktest(r({ totalSol: -0.3, roiPct: -40, closed: 9, wins: 0, delayPct: 5 })), false); // the scout's first real pick
+  assert.equal(passesBacktest(r({ totalSol: 0.5, roiPct: 90, closed: 2, wins: 2, delayPct: 5 })), false); // too few to tell
+  assert.equal(passesBacktest(r()), false);
+});
