@@ -23,6 +23,7 @@ export type ScoutToken = {
   volume24hUsd: number;
   priceUsd: number | null;
   quiet: boolean; // little enough history to read back to its launch (true early buyers)
+  old?: boolean; // an established coin (over 14 days old)
 };
 export type ScoutCandidate = { wallet: string; earlyOn: string[]; earlySol: number; topTraderOn: string[]; pumpOn: string[] };
 /** What copying the wallet would have made for the user (their settings, copy delay, fees). */
@@ -49,25 +50,37 @@ const SKIP_MINTS = new Set([
   'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
 ]);
 
+const OLD_MS = 14 * 86_400_000;
+
 /**
  * Tokens worth mining for good buyers: up 30%+ over 6h or 24h, 1 hour to 14 days old, with real
- * liquidity and volume. Strongest movers first; tokens scanned in recent searches go to the back
- * so each search looks at different coins.
+ * liquidity and volume. With `oldSlots`, up to that many established coins (over 14 days old, up
+ * 15%+ with deep liquidity) are mixed in, so traders who win on older coins are found too.
+ * Strongest movers first; tokens scanned in recent searches go to the back so each search looks
+ * at different coins.
  */
-export function pickTokens(rows: PoolRow[], now: number, max = 6, recent: Set<string> = new Set()): ScoutToken[] {
+export function pickTokens(rows: PoolRow[], now: number, max = 6, recent: Set<string> = new Set(), oldSlots = 0): ScoutToken[] {
   const best = new Map<string, PoolRow>();
   for (const r of rows) {
     if (SKIP_MINTS.has(r.mint) || !r.createdAt) continue;
     const age = now - r.createdAt;
-    if (age < 3_600_000 || age > 14 * 86_400_000) continue;
-    if ((r.liquidityUsd ?? 0) < 20_000 || (r.volume24h ?? 0) < 50_000) continue;
-    if (Math.max(r.change.h24 ?? 0, r.change.h6 ?? 0) < 30) continue;
+    if (age < 3_600_000) continue;
+    const old = age > OLD_MS;
+    if (old && !oldSlots) continue;
+    if ((r.liquidityUsd ?? 0) < (old ? 100_000 : 20_000) || (r.volume24h ?? 0) < (old ? 250_000 : 50_000)) continue;
+    if (Math.max(r.change.h24 ?? 0, r.change.h6 ?? 0) < (old ? 15 : 30)) continue;
     const prev = best.get(r.mint);
     if (!prev || (r.liquidityUsd ?? 0) > (prev.liquidityUsd ?? 0)) best.set(r.mint, r); // the token's main pool
   }
   const move = (r: PoolRow) => Math.max(r.change.h24 ?? 0, r.change.h6 ?? 0);
   const ranked = [...best.values()].sort((a, b) => Number(recent.has(a.mint)) - Number(recent.has(b.mint)) || move(b) - move(a));
-  return ranked.slice(0, max).map((r) => {
+  const isOld = (r: PoolRow) => now - r.createdAt! > OLD_MS;
+  const olds = ranked.filter(isOld).slice(0, oldSlots);
+  const news = ranked.filter((r) => !isOld(r));
+  // New coins first, the old-coin slots after; free slots go to whichever side has more.
+  const chosen = [...news.slice(0, max - olds.length), ...olds];
+  for (const r of ranked) if (chosen.length < max && !chosen.includes(r)) chosen.push(r);
+  return chosen.slice(0, max).map((r) => {
     const ageMs = now - r.createdAt!;
     const lifetimeTxs = ((r.buys24h ?? 0) + (r.sells24h ?? 0)) * Math.max(1, ageMs / 86_400_000);
     return {
@@ -81,6 +94,7 @@ export function pickTokens(rows: PoolRow[], now: number, max = 6, recent: Set<st
       volume24hUsd: r.volume24h ?? 0,
       priceUsd: r.priceUsd,
       quiet: lifetimeTxs <= 25_000 && ageMs <= 3 * 86_400_000,
+      ...(ageMs > OLD_MS ? { old: true } : {}),
     };
   });
 }

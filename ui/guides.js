@@ -10,6 +10,26 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'scanner', cat: 'features', mins: 4, title: 'The market scanner: finding traders and coins',
+    teaser: 'Let Copybot look for opportunities while it runs: winning traders to copy, and rising coins to trade.',
+    body: `
+<p>The <b>Scanner</b> page has two switches. Both only work while the bot is running, and both stay inside your limits.</p>
+<h3>Find traders</h3>
+<p>Every few hours (6 by default) Copybot looks at coins that are moving: new launches <i>and</i> older, established coins. It finds traders who caught the move and reads their real track record. Then it <b>backtests</b> them with your settings and copy delay. Only traders whose backtest made money can be added, and they start on a <b>trial</b> at ¼ size, growing as they make you money. Any trader who loses 5 times in a row is paused.</p>
+<h3>Trade coins</h3>
+<p>About once a minute Copybot checks trending, new and high-volume coins and looks for one that is <b>rising the right way</b>:</p>
+<ul>
+<li>up over the last hour, but hasn't already run (not a coin that is up 300% today);</li>
+<li>more buyers than sellers in the last hour;</li>
+<li>more trading than usual;</li>
+<li>not falling in the last 5 minutes.</li>
+</ul>
+<p>Older coins need deeper liquidity and a smaller move. You can turn new or older coins off in Settings → Market scanner.</p>
+<p>Every scanner buy goes through the <b>same checks as a copied buy</b>: your loss limits, max positions and exposure, liquidity and holder filters, and the buy-then-sell honeypot check. It has its <b>own budget</b> and its <b>own quick exits</b>: stop-loss −20%, take profit +50%, a trailing stop once it's up 15%, and it sells after 12 hours. Momentum fades, so it doesn't hold forever.</p>
+<h3>Be careful</h3>
+<p>Momentum trading is risky. Many coins that are rising fall back, so expect plenty of small losses and hope for bigger wins. <b>Run it in paper mode first</b> and watch its profit on the Scanner page. It stops buying coins by itself after 5 losing trades in a row (the same rule that pauses a losing wallet).</p>`,
+  },
+  {
     id: 'whats-new-07', cat: 'news', mins: 4, title: "What's new in Copybot 0.7",
     teaser: 'Ready-made strategies, smarter wallet picking, a wallet check-up, better backtests and a profit chart.',
     body: `

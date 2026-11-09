@@ -478,6 +478,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
     <button class="nav" data-page="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg>Markets</button>
     <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
     <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
+    <button class="nav" data-page="scanner"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6-6"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>Scanner<span class="count" id="nav-scan"></span></button>
     <button class="nav" data-page="strategies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 2 5-6"/><circle cx="19" cy="7" r="1.5"/></svg>Strategies</button>
     <button class="nav" data-page="backtest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>Backtest</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
@@ -700,6 +701,7 @@ function renderChrome() {
   const enabled = cfg.wallets.filter((w) => w.enabled !== false).length;
   $('#nav-wallets').textContent = cfg.wallets.length ? `${enabled}` : '';
   $('#nav-ai').textContent = cfg.ai.enabled ? 'on' : '';
+  $('#nav-scan').textContent = cfg.scanner.tradeCoins || cfg.scanner.findTraders ? 'on' : '';
   document.querySelectorAll('.nav').forEach((n) => n.classList.toggle('on', n.dataset.page === S.page));
   const c = S.connection || {};
   $('#side-foot').innerHTML = `
@@ -720,7 +722,7 @@ $('#run-btn').onclick = async () => {
     if (!ok) return;
   }
   // Paper mode with no wallets yet: offer a one-press experiment instead of an error.
-  if (!S.status.running && S.config.mode === 'paper' && !S.config.wallets.some((w) => w.enabled !== false)) return quickStart();
+  if (!S.status.running && S.config.mode === 'paper' && !S.config.wallets.some((w) => w.enabled !== false) && !S.config.scanner.tradeCoins && !S.config.scanner.findTraders) return quickStart();
   S.busy = true; renderChrome();
   await act(() => api('POST', S.status.running ? '/api/stop' : '/api/start'));
   S.busy = false; renderChrome();
@@ -771,13 +773,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', strategies: 'Strategies', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', scanner: 'Market scanner', strategies: 'Strategies', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, scanner: renderScanner, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
     el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-07">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
@@ -902,6 +904,16 @@ function pnlChart() {
 
 /** What the staged exits have done for a position, and what happens next. */
 function exitPlan(p) {
+  if (p.sources?.length === 1 && p.sources[0] === 'scanner') {
+    const sc = S.config.scanner, chips = [`<span class="chip">stop −${sc.stopLossPct}%</span>`];
+    if (sc.takeProfitPct > 0) chips.push(`<span class="chip">sell all +${sc.takeProfitPct}%</span>`);
+    const peakGain = ((p.peakMultiple || 1) - 1) * 100;
+    if (sc.trailingStopPct > 0) chips.push(peakGain >= sc.trailingAfterPct
+      ? `<span class="chip trail">trailing: sells below ${pct(((p.peakMultiple || 1) * (1 - sc.trailingStopPct / 100) - 1) * 100)}</span>`
+      : `<span class="chip">trailing ${sc.trailingStopPct}% after +${sc.trailingAfterPct}%</span>`);
+    if (sc.maxHoldHours > 0) chips.push(`<span class="chip" title="The scanner sells what's left after this long">sells in ${ago(Date.now() - (p.openedAt + sc.maxHoldHours * 3600000 - Date.now()))}</span>`);
+    return chips.join(' ');
+  }
   const ww = S.config.wallets.find((w) => w.address === p.sources?.[0]);
   const st = (S.strategies || []).find((x) => x.id === ww?.strategy);
   const { stopLossPct, ...ov } = ww?.exits || {};
@@ -1835,6 +1847,59 @@ function renderAutopilot(el, fresh) {
   };
 }
 
+// ----- market scanner -----
+function renderScanner(el) {
+  const cfg = S.config, sc = cfg.scanner, x = S.scanner || { at: 0, signals: [], error: null, bought: [], record: { trades: 0, closed: 0, wins: 0, pnlSol: 0 }, nextTraderSearch: null };
+  const running = S.status.running;
+  const mine = S.status.positions.filter((p) => p.sources.includes('scanner'));
+  const used = mine.reduce((a, p) => a + p.costSol, 0);
+  const r = x.record;
+  const pending = !running ? 'Start the bot and the scanner starts with it.' : '';
+  const sigRow = (s) => `<tr><td><a href="#" data-mint="${esc(s.mint)}"><b>${esc(s.symbol || short(s.mint))}</b></a> <span class="chip">${s.kind === 'old' ? 'older coin' : 'new coin'}</span></td>
+    <td class="r num pos">${pct(s.change1hPct)}</td><td class="r num">${s.buySellRatio.toFixed(1)}×</td><td class="r num">${s.volumeSurge.toFixed(1)}×</td>
+    <td class="r num">$${Math.round(s.liquidityUsd).toLocaleString()}</td><td class="r muted">${s.ageHours < 48 ? `${s.ageHours} h` : `${Math.round(s.ageHours / 24)} d`}</td></tr>`;
+  const scoutJ = scoutJob();
+  el.innerHTML = `
+    <div class="grid two" style="margin-bottom:16px">
+      <div class="card"><div class="card-h"><div><h2>Find traders</h2><div class="muted" style="font-size:12.5px">Looks at new <i>and</i> older coins that are moving, finds traders who caught the move, backtests them with your settings, and adds the best on a trial (¼ size first).</div></div><span class="spacer"></span><label class="switch" title="Find traders on/off"><input type="checkbox" id="sc-traders" ${sc.findTraders ? 'checked' : ''}><i></i></label></div>
+        <div class="card-b stack muted" style="font-size:13px">
+          <div>${sc.findTraders ? `Every <b>${sc.traderEveryHours} h</b> while the bot runs, up to <b>${sc.picksPerRun}</b> new trader${sc.picksPerRun > 1 ? 's' : ''} at a time, until you copy <b>${sc.maxWallets}</b>.${running && x.nextTraderSearch ? ` Next search ${x.nextTraderSearch <= Date.now() ? 'soon' : `in ${ago(Date.now() - (x.nextTraderSearch - Date.now()))}`}.` : ''}` : 'Off.'} ${pending}</div>
+          <div class="row"><button class="btn sm" id="sc-scout" ${scoutJ ? 'disabled' : ''}>${scoutJ ? 'Searching…' : 'Search now'}</button>${S.scout ? `<span>Last search ${ago(S.scout.at)} ago: ${S.scout.added?.length ? `added ${S.scout.added.length}` : `${S.scout.picks.length} pick${S.scout.picks.length === 1 ? '' : 's'}`}. <a href="#" onclick="go('research');return false">See results →</a></span>` : ''}</div>
+        </div></div>
+      <div class="card"><div class="card-h"><div><h2>Trade coins</h2><div class="muted" style="font-size:12.5px">Buys coins that are rising on strong buying, on its own. Every buy goes through your limits and every safety check (rug, honeypot, holders, liquidity).</div></div><span class="spacer"></span><label class="switch" title="Trade coins on/off"><input type="checkbox" id="sc-coins" ${sc.tradeCoins ? 'checked' : ''}><i></i></label></div>
+        <div class="card-b stack muted" style="font-size:13px">
+          <div>${sc.tradeCoins ? `<b>${sol(sc.buySol, 3)} SOL</b> per coin, up to <b>${sc.maxPositions}</b> coins and <b>${sol(sc.budgetSol, 2)} SOL</b> at once. Stop-loss −${sc.stopLossPct}%, ${sc.takeProfitPct ? `take profit +${sc.takeProfitPct}%, ` : ''}${sc.trailingStopPct ? `trailing stop ${sc.trailingStopPct}% after +${sc.trailingAfterPct}%, ` : ''}${sc.maxHoldHours ? `sells after ${sc.maxHoldHours} h` : 'no time limit'}. Looking at ${[sc.newCoins && 'new', sc.oldCoins && 'older'].filter(Boolean).join(' and ') || 'no'} coins.` : 'Off.'} ${sc.tradeCoins ? pending : ''}</div>
+          ${cfg.mode === 'live' && sc.tradeCoins ? '<div class="neg"><b>Live mode: these are real trades.</b></div>' : ''}
+          <div class="row"><button class="btn sm ghost" id="sc-settings">Scanner settings</button><a href="#" data-guide="scanner">How it works →</a></div>
+        </div></div>
+    </div>
+    <div class="grid stats">
+      <div class="card stat"><div class="k">${ICON.coin}Scanner profit</div><div class="v num ${cls(r.pnlSol)}">${signed(r.pnlSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${cfg.mode} mode · closed trades only</div></div>
+      <div class="card stat"><div class="k">${ICON.star}Win rate</div><div class="v num">${r.closed ? Math.round((r.wins / r.closed) * 100) + '%' : '–'}</div><div class="s">${r.wins} of ${r.closed} sells in profit · ${r.trades} buy${r.trades === 1 ? '' : 's'}</div></div>
+      <div class="card stat"><div class="k">${pixelSvg(HEART)}Holding now</div><div class="v num">${mine.length} <small style="font-size:13px" class="muted">of ${sc.maxPositions}</small></div><div class="s">${sol(used, 3)} of ${sol(sc.budgetSol, 2)} SOL budget</div><div class="bar"><i style="width:${Math.min(100, (used / sc.budgetSol) * 100)}%"></i></div></div>
+    </div>
+    <div class="card"><div class="card-h"><h2>Coins rising right now</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${x.at ? `checked ${ago(x.at)} ago` : sc.tradeCoins ? (running ? 'first check within a minute' : 'starts with the bot') : 'turn on Trade coins to scan'}</span></div>
+      ${x.error ? `<div class="banner warn" style="margin:0 16px 12px"><div>${esc(x.error)}</div></div>` : ''}
+      ${x.signals.length ? `<div class="tbl-wrap"><table><thead><tr><th>Coin</th><th class="r">Last hour</th><th class="r" title="Buys vs sells in the last hour">Buys vs sells</th><th class="r" title="Last hour's volume vs its usual hourly volume">Volume</th><th class="r">Liquidity</th><th class="r">Age</th></tr></thead><tbody>${x.signals.map(sigRow).join('')}</tbody></table></div>
+        <div class="muted" style="font-size:12px;padding:10px 16px 14px">Best first. A coin shows here when it's up over the last hour but hasn't already run, has more buyers than sellers, more volume than usual, and isn't falling right now. The scanner tries the best one each round (if it has room), and skips coins it tried in the last 6 hours or that fail a safety check.</div>`
+        : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>${x.at ? 'Nothing rising the right way right now' : 'No scan yet'}</h3>${x.at ? 'The scanner checks again every minute or so. Quiet markets often have no signals: that\'s the scanner being picky, not broken.' : 'Turn on Trade coins and start the bot.'}</div>`}
+    </div>
+    ${x.bought?.length ? `<div class="card"><div class="card-h"><h2>Bought by the scanner</h2></div><div class="card-b">${x.bought.map((b) => `<div class="row" style="justify-content:space-between"><a href="#" data-mint="${esc(b.mint)}">${esc(b.symbol || short(b.mint))}</a><span class="muted">${ago(b.at)} ago</span></div>`).join('')}<div class="muted" style="font-size:12px;margin-top:8px">Open scanner coins are on the Dashboard with "Market scanner" as their source.</div></div></div>` : ''}`;
+  el.querySelectorAll('[data-mint]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); go('markets').then(() => openToken(a.dataset.mint)); }));
+  $('#sc-settings').onclick = () => { go('settings').then(() => $('#scanner-settings')?.scrollIntoView({ block: 'start' })); };
+  $('#sc-scout').onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); toast('Searching for traders…'); renderScanner(el); } };
+  const toggle = async (e, key, on, off) => {
+    if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
+    const v = e.target.checked;
+    if (v && key === 'tradeCoins' && !(await confirmModal({ title: 'Let the scanner trade coins?', confirm: 'Turn on',
+      body: `<p>Copybot will buy coins that are rising on strong buying, on its own: <b>${sol(sc.buySol, 3)} SOL</b> each, up to <b>${sc.maxPositions}</b> at once and <b>${sol(sc.budgetSol, 2)} SOL</b> in total. Each coin has its own stop-loss (−${sc.stopLossPct}%) and goes through every safety check.</p><p>Momentum trading is risky: many coins that are rising fall back. It stops by itself after ${cfg.trial.pauseAfterLosses || 'several'} losing trades in a row.${cfg.mode === 'live' ? ' <b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : ' You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
+    const res = await act(() => api('PUT', '/api/config', { ...cfg, scanner: { ...cfg.scanner, [key]: v } }), v ? on : off);
+    if (res) { S.config = res.config; renderChrome(); renderScanner(el); } else e.target.checked = !v;
+  };
+  $('#sc-traders').onchange = (e) => toggle(e, 'findTraders', 'Finding traders is on', 'Finding traders is off');
+  $('#sc-coins').onchange = (e) => toggle(e, 'tradeCoins', 'Coin trading is on', 'Coin trading is off');
+}
+
 // ----- settings -----
 const FIELDS = [
   { title: 'Buying', desc: 'How much to spend when a wallet you copy buys a token.', fields: [
@@ -1903,6 +1968,23 @@ const FIELDS = [
     { k: 'alerts.errors', label: 'Problems', type: 'toggle', help: 'Errors and RPC trouble. The same problem is sent at most once every 10 minutes.' },
     { k: 'alerts.guard', label: 'Circuit breaker', type: 'toggle', help: 'When the daily loss limit or losing-streak pause stops new buys.' },
     { k: 'alerts.autopilot', label: 'Autopilot decisions', type: 'toggle', help: 'What Claude decided, and why.' },
+  ]},
+  { title: 'Market scanner', id: 'scanner-settings', desc: 'Runs while the bot runs. Turn each part on from the Scanner page. Your limits, loss guards and safety checks always apply.', fields: [
+    { k: 'scanner.findTraders', label: 'Find traders', type: 'toggle', help: 'Keep looking at new and older coins for traders who are winning, backtest them with your settings, and add the best ones on a trial.' },
+    { k: 'scanner.traderEveryHours', label: 'Look for traders every', unit: 'hours', step: 1 },
+    { k: 'scanner.picksPerRun', label: 'New traders per search', unit: 'wallets', step: 1 },
+    { k: 'scanner.maxWallets', label: 'Stop adding at', unit: 'wallets', step: 1, help: 'No new traders once you copy this many.' },
+    { k: 'scanner.tradeCoins', label: 'Trade coins', type: 'toggle', help: 'Buy coins that are rising on strong buying, on its own (not copying anyone).' },
+    { k: 'scanner.newCoins', label: 'New coins', type: 'toggle', help: '1 hour to 7 days old. Bigger moves, more risk.' },
+    { k: 'scanner.oldCoins', label: 'Older coins', type: 'toggle', help: 'Over 7 days old, with deep liquidity. Smaller moves, steadier.' },
+    { k: 'scanner.buySol', label: 'Amount per coin', unit: 'SOL' },
+    { k: 'scanner.budgetSol', label: 'Scanner budget', unit: 'SOL', help: 'Most SOL in scanner coins at once. Also counts toward "Max SOL in open positions".' },
+    { k: 'scanner.maxPositions', label: 'Coins at once', unit: 'coins', step: 1 },
+    { k: 'scanner.stopLossPct', label: 'Stop-loss', unit: '% down', help: 'Scanner coins use their own quick exits, not your copy-trading exits.' },
+    { k: 'scanner.takeProfitPct', label: 'Take profit at', unit: '% up', help: 'Sell everything at this gain. 0 = off.' },
+    { k: 'scanner.trailingAfterPct', label: 'Start trailing stop after', unit: '% up' },
+    { k: 'scanner.trailingStopPct', label: 'Trailing stop', unit: '% drop', help: '0 = off.' },
+    { k: 'scanner.maxHoldHours', label: 'Sell after', unit: 'hours', step: 1, help: 'Momentum fades: sell whatever is left after this long. 0 = never.' },
   ]},
   { title: 'Autopilot (Claude)', id: 'ai-settings', desc: 'What Claude may decide. It always stays inside every limit above. Turn it on and add your key on the Autopilot page.', fields: [
     { k: 'ai.enabled', label: 'Autopilot on', type: 'toggle' },
@@ -2155,6 +2237,7 @@ function connectEvents() {
   });
   es.addEventListener('connection', (e) => { S.connection = JSON.parse(e.data); renderChrome(); });
   es.addEventListener('scout', (e) => { S.scout = JSON.parse(e.data); });
+  es.addEventListener('scanner', (e) => { S.scanner = JSON.parse(e.data); renderChrome(); if (S.page === 'scanner' && !S.dirty) render(); });
   es.addEventListener('trades-reset', () => load());
   es.addEventListener('health', (e) => { S.health = JSON.parse(e.data); if (S.page === 'wallets') render(); });
   es.addEventListener('ai', (e) => {
@@ -2181,7 +2264,7 @@ async function load() {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
     const firstLoad = !S.loadedOnce; S.loadedOnce = true;
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, strategies: d.strategies || [], health: d.health || null });
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, strategies: d.strategies || [], health: d.health || null });
     render();
     if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }

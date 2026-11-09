@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
-import { Config, exitConfigFor, loadConfig, walletRules } from './config';
+import { Config, exitConfigFor, loadConfig, SCANNER_SOURCE, walletRules } from './config';
+import { overHeld } from './scanner';
 import { loadKeypair, makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
 import { quoteBuy, quoteSell } from './jupiter';
@@ -103,7 +104,11 @@ export class BotEngine extends EventEmitter {
       },
       name: (w) => this.labels.get(w) ?? short(w),
     });
-    this.labels = new Map(this.cfg.wallets.map((w) => [w.address, w.label]));
+    this.setLabels();
+  }
+
+  private setLabels() {
+    this.labels = new Map([[SCANNER_SOURCE, 'Market scanner'], ...this.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
   }
 
   /** Track processed signatures without growing memory forever. */
@@ -121,14 +126,16 @@ export class BotEngine extends EventEmitter {
     if (this.running) return;
     this.reload();
     const wallets = this.cfg.wallets.filter((w) => w.enabled);
-    if (!wallets.length) throw new Error('Add at least one wallet to copy first.');
+    const sc = this.cfg.scanner;
+    if (!wallets.length && !sc.tradeCoins && !sc.findTraders) throw new Error('Add at least one wallet to copy first, or turn on the Market scanner.');
     if (this.cfg.mode === 'live' && !this.kp) throw new Error(this.keyError ?? 'Live mode needs a trading wallet (Settings → Trading wallet).');
 
     const gen = ++this.gen;
     this.running = true;
     this.startedAt = Date.now();
     this.emit('status');
-    this.log(`Bot started in ${this.cfg.mode.toUpperCase()} mode, watching ${wallets.length} wallet(s)`, 'system');
+    const scanning = [sc.tradeCoins && 'trading coins', sc.findTraders && 'finding traders'].filter(Boolean).join(' and ');
+    this.log(`Bot started in ${this.cfg.mode.toUpperCase()} mode, watching ${wallets.length} wallet(s)${scanning ? `; market scanner ${scanning}` : ''}`, 'system');
 
     for (const w of wallets) {
       try {
@@ -151,7 +158,7 @@ export class BotEngine extends EventEmitter {
     this.balanceLoop(gen);
     this.aiLoop(gen);
     const wsu = this.cfg.execution.fastStream ? heliusWsUrl(rpcUrl()) : null;
-    if (wsu) {
+    if (wsu && wallets.length) {
       this.stream = new FastStream(wsu, wallets.map((w) => w.address), (tx) => this.onStreamTx(tx), (s, detail) => {
         if (s === 'connected') this.log('Fast trade detection is on (Helius stream).', 'system');
         if (s === 'unavailable') this.log(`Fast trade detection isn't available on your Helius plan (${detail}). Using the normal method.`, 'warn');
@@ -192,6 +199,16 @@ export class BotEngine extends EventEmitter {
   private walletProgress(sources: string[]) {
     const trades = this.readTrades();
     let changed = false;
+    // The market scanner stops buying after the same losing streak that pauses a wallet.
+    const n = this.cfg.trial.pauseAfterLosses;
+    if (sources.includes(SCANNER_SOURCE) && this.cfg.scanner.tradeCoins && n > 0) {
+      const pnls = trades.filter((t: any) => t.mode === this.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.includes(SCANNER_SOURCE) && t.t >= this.scannerSince).map((t: any) => t.pnl as number);
+      if (pnls.length >= n && pnls.slice(-n).every((p) => p < 0)) {
+        this.cfg.scanner.tradeCoins = false;
+        this.log(`Market scanner stopped buying coins: ${n} losing trades in a row. Its open coins still follow their exits. Turn it back on in Scanner.`, 'warn');
+        changed = true;
+      }
+    }
     for (const addr of sources) {
       const w = this.cfg.wallets.find((x) => x.address === addr);
       if (!w || !w.enabled) continue;
@@ -214,7 +231,7 @@ export class BotEngine extends EventEmitter {
     }
     if (changed) {
       saveConfig(this.cfg);
-      this.labels = new Map(this.cfg.wallets.map((w) => [w.address, w.label]));
+      this.setLabels();
       this.emit('config', this.cfg);
       this.emit('status');
     }
@@ -268,6 +285,58 @@ export class BotEngine extends EventEmitter {
     this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
   }
 
+  /** Losing streak resets for the scanner when the user turns it back on. */
+  scannerSince = Date.now();
+
+  /** Limits every buy must fit: daily loss guard, open positions, total exposure, paper wallet. */
+  private roomFor(mint: string, sol: number): string | null {
+    const { cfg, state } = this;
+    const r = cfg.risk;
+    const blocked = buyBlockReason(this.guard, r, Date.now());
+    if (blocked) return blocked;
+    if (!state.positions[mint] && Object.keys(state.positions).length >= r.maxOpenPositions) return 'max open positions reached';
+    if (exposure(state) + sol > r.maxTotalExposureSol) return 'max total exposure reached';
+    if (cfg.mode === 'paper') {
+      const free = paperFreeSol(cfg.paper.startSol, state.realizedPnlSol, exposure(state));
+      if (free < sol) return `paper wallet has only ${Math.max(0, free).toFixed(3)} SOL left (reset it on the Dashboard)`;
+    }
+    return null;
+  }
+
+  /** Market filters, the holder check and the token safety check (route, honeypot, authorities). */
+  private async tokenChecks(mint: string, sol: number, wantInfo: boolean, quiet = false): Promise<string | { info: MarketInfo | null; holders: HolderStats | null; check: Extract<Awaited<ReturnType<typeof checkToken>>, { ok: true }> }> {
+    const { cfg } = this;
+    const f = cfg.filters;
+    let info: MarketInfo | null = null;
+    if (f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0) {
+      try {
+        info = await getMarketInfo(mint);
+      } catch (e) {
+        if (f.skipIfNoMarketData) return `couldn't check market data (${(e as Error).message})`;
+        if (!quiet) this.log(`  note: couldn't check market data, continuing (${(e as Error).message})`, 'warn');
+      }
+      const solUsd = await getSolUsd();
+      const why = marketSkipReason(info, f, solUsd ? sol * solUsd : null, Date.now());
+      if (why) return why;
+    }
+    // Holder check (Solscan): skip tokens a few wallets control.
+    let holders: HolderStats | null = null;
+    if ((f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || wantInfo) && hasSecret('SOLSCAN_API_KEY')) {
+      try {
+        const supply = await this.conn.getTokenSupply(new PublicKey(mint)).then((r) => BigInt(r.value.amount)).catch(() => null);
+        holders = await getHolderStats(mint, supply);
+      } catch (e) {
+        if (f.skipIfNoMarketData) return `couldn't check holders (${(e as Error).message})`;
+        if (!quiet) this.log(`  note: couldn't check holders, continuing (${(e as Error).message})`, 'warn');
+      }
+      const why = holderSkipReason(holders, f);
+      if (why) return why;
+    }
+    const check = await checkToken(this.conn, cfg, mint, BigInt(Math.round(sol * 1e9)));
+    if (!check.ok) return check.reason;
+    return { info, holders, check };
+  }
+
   private async onTargetBuy(s: Swap) {
     const { cfg, state } = this;
     const r = cfg.risk;
@@ -301,39 +370,13 @@ export class BotEngine extends EventEmitter {
       if (bal - sol < r.solReserve) return skip(`wallet balance ${bal.toFixed(3)} SOL too low`);
     }
 
-    // Market filters: liquidity, trade size vs pool, market cap, token age.
-    const f = cfg.filters;
+    // Market filters (liquidity, trade size vs pool, market cap, token age), holders, token safety.
     const useAi = cfg.ai.enabled && cfg.ai.decideBuys;
-    let info: MarketInfo | null = null;
-    if (f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0) {
-      try {
-        info = await getMarketInfo(s.mint);
-      } catch (e) {
-        if (f.skipIfNoMarketData) return skip(`couldn't check market data (${(e as Error).message})`);
-        this.log(`  note: couldn't check market data, continuing (${(e as Error).message})`, 'warn');
-      }
-      const solUsd = await getSolUsd();
-      const why = marketSkipReason(info, f, solUsd ? sol * solUsd : null, Date.now());
-      if (why) return skip(why);
-    }
-
-    // Holder check (Solscan): skip tokens a few wallets control.
-    let holders: HolderStats | null = null;
-    if ((f.maxTopHolderPct > 0 || f.maxTop10HoldersPct > 0 || useAi) && hasSecret('SOLSCAN_API_KEY')) {
-      try {
-        const supply = await this.conn.getTokenSupply(new PublicKey(s.mint)).then((r) => BigInt(r.value.amount)).catch(() => null);
-        holders = await getHolderStats(s.mint, supply);
-      } catch (e) {
-        if (f.skipIfNoMarketData) return skip(`couldn't check holders (${(e as Error).message})`);
-        this.log(`  note: couldn't check holders, continuing (${(e as Error).message})`, 'warn');
-      }
-      const why = holderSkipReason(holders, f);
-      if (why) return skip(why);
-    }
-
+    const checked = await this.tokenChecks(s.mint, sol, useAi);
+    if (typeof checked === 'string') return skip(checked);
+    let { info, check } = checked;
+    const { holders } = checked;
     let lamports = BigInt(Math.round(sol * 1e9));
-    let check = await checkToken(this.conn, cfg, s.mint, lamports);
-    if (!check.ok) return skip(check.reason);
 
     // Don't chase: compare our price with what the copied wallet paid.
     const driftOf = (q: { outAmount: string }, lam: bigint) => (s.quote === 'SOL' ? priceDriftPct(s.quoteAmount, s.tokenAmount, lam, BigInt(q.outAmount)) : null);
@@ -375,14 +418,53 @@ export class BotEngine extends EventEmitter {
         sol = Math.min(resized, cap);
         if (sol < cfg.buy.minSol) return skip('no room left under your limits');
         lamports = BigInt(Math.round(sol * 1e9));
-        check = await checkToken(this.conn, cfg, s.mint, lamports);
-        if (!check.ok) return skip(check.reason);
+        const again = await checkToken(this.conn, cfg, s.mint, lamports);
+        if (!again.ok) return skip(again.reason);
+        check = again;
         drift = driftOf(check.buyQuote, lamports);
         const late = chased(drift);
         if (late) return skip(late);
       }
     }
     await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
+  }
+
+  /**
+   * A coin the market scanner picked: buy it with the scanner's own size and budget, through the
+   * same limits and safety checks as a copied buy. Returns why it wasn't bought, or null.
+   */
+  scannerBuy(sig: { mint: string; symbol: string; why: string }): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.enqueue(async () => {
+        const out = await this.scannerBuyNow(sig).catch((e) => (e as Error).message);
+        if (out) this.log(`  skipped: ${out}`, 'skip');
+        resolve(out);
+      });
+    });
+  }
+
+  private async scannerBuyNow(sig: { mint: string; symbol: string; why: string }): Promise<string | null> {
+    const sc = this.cfg.scanner;
+    if (!this.running || !sc.tradeCoins) return 'the scanner is off';
+    this.log(`Market scanner: ${sig.symbol || short(sig.mint)} is ${sig.why}`, 'signal');
+    if (this.state.positions[sig.mint]) return 'already holding';
+    const positions = Object.values(this.state.positions);
+    const mine = positions.filter((p) => p.sources.includes(SCANNER_SOURCE)).length;
+    if (mine >= sc.maxPositions) return `the scanner already holds ${mine} coin${mine > 1 ? 's' : ''} (its maximum)`;
+    const left = sc.budgetSol - walletExposureSol(positions, SCANNER_SOURCE);
+    const sol = Math.min(sc.buySol, this.cfg.buy.maxSol, left);
+    if (sol < Math.max(0.001, sc.buySol / 2)) return `the scanner's budget is used up (${(sc.budgetSol - left).toFixed(3)} of ${sc.budgetSol} SOL)`;
+    const room = this.roomFor(sig.mint, sol);
+    if (room) return room;
+    if (this.kp && this.cfg.mode === 'live') {
+      const bal = (await this.conn.getBalance(this.kp.publicKey)) / 1e9;
+      if (bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
+    }
+    const checked = await this.tokenChecks(sig.mint, sol, false);
+    if (typeof checked === 'string') return checked;
+    if (!this.running || !this.cfg.scanner.tradeCoins) return 'the scanner was turned off';
+    await this.trader.buy(sig.mint, checked.check.decimals, checked.check.buyQuote, SCANNER_SOURCE);
+    return null;
   }
 
   /** Our trade history (for per-wallet results). */
@@ -505,7 +587,13 @@ export class BotEngine extends EventEmitter {
       for (const p of Object.values(this.state.positions)) {
         const v = this.values[p.mint];
         if (!v || gen !== this.gen || this.exiting.has(p.mint)) continue;
-        const { action, peakMultiple } = planExit(p, v.valueSol, exitConfigFor(this.cfg, p.sources));
+        const plan = planExit(p, v.valueSol, exitConfigFor(this.cfg, p.sources));
+        const { peakMultiple } = plan;
+        let { action } = plan;
+        // Scanner coins are quick trades: sell what's left once the hold limit is reached.
+        if (!action && p.sources.length === 1 && p.sources[0] === SCANNER_SOURCE && overHeld(p.openedAt, Date.now(), this.cfg.scanner.maxHoldHours)) {
+          action = { fraction: 1, reason: `held ${this.cfg.scanner.maxHoldHours} h (the scanner's limit)` };
+        }
         if (peakMultiple !== p.peakMultiple) {
           p.peakMultiple = peakMultiple;
           changed = true;

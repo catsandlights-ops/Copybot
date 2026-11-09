@@ -5,7 +5,7 @@ import { Quote, quoteBuy, quoteSell } from './jupiter';
 // Classic SPL Token program. Mints owned by anything else are Token-2022.
 const TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 
-export type CheckResult = { ok: true; buyQuote: Quote } | { ok: false; reason: string };
+export type CheckResult = { ok: true; buyQuote: Quote; decimals: number } | { ok: false; reason: string };
 
 /**
  * Checks before buying a token:
@@ -34,5 +34,5 @@ export async function checkToken(conn: Connection, cfg: Config, mint: string, la
   if (lossPct > s.maxRoundTripLossPct) {
     return { ok: false, reason: `round-trip loss ${lossPct.toFixed(1)}% > ${s.maxRoundTripLossPct}%` };
   }
-  return { ok: true, buyQuote: buy };
+  return { ok: true, buyQuote: buy, decimals: Number(parsed.decimals) || 0 };
 }

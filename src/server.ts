@@ -15,7 +15,8 @@ import crypto from 'node:crypto';
 import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
-import { isAddress, sanitizeConfig, saveConfig } from './config';
+import { isAddress, sanitizeConfig, saveConfig, SCANNER_SOURCE } from './config';
+import { coinSignals, type CoinSignal } from './scanner';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { readSecret } from './env';
 import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
@@ -23,7 +24,7 @@ import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
 import * as markets from './markets';
 import { getSolUsd } from './market';
-import { experimentPicks, healthVerdict, marketSkipReason, median, walletRecords } from './rules';
+import { experimentPicks, healthVerdict, marketSkipReason, median, walletExposureSol, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
@@ -393,20 +394,20 @@ function startScout(auto: boolean) {
   scoutRunning = true;
   return addJob('scout', { auto }, async (progress) => {
     try {
-      return await runScout(progress);
+      return await runScout(progress, auto);
     } finally {
       scoutRunning = false;
     }
   });
 }
 
-async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
+async function runScout(progress: (p: string) => void, auto = false): Promise<ScoutResult> {
   const notes: string[] = [];
   const at = Date.now();
-  progress('Looking for tokens that are moving: trending, new launches and top volume…');
+  progress('Looking for coins that are moving: trending, new launches, top volume and older coins…');
   const rows = await markets.scoutPools();
-  const tokens = pickTokens(rows, at, 6, recentScoutMints());
-  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 6 or 24 hours with real liquidity, 1 hour to 14 days old). Try again later.');
+  const tokens = pickTokens(rows, at, 7, recentScoutMints(), 2);
+  if (!tokens.length) throw new Error('No suitable coins right now (none up 30%+ in 6 or 24 hours with real liquidity, or older coins up 15%+). Try again later.');
   const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
 
   // 1. "Caught the pump": recent big buyers now well in profit (every token, fast).
@@ -462,10 +463,15 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
 
   // Let Claude choose; fall back to the rule-based ranking.
   const cfg = engine.cfg;
-  const autoAdd = cfg.ai.enabled && cfg.ai.manageWallets;
-  const free = Math.max(0, cfg.ai.maxWallets - cfg.wallets.filter((w) => w.enabled).length);
-  const max = autoAdd ? Math.min(cfg.ai.scoutMaxPicks, free) : cfg.ai.scoutMaxPicks;
-  if (autoAdd && !free) notes.push(`You already copy ${cfg.ai.maxWallets} wallets (the autopilot's maximum), so nothing new was added.`);
+  // Added automatically by the autopilot, or by the market scanner's trader finder on its own runs.
+  const byAi = cfg.ai.enabled && cfg.ai.manageWallets;
+  const byScanner = !byAi && auto && cfg.scanner.findTraders;
+  const autoAdd = byAi || byScanner;
+  const maxWallets = byAi ? cfg.ai.maxWallets : cfg.scanner.maxWallets;
+  const perRun = byAi ? cfg.ai.scoutMaxPicks : byScanner ? cfg.scanner.picksPerRun : cfg.ai.scoutMaxPicks;
+  const free = Math.max(0, maxWallets - cfg.wallets.filter((w) => w.enabled).length);
+  const max = autoAdd ? Math.min(perRun, free) : perRun;
+  if (autoAdd && !free) notes.push(`You already copy ${maxWallets} wallets (the ${byAi ? "autopilot's" : "scanner's"} maximum), so nothing new was added.`);
   // Only wallets that pass the basic checks can be picked, by Claude or by the rules.
   const basics = reports.filter(passesBasics);
   const eligible = basics.filter(passesBacktest);
@@ -500,7 +506,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   if (autoAdd && picks.length) {
     const next = structuredClone(engine.cfg);
     for (const p of picks) {
-      if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= cfg.ai.maxWallets) continue;
+      if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= maxWallets) continue;
       next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy } : {}) });
       added.push(p.address);
     }
@@ -508,7 +514,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
       const clean = sanitizeConfig(next, false);
       trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
-      for (const a of added) engine.log(`Wallet scout: now copying ${a.slice(0, 4)}…${a.slice(-4)}: ${picks.find((p) => p.address === a)!.reason}`, 'ai');
+      for (const a of added) engine.log(`${byAi ? 'Wallet scout' : 'Market scanner'}: now copying ${a.slice(0, 4)}…${a.slice(-4)} on a trial: ${picks.find((p) => p.address === a)!.reason}`, byAi ? 'ai' : 'system');
     }
   }
   const result: ScoutResult = { at, tokens, reports, picks, pickedBy, summary, added, notes };
@@ -520,18 +526,76 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   return result;
 }
 
-// Automatic scouting while the bot is running with the autopilot managing wallets.
+// Automatic scouting while the bot is running: by the autopilot, or the scanner's trader finder.
+let lastAutoScoutTry = 0;
 setInterval(() => {
   const a = engine.cfg.ai;
-  if (!engine.running || !a.enabled || !a.manageWallets || !a.scoutEveryHours || scoutRunning) return;
-  if (Date.now() - (lastScout?.at ?? 0) < a.scoutEveryHours * 3_600_000) return;
+  const sc = engine.cfg.scanner;
+  if (!engine.running || scoutRunning) return;
+  const aiDue = a.enabled && a.manageWallets && a.scoutEveryHours > 0 && Date.now() - (lastScout?.at ?? 0) >= a.scoutEveryHours * 3_600_000;
+  const scanDue = sc.findTraders && Date.now() - (lastScout?.at ?? 0) >= sc.traderEveryHours * 3_600_000;
+  if (!aiDue && !scanDue) return;
+  if (Date.now() - lastAutoScoutTry < 30 * 60_000) return; // a failed search waits half an hour
+  lastAutoScoutTry = Date.now();
   try {
     startScout(true);
-    engine.log('Wallet scout: searching for new wallets to copy…', 'ai');
+    engine.log(aiDue ? 'Wallet scout: searching for new wallets to copy…' : 'Market scanner: looking at new and older coins for traders worth copying…', aiDue ? 'ai' : 'system');
   } catch {
     /* already running */
   }
-}, 10 * 60_000).unref();
+}, 60_000).unref();
+
+// ---------- market scanner: coins to trade ----------
+type ScanState = { at: number; signals: CoinSignal[]; error: string | null; bought: { mint: string; symbol: string; at: number }[] };
+let lastScan: ScanState = { at: 0, signals: [], error: null, bought: [] };
+const scanTried = new Map<string, number>(); // mint -> when the scanner last tried it (6 h cooldown)
+let scanBusy = false;
+
+async function scanCoins() {
+  const sc = engine.cfg.scanner;
+  if (!engine.running || !sc.tradeCoins || scanBusy) return;
+  scanBusy = true;
+  try {
+    const now = Date.now();
+    for (const [m, t] of scanTried) if (now - t > 6 * 3_600_000) scanTried.delete(m);
+    let rows: import('./markets').PoolRow[];
+    try {
+      rows = await markets.scoutPools();
+    } catch (e) {
+      lastScan = { ...lastScan, at: now, error: (e as Error).message };
+      broadcast('scanner', scannerView());
+      return;
+    }
+    const skip = new Set([...Object.keys(engine.state.positions), ...scanTried.keys(), ...engine.cfg.safety.blacklist]);
+    const signals = coinSignals(rows, now, { newCoins: sc.newCoins, oldCoins: sc.oldCoins, minLiquidityUsd: engine.cfg.filters.minLiquidityUsd, skip });
+    lastScan = { ...lastScan, at: now, signals: signals.slice(0, 8), error: null };
+    // Only try to buy when the scanner has room, so a full scanner doesn't fill the log.
+    const positions = Object.values(engine.state.positions);
+    const held = positions.filter((p) => p.sources.includes(SCANNER_SOURCE)).length;
+    const room = held < sc.maxPositions && sc.budgetSol - walletExposureSol(positions, SCANNER_SOURCE) >= Math.max(0.001, sc.buySol / 2);
+    if (room) {
+      for (const s of signals.slice(0, 2)) {
+        scanTried.set(s.mint, now);
+        const why = await engine.scannerBuy({ mint: s.mint, symbol: s.symbol, why: s.why });
+        if (!why) {
+          lastScan.bought = [{ mint: s.mint, symbol: s.symbol, at: Date.now() }, ...lastScan.bought].slice(0, 10);
+          break; // one coin per scan
+        }
+        if (!engine.running || !engine.cfg.scanner.tradeCoins) break;
+      }
+    }
+    broadcast('scanner', scannerView());
+  } finally {
+    scanBusy = false;
+  }
+}
+
+function scannerView() {
+  const rec = walletRecords(engine.readTrades(), engine.cfg.mode)[SCANNER_SOURCE] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 };
+  return { ...lastScan, record: rec, nextTraderSearch: engine.cfg.scanner.findTraders ? (lastScout?.at ?? 0) + engine.cfg.scanner.traderEveryHours * 3_600_000 : null };
+}
+
+setInterval(() => scanCoins().catch((e) => engine.log(`Market scanner: ${(e as Error).message}`, 'warn')), 60_000).unref();
 
 // Automatic wallet reviews while the bot is running.
 setInterval(() => {
@@ -614,6 +678,8 @@ function trialAndResume(next: import('./config').Config) {
       delete w.pausedReason;
     }
   }
+  // The scanner's losing streak counts afresh when it's turned back on.
+  if (next.scanner.tradeCoins && !engine.cfg.scanner.tradeCoins) engine.scannerSince = Date.now();
 }
 
 // ---------- wallet health check ----------
@@ -765,6 +831,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       connection: connectionInfo(),
       jobs,
       scout: lastScout,
+      scanner: scannerView(),
       strategies: STRATEGIES,
       health: lastHealth,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },

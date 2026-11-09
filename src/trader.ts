@@ -5,6 +5,7 @@ import { Quote, executeSwap, quoteSell } from './jupiter';
 import { Position, State, saveState } from './state';
 import { appendJsonl, getTx, short } from './util';
 import { copyGapPct } from './rules';
+import { SCANNER_SOURCE } from './config';
 
 export type Trade = {
   t: number;
@@ -77,7 +78,7 @@ export class Trader {
     const g = this.gap('buy', ref, r.sol, r.tokenRaw);
     this.record({ t: Date.now(), mode: this.cfg.mode, side: 'buy', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source, sig: r.sig, ...g });
     const note = g.gapPct !== undefined ? `, ${g.gapPct >= 0 ? `${g.gapPct.toFixed(1)}% above` : `${(-g.gapPct).toFixed(1)}% below`} their price${g.lagSec !== undefined ? `, ${g.lagSec}s after them` : ''}` : '';
-    this.hooks.log(`BUY ${short(mint)} for ${r.sol.toFixed(4)} SOL (copying ${this.hooks.name(source)}${note})`, 'buy');
+    this.hooks.log(`BUY ${short(mint)} for ${r.sol.toFixed(4)} SOL (${source === SCANNER_SOURCE ? 'market scanner' : `copying ${this.hooks.name(source)}${note}`})`, 'buy');
   }
 
   /** Sell `fraction` (0..1] of our position. Returns the realized P&L, or null if nothing was sold. */

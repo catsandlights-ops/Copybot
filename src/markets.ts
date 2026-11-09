@@ -99,8 +99,11 @@ export type PoolRow = {
   name: string;
   image: string | null;
   priceUsd: number | null;
-  change: { h1: number | null; h6?: number | null; h24: number | null };
+  change: { m5?: number | null; h1: number | null; h6?: number | null; h24: number | null };
   volume24h: number | null;
+  volume1h?: number | null;
+  buys1h?: number | null;
+  sells1h?: number | null;
   liquidityUsd: number | null;
   marketCapUsd: number | null;
   createdAt: number | null;
@@ -124,8 +127,11 @@ function mapPools(d: any): PoolRow[] {
       name: text(t.name, 60),
       image: image(t.image_url),
       priceUsd: num(a.base_token_price_usd),
-      change: { h1: num(a.price_change_percentage?.h1), h6: num(a.price_change_percentage?.h6), h24: num(a.price_change_percentage?.h24) },
+      change: { m5: num(a.price_change_percentage?.m5), h1: num(a.price_change_percentage?.h1), h6: num(a.price_change_percentage?.h6), h24: num(a.price_change_percentage?.h24) },
       volume24h: num(a.volume_usd?.h24),
+      volume1h: num(a.volume_usd?.h1),
+      buys1h: num(a.transactions?.h1?.buys),
+      sells1h: num(a.transactions?.h1?.sells),
       liquidityUsd: num(a.reserve_in_usd),
       marketCapUsd: num(a.market_cap_usd) ?? num(a.fdv_usd),
       createdAt: a.pool_created_at ? Date.parse(a.pool_created_at) || null : null,

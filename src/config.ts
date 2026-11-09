@@ -45,7 +45,20 @@ const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
  * The rules for one wallet: global settings, then the wallet's own strategy (its exits, stop-loss,
  * minimum buy size and "don't chase"), then the wallet's own exit overrides.
  */
-export function walletRules(cfg: Pick<Config, 'risk' | 'exits' | 'wallets' | 'buy'>, address: string | undefined): { risk: Config['risk']; exits: Config['exits']; minTargetBuySol: number } {
+/** Positions the market scanner opened (not copied from a wallet) carry this as their source. */
+export const SCANNER_SOURCE = 'scanner';
+
+/** The scanner's own quick exits: stop-loss, take-profit, and a trailing stop once it's up. */
+export function scannerRules(cfg: Pick<Config, 'risk' | 'exits'> & { scanner?: Config['scanner'] }): { risk: Config['risk']; exits: Config['exits'] } {
+  const s = cfg.scanner ?? DEFAULT_CONFIG.scanner;
+  return {
+    risk: { ...cfg.risk, stopLossPct: s.stopLossPct, takeProfitPct: s.takeProfitPct },
+    exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: s.trailingAfterPct, trailingStopPct: s.trailingStopPct },
+  };
+}
+
+export function walletRules(cfg: Pick<Config, 'risk' | 'exits' | 'wallets' | 'buy'> & { scanner?: Config['scanner'] }, address: string | undefined): { risk: Config['risk']; exits: Config['exits']; minTargetBuySol: number } {
+  if (address === SCANNER_SOURCE) return { ...scannerRules(cfg), minTargetBuySol: 0 };
   const w = cfg.wallets.find((x) => x.address === address);
   let risk = cfg.risk;
   let exits = cfg.exits;
@@ -66,7 +79,7 @@ export function walletRules(cfg: Pick<Config, 'risk' | 'exits' | 'wallets' | 'bu
 }
 
 /** Exit settings for a position: those of the wallet that opened it (see walletRules). */
-export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'> & Partial<Pick<Config, 'buy'>>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
+export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'> & Partial<Pick<Config, 'buy' | 'scanner'>>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
   const r = walletRules({ ...cfg, buy: cfg.buy ?? ({ minTargetBuySol: 0 } as Config['buy']) }, sources[0]);
   return { risk: r.risk, exits: r.exits };
 }
@@ -140,6 +153,28 @@ export type Config = {
   strategy: string;
   /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
   alerts: { trades: boolean; errors: boolean; guard: boolean; autopilot: boolean };
+  /**
+   * Market scanner, while the bot runs. findTraders: keep looking at new and older coins for
+   * winning traders, backtest them and add the best on a trial. tradeCoins: buy rising coins on
+   * its own, with its own budget and quick exits, through every safety check.
+   */
+  scanner: {
+    findTraders: boolean;
+    traderEveryHours: number;
+    maxWallets: number; // stop adding once this many wallets are being copied
+    picksPerRun: number;
+    tradeCoins: boolean;
+    newCoins: boolean; // 1 hour to 7 days old
+    oldCoins: boolean; // over 7 days old
+    buySol: number;
+    budgetSol: number; // most SOL in scanner positions at once
+    maxPositions: number;
+    stopLossPct: number;
+    takeProfitPct: number;
+    trailingAfterPct: number;
+    trailingStopPct: number;
+    maxHoldHours: number; // sell whatever is left after this long (0 = never)
+  };
   /** Claude autopilot. Off until the user turns it on and adds an Anthropic API key. */
   ai: {
     enabled: boolean;
@@ -191,6 +226,7 @@ export const DEFAULT_CONFIG: Config = {
   strategy: '',
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
+  scanner: { findTraders: false, traderEveryHours: 6, maxWallets: 8, picksPerRun: 2, tradeCoins: false, newCoins: true, oldCoins: true, buySol: 0.05, budgetSol: 0.3, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 
@@ -238,6 +274,17 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'paper.startSol': [0.1, 100_000, 'Paper wallet start'],
   'trial.winsToStepUp': [1, 50, 'Profitable copies to step up'],
   'trial.pauseAfterLosses': [0, 50, 'Pause a wallet after losses in a row'],
+  'scanner.traderEveryHours': [1, 168, 'Look for traders every'],
+  'scanner.maxWallets': [1, 50, 'Most wallets to copy'],
+  'scanner.picksPerRun': [1, 5, 'New traders per search'],
+  'scanner.buySol': [0.001, 100, 'Scanner amount per buy'],
+  'scanner.budgetSol': [0.001, 10_000, 'Scanner budget'],
+  'scanner.maxPositions': [1, 20, 'Scanner coins at once'],
+  'scanner.stopLossPct': [3, 90, 'Scanner stop-loss'],
+  'scanner.takeProfitPct': [0, 1_000, 'Scanner take-profit'],
+  'scanner.trailingAfterPct': [0, 1_000, 'Scanner trailing stop starts at'],
+  'scanner.trailingStopPct': [0, 90, 'Scanner trailing stop'],
+  'scanner.maxHoldHours': [0, 168, 'Scanner max hold'],
   'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],
   'ai.walletReviewHours': [1, 720, 'Review wallets every'],
   'ai.maxWallets': [1, 50, 'Max wallets for the AI'],
@@ -245,7 +292,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.newCoins', 'scanner.oldCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
