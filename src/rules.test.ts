@@ -186,7 +186,7 @@ test('dangerReason: rug, crash and dump checks', async () => {
   assert.equal(dangerReason(base, p), null);
   assert.match(dangerReason({ ...base, liquidityUsd: 20_000 }, p)!, /liquidity fell 67%/);
   assert.equal(dangerReason({ ...base, liquidityUsd: null }, p), null); // bonding curve: no pool figure
-  assert.match(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 120_000, 1], [now, 0.6]] }, p)!, /value fell 40% in under 5 min/);
+  assert.match(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 120_000, 1], [now, 0.6]] }, p)!, /price fell 40% in under 5 min/);
   // A slow decline outside the window doesn't count.
   assert.equal(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 10 * 60_000, 1], [now, 0.6]] }, p), null);
   assert.match(dangerReason({ ...base, buys5m: 5, sells5m: 25 }, p)!, /25 sells vs 5 buys/);
@@ -279,4 +279,15 @@ test('panicReason: closed + open result past the limit; 0 = off', async () => {
   assert.equal(panicReason(-0.3, -0.1, 0.5), null);
   assert.equal(panicReason(0.2, -0.6, 0.5), null); // today's profit cushions it
   assert.equal(panicReason(-5, -5, 0), null);
+});
+
+test('perTokenValue: selling part of a position (or buying more) is not a price drop', async () => {
+  const { perTokenValue, dangerReason } = await import('./rules');
+  const before = perTokenValue(1.0, '1000000'); // 1 SOL for 1,000,000 units
+  const afterHalfSold = perTokenValue(0.5, '500000'); // sold half: value halves, price the same
+  assert.equal(before, afterHalfSold);
+  const now = 1_000_000_000;
+  const p = { ...DEFAULT_CONFIG.protect, liquidityDropPct: 0, maxSellBuyRatio: 0, crashPct: 35, crashWindowMin: 5 };
+  assert.equal(dangerReason({ now, valueSol: afterHalfSold, samples: [[now - 60_000, before], [now, afterHalfSold]], liquidityUsd: null, peakLiquidityUsd: null, buys5m: null, sells5m: null }, p), null);
+  assert.equal(perTokenValue(1, '0'), 0);
 });

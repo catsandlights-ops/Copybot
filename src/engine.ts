@@ -18,6 +18,7 @@ import type { RawTx } from './util';
 import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
 import { panicReason } from './rules';
+import { perTokenValue } from './rules';
 import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
@@ -52,6 +53,7 @@ export class BotEngine extends EventEmitter {
   private labels = new Map<string, string>();
   private queue: Promise<void> = Promise.resolve();
   private lastRateWarn = 0;
+  private lastJupWarn = 0;
   keyError: string | null = null;
   private stream: FastStream | null = null;
 
@@ -64,6 +66,11 @@ export class BotEngine extends EventEmitter {
   /** Errors from background work: collapse RPC rate limits into one warning per minute. */
   private logError(e: unknown) {
     const msg = (e as Error)?.message ?? String(e);
+    if (/Jupiter is busy/.test(msg)) {
+      if (Date.now() - this.lastJupWarn < 60_000) return;
+      this.lastJupWarn = Date.now();
+      return this.log('Jupiter (the swap service) is busy right now, so some price checks and trades are delayed. Copybot keeps retrying; a Jupiter API key (Settings → Connection) raises the limit.', 'warn');
+    }
     if (/429|rate|Too Many/i.test(msg)) {
       if (Date.now() - this.lastRateWarn < 60_000) return;
       this.lastRateWarn = Date.now();
@@ -333,7 +340,8 @@ export class BotEngine extends EventEmitter {
         this.log(`Cancelled ${open.length} open order${open.length === 1 ? '' : 's'}.`, 'warn');
       }
       let sold = 0;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      // Keep trying for about half a minute: a busy swap service or RPC shouldn't leave positions open.
+      for (let attempt = 0; attempt < 5; attempt++) {
         for (const mint of Object.keys(this.state.positions)) {
           await this.enqueue(async () => {
             if (!this.state.positions[mint]) return;
@@ -342,7 +350,8 @@ export class BotEngine extends EventEmitter {
           });
         }
         if (!Object.keys(this.state.positions).length) break;
-        await sleep(3000);
+        if (attempt < 4) this.log(`Still selling ${Object.keys(this.state.positions).length} position(s); trying again…`, 'warn');
+        await sleep(3000 * (attempt + 1));
       }
       const failed = Object.keys(this.state.positions);
       if (failed.length) this.log(`Couldn't sell ${failed.length} position(s): ${failed.map(short).join(', ')}. Sell them by hand on the Dashboard.`, 'error');
@@ -899,7 +908,7 @@ export class BotEngine extends EventEmitter {
           if (why && gen === this.gen && !this.exiting.has(p.mint)) {
             changed = true;
             this.log(`${short(p.mint)}: ${why}. Selling everything.`, 'warn');
-            if (/liquidity fell|value fell/.test(why)) this.rememberRug(p.mint, why);
+            if (/liquidity fell|price fell/.test(why)) this.rememberRug(p.mint, why);
             this.exiting.add(p.mint);
             this.enqueue(async () => {
               try {
@@ -946,11 +955,12 @@ export class BotEngine extends EventEmitter {
     if (!pr.liquidityDropPct && !pr.crashPct && !pr.maxSellBuyRatio) return null;
     const now = Date.now();
     const s = (this.samples.get(p.mint) ?? []).filter(([t]) => now - t <= Math.max(pr.crashWindowMin, 1) * 60_000);
-    s.push([now, valueSol]);
+    const unit = perTokenValue(valueSol, p.amountRaw);
+    s.push([now, unit]);
     this.samples.set(p.mint, s);
     const info = pr.liquidityDropPct || pr.maxSellBuyRatio ? await getMarketInfo(p.mint).catch(() => null) : null;
     if (info?.liquidityUsd != null && info.liquidityUsd > (p.peakLiquidityUsd ?? 0)) p.peakLiquidityUsd = info.liquidityUsd;
-    return dangerReason({ now, valueSol, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null }, pr);
+    return dangerReason({ now, valueSol: unit, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null }, pr);
   }
 
   async valuePositions() {
