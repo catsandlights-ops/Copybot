@@ -2332,7 +2332,7 @@ const FIELDS = [
     { k: 'protect.liquidityDropPct', label: 'Sell if liquidity drains by', unit: '% from high', help: 'The pool emptying out is the classic rug pull. Compared with the highest liquidity seen since you bought. Pump.fun tokens still on their bonding curve have no pool figure, so this waits until they graduate.' },
     { k: 'protect.crashPct', label: 'Sell if value crashes by', unit: '%', help: 'A drop this big within the window below, even if you\'re still in profit.' },
     { k: 'protect.crashWindowMin', label: 'Crash window', unit: 'min', step: 1 },
-    { k: 'protect.maxSellBuyRatio', label: 'Sell if sellers outnumber buyers', unit: '× (5 min)', help: 'E.g. 3 = three times more sells than buys in the last 5 minutes, with at least 20 sells.' },
+    { k: 'protect.maxSellBuyRatio', label: 'Sell if sellers outnumber buyers', unit: '× (5 min)', help: 'E.g. 3 = three times more sells than buys in the last 5 minutes, with at least 20 sells, and only while the price is falling 5% or more (many small sells at a steady price are ignored).' },
   ]},
   { title: 'Token filters', desc: 'Market checks before every buy, using Dexscreener data (and Solscan for holders). 0 turns a filter off.', fields: [
     { k: 'filters.minLiquidityUsd', label: 'Minimum liquidity', unit: 'USD', step: 1000, help: 'Thin pools mean big slippage: often -20% to -50% on the way out. Pump.fun tokens still on their bonding curve have no pool figure; the buy-then-sell check covers them.' },
@@ -2354,7 +2354,7 @@ const FIELDS = [
     { k: 'risk.panicLossSol', label: 'Panic limit', unit: 'SOL', help: "Sell everything and stop the bot if today's result (closed trades plus what open positions are worth now) reaches minus this much. Stronger than the daily loss limit, which only stops new buys. 0 = off." },
     { k: 'risk.moodFilter', label: 'Market mood filter', type: 'toggle', help: 'Checks every 3 minutes. When SOL drops 2%+ in an hour (or 6%+ in a day) or most trending coins are falling, buys from signals are halved; at 4%+ an hour (12%+ a day) or 80% falling, they stop until it improves. Your own orders aren\'t affected.' },
     { k: 'risk.dailyLossLimitSol', label: 'Daily loss limit', unit: 'SOL', help: 'Stop new buys for the rest of the day after losing this much. Sells and exits keep running. 0 = off.' },
-    { k: 'risk.pauseAfterLosses', label: 'Pause after losses in a row', unit: 'trades', step: 1, help: 'A cool-down after a losing streak. 0 = off.' },
+    { k: 'risk.pauseAfterLosses', label: 'Pause after losses in a row', unit: 'trades', step: 1, help: 'A cool-down after a losing streak. Trades that lose under 2% count as break-even, not losses. 0 = off.' },
     { k: 'risk.pauseMinutes', label: 'Pause length', unit: 'min', step: 1 },
   ]},
   { title: 'New wallets', desc: 'Let new wallets prove themselves before they get full size, and pause any wallet that keeps losing.', fields: [

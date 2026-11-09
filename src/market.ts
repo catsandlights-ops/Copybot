@@ -15,7 +15,7 @@ type Pair = {
   baseToken?: { address?: string; symbol?: string; name?: string };
   quoteToken?: { address?: string; symbol?: string; name?: string };
   volume?: { h24?: number };
-  priceChange?: { h1?: number };
+  priceChange?: { h1?: number; m5?: number };
   txns?: { h1?: { buys?: number; sells?: number }; m5?: { buys?: number; sells?: number } };
   liquidity?: { usd?: number };
   marketCap?: number;
@@ -46,6 +46,7 @@ export function summarizePairs(mint: string, pairs: Pair[], dexscreenerId = 'sol
     name: side?.name ?? null,
     volume24hUsd: vols.length ? vols.reduce((a, n) => a + n, 0) : null,
     change1hPct: num(top.priceChange?.h1),
+    change5mPct: num(top.priceChange?.m5),
     buys1h: num(top.txns?.h1?.buys),
     sells1h: num(top.txns?.h1?.sells),
     buys5m: num(top.txns?.m5?.buys),

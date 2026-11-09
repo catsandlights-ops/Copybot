@@ -76,6 +76,7 @@ export type MarketInfo = {
   name?: string | null;
   volume24hUsd?: number | null;
   change1hPct?: number | null;
+  change5mPct?: number | null;
   buys1h?: number | null;
   sells1h?: number | null;
   buys5m?: number | null;
@@ -126,7 +127,11 @@ export type DangerInputs = {
   peakLiquidityUsd: number | null;
   buys5m: number | null;
   sells5m: number | null;
+  change5mPct?: number | null; // the market's own 5-minute price change, if known
 };
+
+/** Heavy selling only counts as a dump when the price is really falling this much within 5 minutes. */
+export const DUMP_CONFIRM_PCT = 5;
 
 /** Why an open position should be sold right away to escape a rug or dump, or null. */
 /**
@@ -154,7 +159,15 @@ export function dangerReason(d: DangerInputs, p: Config['protect']): string | nu
   }
   if (p.maxSellBuyRatio > 0 && d.sells5m != null && d.sells5m >= 20) {
     const buys = Math.max(1, d.buys5m ?? 0);
-    if (d.sells5m / buys >= p.maxSellBuyRatio) return `dump protection: ${d.sells5m} sells vs ${d.buys5m ?? 0} buys in the last 5 min`;
+    if (d.sells5m / buys >= p.maxSellBuyRatio) {
+      // Many small sells while the price holds aren't a dump: require the price to be falling too.
+      const recent = d.samples.filter(([t]) => t >= d.now - 5 * 60_000).map(([, v]) => v);
+      const high = Math.max(...recent, 0);
+      const ownDrop = high > 0 && recent.length >= 2 ? (1 - d.valueSol / high) * 100 : 0;
+      const marketDrop = d.change5mPct != null ? -d.change5mPct : 0;
+      const drop = Math.max(ownDrop, marketDrop);
+      if (drop >= DUMP_CONFIRM_PCT) return `dump protection: ${d.sells5m} sells vs ${d.buys5m ?? 0} buys in the last 5 min, price down ${drop.toFixed(0)}%`;
+    }
   }
   return null;
 }
@@ -286,10 +299,21 @@ export function buyBlockReason(g: GuardState, risk: Config['risk'], now: number)
 }
 
 /** Update the guard after a sell. Returns the new state and a message if a pause/limit just kicked in. */
-export function recordSell(g: GuardState, pnlSol: number, risk: Config['risk'], now: number): { guard: GuardState; event: string | null } {
+/** A loss smaller than this share of what the trade cost is "about break-even": it doesn't count toward a losing streak. */
+export const STREAK_MIN_LOSS_PCT = 2;
+
+/** A sell that lost less than STREAK_MIN_LOSS_PCT of its cost (cost = proceeds - profit): break-even, not a loss. */
+export const isBreakEvenLoss = (pnl: number, proceedsSol: number) => {
+  const cost = proceedsSol - pnl;
+  return pnl < 0 && cost > 0 && -pnl < (cost * STREAK_MIN_LOSS_PCT) / 100;
+};
+
+export function recordSell(g: GuardState, pnlSol: number, risk: Config['risk'], now: number, costSol?: number): { guard: GuardState; event: string | null } {
   g = rollDay(g, now);
   const before = buyBlockReason(g, risk, now);
-  const next: GuardState = { ...g, dayPnlSol: g.dayPnlSol + pnlSol, lossStreak: pnlSol < 0 ? g.lossStreak + 1 : 0 };
+  const breakEven = pnlSol < 0 && costSol != null && costSol > 0 && -pnlSol < (costSol * STREAK_MIN_LOSS_PCT) / 100;
+  const lossStreak = breakEven ? g.lossStreak : pnlSol < 0 ? g.lossStreak + 1 : 0;
+  const next: GuardState = { ...g, dayPnlSol: g.dayPnlSol + pnlSol, lossStreak };
   let event: string | null = null;
   if (risk.pauseAfterLosses > 0 && next.lossStreak >= risk.pauseAfterLosses) {
     next.pausedUntil = now + risk.pauseMinutes * 60_000;

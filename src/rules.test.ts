@@ -96,7 +96,7 @@ test('summarizePairs adds up liquidity across pools and keeps the oldest pool ti
     { chainId: 'solana', baseToken: { address: m }, liquidity: { usd: 500 }, fdv: 60_000, pairCreatedAt: 1000, volume: { h24: 200 } },
     { chainId: 'ethereum', baseToken: { address: m }, liquidity: { usd: 99999 } },
   ])!;
-  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, buys1h: 40, sells1h: 10, buys5m: null, sells5m: null });
+  assert.deepEqual(info, { liquidityUsd: 1500, marketCapUsd: 60_000, createdAt: 1000, symbol: 'LEAF', name: 'Leaf', volume24hUsd: 500, change1hPct: 12, change5mPct: null, buys1h: 40, sells1h: 10, buys5m: null, sells5m: null });
   assert.equal(summarizePairs(m, []), null);
 });
 
@@ -189,7 +189,11 @@ test('dangerReason: rug, crash and dump checks', async () => {
   assert.match(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 120_000, 1], [now, 0.6]] }, p)!, /price fell 40% in under 5 min/);
   // A slow decline outside the window doesn't count.
   assert.equal(dangerReason({ ...base, valueSol: 0.6, samples: [[now - 10 * 60_000, 1], [now, 0.6]] }, p), null);
-  assert.match(dangerReason({ ...base, buys5m: 5, sells5m: 25 }, p)!, /25 sells vs 5 buys/);
+  // Heavy selling counts only while the price is really falling (5%+ in 5 minutes)...
+  assert.equal(dangerReason({ ...base, buys5m: 5, sells5m: 25 }, p), null); // price flat: lots of tiny sells, not a dump
+  assert.match(dangerReason({ ...base, buys5m: 5, sells5m: 25, valueSol: 0.9 }, p)!, /25 sells vs 5 buys in the last 5 min, price down 10%/); // our own price samples
+  assert.match(dangerReason({ ...base, buys5m: 5, sells5m: 25, change5mPct: -8 }, p)!, /price down 8%/); // the market's 5-minute change
+  assert.equal(dangerReason({ ...base, buys5m: 5, sells5m: 25, change5mPct: -3 }, p), null);
   assert.equal(dangerReason({ ...base, buys5m: 1, sells5m: 10 }, p), null); // too few sells to judge
   assert.equal(dangerReason({ ...base, liquidityUsd: 1, buys5m: 0, sells5m: 99 }, { liquidityDropPct: 0, crashPct: 0, crashWindowMin: 5, maxSellBuyRatio: 0 }), null);
 });
@@ -290,4 +294,25 @@ test('perTokenValue: selling part of a position (or buying more) is not a price 
   const p = { ...DEFAULT_CONFIG.protect, liquidityDropPct: 0, maxSellBuyRatio: 0, crashPct: 35, crashWindowMin: 5 };
   assert.equal(dangerReason({ now, valueSol: afterHalfSold, samples: [[now - 60_000, before], [now, afterHalfSold]], liquidityUsd: null, peakLiquidityUsd: null, buys5m: null, sells5m: null }, p), null);
   assert.equal(perTokenValue(1, '0'), 0);
+});
+
+test('losing streak: near break-even losses (under 2% of cost) do not count', async () => {
+  const { recordSell, freshGuard } = await import('./rules');
+  const risk = { ...DEFAULT_CONFIG.risk, pauseAfterLosses: 3, dailyLossLimitSol: 0 };
+  const t = 1_800_000_000_000;
+  let g = freshGuard(t);
+  for (let i = 0; i < 5; i++) g = recordSell(g, -0.0001, risk, t, 0.05).guard; // -0.2% each: not real losses
+  assert.equal(g.lossStreak, 0);
+  assert.ok(!g.pausedUntil);
+  g = recordSell(g, -0.005, risk, t, 0.05).guard; // -10%: a real loss
+  g = recordSell(g, -0.0001, risk, t, 0.05).guard; // break-even: neither adds nor resets
+  assert.equal(g.lossStreak, 1);
+  g = recordSell(g, -0.005, risk, t, 0.05).guard;
+  const r = recordSell(g, -0.005, risk, t, 0.05);
+  assert.match(r.event!, /3 losing trades in a row/);
+  assert.equal(recordSell(freshGuard(t), -0.0001, risk, t).guard.lossStreak, 1); // cost unknown: counts as before
+  const { isBreakEvenLoss } = await import('./rules');
+  assert.equal(isBreakEvenLoss(-0.0001, 0.0499), true); // sold for 0.0499, cost 0.05
+  assert.equal(isBreakEvenLoss(-0.005, 0.045), false);
+  assert.equal(isBreakEvenLoss(0.001, 0.051), false);
 });

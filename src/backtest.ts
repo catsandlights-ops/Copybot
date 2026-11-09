@@ -98,7 +98,7 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
     exposure = Math.max(0, exposure - cost);
     if (fraction >= 0.999 || p.tokens <= 0) positions.delete(p.mint);
     realized += pnl;
-    guard = recordSell(guard ?? freshGuard(now), pnl, r, now).guard;
+    guard = recordSell(guard ?? freshGuard(now), pnl, r, now, cost).guard;
     for (const src of p.wallets) {
       const ws = wal(src);
       ws.closed++;

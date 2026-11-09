@@ -225,7 +225,7 @@ window.GUIDES = [
 <li><b>Staged exits.</b> At 2x Copybot takes your cost back, then takes profit at +300% and +900%, and a trailing stop protects the rest. See <a href="#" data-guide="exits">How exits work</a>.</li>
 <li><b>Don't chase.</b> If the price is already more than 15% above what the copied wallet paid, Copybot skips the copy.</li>
 <li><b>Token filters.</b> Minimum liquidity, maximum buy size compared to the pool, plus optional market-cap and token-age limits.</li>
-<li><b>Circuit breaker.</b> No new buys after a 0.3 SOL loss in a day, and a 60-minute pause after 4 losing trades in a row.</li>
+<li><b>Circuit breaker.</b> No new buys after a 0.3 SOL loss in a day, and a 60-minute pause after 4 losing trades in a row (trades that lose under 2% count as break-even).</li>
 <li><b>Wallet scoreboard.</b> Your own profit and win rate from each wallet you copy, with a per-wallet size and budget.</li>
 </ul>
 <h3>New pages</h3>

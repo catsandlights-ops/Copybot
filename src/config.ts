@@ -135,7 +135,7 @@ export type Config = {
     liquidityDropPct: number; // sell if the pool's liquidity falls this much from its high since we bought
     crashPct: number; // sell if the position loses this much within crashWindowMin
     crashWindowMin: number;
-    maxSellBuyRatio: number; // sell if sells outnumber buys this many times over in the last 5 minutes (20+ sells)
+    maxSellBuyRatio: number; // sell if sells outnumber buys this many times over in the last 5 minutes (20+ sells) while the price falls 5%+
   };
   /** Market-data filters (Dexscreener). 0 turns a filter off. */
   filters: {

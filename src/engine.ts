@@ -21,7 +21,7 @@ import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
 import { panicReason } from './rules';
 import { perTokenValue } from './rules';
-import { buyBlockReason, dangerReason, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
+import { buyBlockReason, dangerReason, isBreakEvenLoss, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
 import fs from 'node:fs';
@@ -118,7 +118,7 @@ export class BotEngine extends EventEmitter {
       log: (m, l) => this.log(m, l),
       trade: (t: Trade) => {
         if (t.side === 'sell' && typeof t.pnl === 'number') {
-          this.afterSell(t.pnl);
+          this.afterSell(t.pnl, t.sol - t.pnl); // cost = proceeds - profit
           this.walletProgress(t.sources ?? []);
         }
         this.emit('trade', t);
@@ -403,8 +403,8 @@ export class BotEngine extends EventEmitter {
     return rollDay(this.state.guard ?? freshGuard(Date.now()), Date.now());
   }
 
-  private afterSell(pnl: number) {
-    const { guard, event } = recordSell(this.guard, pnl, this.cfg.risk, Date.now());
+  private afterSell(pnl: number, costSol?: number) {
+    const { guard, event } = recordSell(this.guard, pnl, this.cfg.risk, Date.now(), costSol);
     this.state.guard = guard;
     saveState(this.state, this.cfg.mode);
     if (event) {
@@ -420,7 +420,7 @@ export class BotEngine extends EventEmitter {
     // The market scanner stops buying after the same losing streak that pauses a wallet.
     const n = this.cfg.trial.pauseAfterLosses;
     if (sources.includes(SCANNER_SOURCE) && this.cfg.scanner.tradeCoins && n > 0) {
-      const pnls = trades.filter((t: any) => t.mode === this.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.includes(SCANNER_SOURCE) && t.t >= this.scannerSince).map((t: any) => t.pnl as number);
+      const pnls = trades.filter((t: any) => t.mode === this.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.includes(SCANNER_SOURCE) && t.t >= this.scannerSince && !isBreakEvenLoss(t.pnl, t.sol)).map((t: any) => t.pnl as number);
       if (pnls.length >= n && pnls.slice(-n).every((p) => p < 0)) {
         this.cfg.scanner.tradeCoins = false;
         this.log(`Market scanner stopped buying coins: ${n} losing trades in a row. Its open coins still follow their exits. Turn it back on in Scanner.`, 'warn');
@@ -431,7 +431,7 @@ export class BotEngine extends EventEmitter {
       const w = this.cfg.wallets.find((x) => x.address === addr);
       if (!w || !w.enabled) continue;
       const pnls = trades
-        .filter((t: any) => t.mode === this.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.includes(addr) && t.t >= (w.since ?? 0))
+        .filter((t: any) => t.mode === this.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.sources?.includes(addr) && t.t >= (w.since ?? 0) && !isBreakEvenLoss(t.pnl, t.sol))
         .map((t: any) => t.pnl as number);
       const { stepUp, pause } = walletLifecycle(w, pnls, this.cfg.trial);
       if (pause) {
@@ -517,13 +517,29 @@ export class BotEngine extends EventEmitter {
   private watchers: { stop(): void }[] = [];
 
   /** A swap seen by another chain's watcher (already decoded). */
+  /** While new buys are paused, their buys of coins we don't hold aren't worth a log line each. */
+  private quietSignal(swap: Swap): boolean {
+    return swap.side === 'buy' && !this.state.positions[swap.mint] && !!buyBlockReason(this.guard, this.cfg.risk, Date.now());
+  }
+
+  /** The same skip reason over and over: show it once, then hide repeats for 10 minutes. */
+  private shownSkips = new Map<string, number>();
+  private logSkip(why: string) {
+    const now = Date.now();
+    const last = this.shownSkips.get(why);
+    if (last != null && now - last < 10 * 60_000) return;
+    for (const [k, t] of this.shownSkips) if (now - t >= 10 * 60_000) this.shownSkips.delete(k);
+    this.shownSkips.set(why, now);
+    this.log(`  skipped: ${why}${/paused|loss limit/.test(why) ? ' (repeats hidden for 10 min)' : ''}`, 'skip');
+  }
+
   private onChainSwap(swap: Swap, gen: number) {
     if (!this.running || gen !== this.gen || this.seen.has(swap.signature)) return;
     this.remember(swap.signature);
     const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
     const c = getChain(swap);
     const amount = swap.nativeAmount != null ? `${swap.nativeAmount.toFixed(4)} ${c.meta.native.symbol} (≈ ${swap.quoteAmount.toFixed(3)} SOL)` : `${swap.quoteAmount.toFixed(2)} ${swap.quote}`;
-    this.log(`${this.labels.get(swap.wallet) ?? short(swap.wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} on ${c.meta.name} for ${amount} (${age.toFixed(1)}s ago)`, 'signal');
+    if (!this.quietSignal(swap)) this.log(`${this.labels.get(swap.wallet) ?? short(swap.wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} on ${c.meta.name} for ${amount} (${age.toFixed(1)}s ago)`, 'signal');
     if (age > this.cfg.risk.maxSignalAgeSec) return this.log('  skipped: signal too old', 'skip');
     this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
   }
@@ -532,7 +548,7 @@ export class BotEngine extends EventEmitter {
     const swap = this.chain.decodeSwap(tx, wallet);
     if (!swap) return;
     const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
-    this.log(`${this.labels.get(wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} for ${swap.quoteAmount.toFixed(3)} ${swap.quote} (${age.toFixed(1)}s ago)`, 'signal');
+    if (!this.quietSignal(swap)) this.log(`${this.labels.get(wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} for ${swap.quoteAmount.toFixed(3)} ${swap.quote} (${age.toFixed(1)}s ago)`, 'signal');
     if (age > this.cfg.risk.maxSignalAgeSec) return this.log('  skipped: signal too old', 'skip');
     this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
   }
@@ -688,7 +704,7 @@ export class BotEngine extends EventEmitter {
       if (why !== raw) this.logError(new Error(raw)); // one tip a minute about a private RPC
       const c = skipCategory(why);
       st.skips[c] = (st.skips[c] ?? 0) + 1;
-      this.log(`  skipped: ${why}`, 'skip');
+      this.logSkip(why);
     };
 
     const now = Date.now();
@@ -1039,13 +1055,13 @@ export class BotEngine extends EventEmitter {
     const pr = this.cfg.protect;
     if (!pr.liquidityDropPct && !pr.crashPct && !pr.maxSellBuyRatio) return null;
     const now = Date.now();
-    const s = (this.samples.get(p.mint) ?? []).filter(([t]) => now - t <= Math.max(pr.crashWindowMin, 1) * 60_000);
+    const s = (this.samples.get(p.mint) ?? []).filter(([t]) => now - t <= Math.max(pr.crashWindowMin, 5) * 60_000);
     const unit = perTokenValue(valueSol, p.amountRaw);
     s.push([now, unit]);
     this.samples.set(p.mint, s);
     const info = pr.liquidityDropPct || pr.maxSellBuyRatio ? await getMarketInfo(p.mint, getChain(p).meta.dexscreenerId).catch(() => null) : null;
     if (info?.liquidityUsd != null && info.liquidityUsd > (p.peakLiquidityUsd ?? 0)) p.peakLiquidityUsd = info.liquidityUsd;
-    return dangerReason({ now, valueSol: unit, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null }, pr);
+    return dangerReason({ now, valueSol: unit, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null, change5mPct: info?.change5mPct ?? null }, pr);
   }
 
   async valuePositions() {
