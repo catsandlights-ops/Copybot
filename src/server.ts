@@ -43,15 +43,16 @@ const STATIC: Record<string, [string, string]> = {
 
 // ---------- display preferences (light/dark). Kept apart from config.json so changing them never restarts the bot ----------
 const MODES = ['system', 'light', 'dark'] as const;
-type UiPrefs = { mode: (typeof MODES)[number] };
+type UiPrefs = { mode: (typeof MODES)[number]; setupDone: boolean };
 function loadUiPrefs(): UiPrefs {
+  // Existing installs (a config already there) skip the first-run setup.
+  const setupDefault = fs.existsSync('config.json');
   try {
-    const m = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')).mode; // older versions stored a "theme" instead
-    if (MODES.includes(m)) return { mode: m };
+    const j = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')); // older versions stored a "theme" instead of "mode"
+    return { mode: MODES.includes(j.mode) ? j.mode : 'system', setupDone: typeof j.setupDone === 'boolean' ? j.setupDone : setupDefault };
   } catch {
-    /* defaults */
+    return { mode: 'system', setupDone: setupDefault };
   }
-  return { mode: 'system' };
 }
 let uiPrefs = loadUiPrefs();
 export const TOKEN = crypto.randomBytes(32).toString('base64url');
@@ -752,8 +753,9 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'PUT /api/ui') {
     const b = await readBody(req);
-    if (!MODES.includes(b.mode)) throw new HttpError(400, 'Unknown appearance');
-    uiPrefs = { mode: b.mode };
+    if (b.mode !== undefined && !MODES.includes(b.mode)) throw new HttpError(400, 'Unknown appearance');
+    if (b.setupDone !== undefined && typeof b.setupDone !== 'boolean') throw new HttpError(400, 'Invalid setupDone');
+    uiPrefs = { mode: b.mode ?? uiPrefs.mode, setupDone: b.setupDone ?? uiPrefs.setupDone };
     fs.mkdirSync('data', { recursive: true });
     fs.writeFileSync('data/ui.json', JSON.stringify(uiPrefs));
     broadcast('ui', uiPrefs);

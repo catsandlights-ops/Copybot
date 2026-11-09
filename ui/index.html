@@ -164,6 +164,22 @@ td.r, th.r { text-align: right; }
 .tag.skip { background: var(--amber-bg); color: var(--amber); }
 #ai-settings { scroll-margin-top: 110px; }
 .modal .with-unit span { min-width: 86px; text-align: center; }
+.modal.wizard { max-width: 620px; width: calc(100% - 32px); padding: 22px 26px; }
+.wz-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.wz-dots { display: flex; gap: 6px; }
+.wz-dot { width: 26px; height: 6px; border-radius: 6px; background: var(--panel-2); }
+.wz-dot.done { background: var(--accent); opacity: .5; }
+.wz-dot.on { background: var(--rainbow); }
+.wz-body h2 { margin: 10px 0 8px; font-size: 20px; }
+.wz-body p { line-height: 1.55; }
+.wz-hero svg { width: 64px; height: 64px; }
+.wz-nav { margin-top: 18px; }
+.wz-choices { display: grid; gap: 10px; }
+.wz-choice { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); font: inherit; }
+button.wz-choice { cursor: pointer; }
+button.wz-choice:hover { border-color: var(--accent); }
+.wz-choice span { color: var(--muted); font-size: 13px; }
+.wz-check { list-style: none; padding: 0; line-height: 2; }
 .scout-hero { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 20px 22px; }
 .scout-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .scout-steps span { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--panel-2); color: var(--muted); }
@@ -525,6 +541,71 @@ const isDark = () => S.ui.mode === 'dark' || (S.ui.mode !== 'light' && matchMedi
 async function setAppearance(mode) {
   S.ui = { ...S.ui, mode }; applyMode(mode); render();
   await act(() => api('PUT', '/api/ui', { mode }));
+}
+
+// ---------------- first-run setup ----------------
+const WZ_STEPS = ['Welcome', 'Connection', 'Wallets', 'Alerts', 'Ready'];
+function wizard(step = 0) {
+  S.wz = step;
+  const c = S.connection, mine = S.config.wallets.length;
+  const dots = WZ_STEPS.map((l, i) => `<span class="wz-dot ${i === step ? 'on' : i < step ? 'done' : ''}" title="${l}"></span>`).join('');
+  const body = [
+    `<div class="wz-hero">${ICON.rainbow}</div><h2>Welcome to Copybot</h2>
+     <p>Copybot follows Solana wallets you choose and copies their trades within seconds, with safety checks and limits you control.</p>
+     <p class="muted">It starts in <b>paper mode</b>: every trade is simulated with real prices and nothing is spent. Setup takes about 3 minutes.</p>`,
+    `<h2>Connect a fast RPC</h2>
+     <p>The RPC is Copybot's connection to Solana. The free public one is rate-limited and <b>misses trades</b>.</p>
+     <ol class="steps"><li>Create a free account at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>.</li><li>Copy your RPC link (<span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span>) and paste it here.</li></ol>
+     <input class="input mono" id="wz-rpc" placeholder="https://mainnet.helius-rpc.com/?api-key=…" value="${c.usingPublicRpc ? '' : esc(c.rpcUrl)}" spellcheck="false" style="width:100%">
+     <div class="row" style="margin-top:10px"><button class="btn" id="wz-test">Save &amp; test</button><span class="muted" id="wz-rpc-msg" style="font-size:13px">${c.usingPublicRpc ? '' : '<span class="pos">✓ A private RPC is set.</span>'}</span></div>`,
+    `<h2>Pick wallets to copy</h2>
+     <p>Copybot is only as good as the wallets it copies.${mine ? ` <b>You already copy ${mine}.</b>` : ''}</p>
+     <div class="wz-choices">
+       <button class="wz-choice" id="wz-scout"><b>Find wallets for me</b><span>Scans tokens that pumped recently, checks who bought early and picks the best (5–15 min, runs in the background).</span></button>
+       <div class="wz-choice"><b>I have a wallet address</b><span>Paste one or more, one per line.</span><textarea class="input mono" id="wz-addrs" rows="2" placeholder="Wallet address"></textarea><button class="btn sm" id="wz-add" style="margin-top:6px">Add</button></div>
+     </div><div class="muted" id="wz-w-msg" style="font-size:13px;margin-top:8px"></div>`,
+    `<h2>Get alerts on your phone <span class="muted" style="font-size:14px;font-weight:500">(optional)</span></h2>
+     <p>Copybot can message you on <b>Telegram</b> or <b>Discord</b> for every trade, problem or pause, so you don't have to keep it open.</p>
+     <p class="muted">Set it up any time in <b>Settings → Phone alerts</b>. It takes about 2 minutes.</p>
+     <button class="btn" id="wz-alerts">Set up alerts now</button>`,
+    `<div class="wz-hero">${ICON.star}</div><h2>You're ready</h2>
+     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '⚠️ No wallets yet (add them on the Wallets page)'}</li><li>✅ Paper mode: nothing is spent</li></ul>
+     <p class="muted">Tip: before copying a wallet with real money, run it on the <b>Backtest</b> page. Read <a href="#" data-guide="getting-started" id="wz-guide">Getting started</a> for the rest.</p>`,
+  ][step];
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal wizard" role="dialog" aria-modal="true" aria-label="Setup">
+    <div class="wz-top"><div class="wz-dots">${dots}</div><button class="btn sm ghost" id="wz-skip">Skip setup</button></div>
+    <div class="wz-body">${body}</div>
+    <div class="row wz-nav">${step ? '<button class="btn" id="wz-back">Back</button>' : ''}<span class="spacer" style="flex:1"></span>
+      ${step < WZ_STEPS.length - 1 ? `<button class="btn primary" id="wz-next">${step === 0 ? 'Let\'s go' : 'Next'}</button>` : `<button class="btn primary" id="wz-start" ${S.config.wallets.filter((w) => w.enabled !== false).length ? '' : 'disabled'}>Start in paper mode</button><button class="btn" id="wz-done">Finish</button>`}</div></div></div>`;
+  const finish = async () => { $('#modal-root').innerHTML = ''; S.ui = { ...S.ui, setupDone: true }; await act(() => api('PUT', '/api/ui', { setupDone: true })); };
+  $('#wz-skip').onclick = finish;
+  const nx = $('#wz-next'); if (nx) nx.onclick = () => wizard(step + 1);
+  const bk = $('#wz-back'); if (bk) bk.onclick = () => wizard(step - 1);
+  const dn = $('#wz-done'); if (dn) dn.onclick = finish;
+  const gd = $('#wz-guide'); if (gd) gd.addEventListener('click', finish);
+  const st = $('#wz-start'); if (st) st.onclick = async () => { await finish(); go('dashboard'); await act(() => api('POST', '/api/start'), 'Bot started in paper mode'); };
+  const t = $('#wz-test');
+  if (t) t.onclick = async () => {
+    const url = $('#wz-rpc').value.trim();
+    if (!url) return toast('Paste your RPC link first', true);
+    $('#wz-rpc-msg').innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Saving…';
+    const r = await act(() => api('PUT', '/api/connection', { rpcUrl: url }));
+    if (!r) return ($('#wz-rpc-msg').innerHTML = '');
+    S.connection = r;
+    const test = await act(() => api('POST', '/api/connection/test'));
+    $('#wz-rpc-msg').innerHTML = test?.ok ? `<span class="pos">✓ Connected (${test.rpcMs} ms)</span>` : `<span class="neg">✕ ${esc(test?.error || 'Could not connect')}</span>`;
+  };
+  const sc = $('#wz-scout');
+  if (sc) sc.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); $('#wz-w-msg').innerHTML = '<span class="pos">✓ The scout is searching in the background.</span>'; } };
+  const ad = $('#wz-add');
+  if (ad) ad.onclick = async () => {
+    const addrs = $('#wz-addrs').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean).filter((a) => !S.config.wallets.some((w) => w.address === a));
+    if (!addrs.length) return toast('Paste a wallet address first', true);
+    const r = await saveWallets([...S.config.wallets, ...addrs.map((address, i) => ({ address, label: `trader-${S.config.wallets.length + i + 1}`, enabled: true }))], `Added ${addrs.length} wallet${addrs.length > 1 ? 's' : ''}`);
+    if (r) wizard(2);
+  };
+  const al = $('#wz-alerts');
+  if (al) al.onclick = async () => { await finish(); await go('settings'); $('#alerts-settings')?.scrollIntoView({ block: 'start' }); };
 }
 
 const copyBtn = (v) => `<button class="copy" title="Copy" data-copy="${esc(v)}">${ICON_COPY}</button>`;
@@ -1548,7 +1629,7 @@ function renderSettings(el) {
       <div class="card"><div class="card-h"><div><h2>Look</h2><div class="muted" style="font-size:12.5px">Changes apply instantly and don't affect the bot.</div></div></div>
         <div class="card-b">
           <div class="row" style="justify-content:space-between"><span class="muted">Appearance</span>
-            <div class="seg" id="look-seg">${[['system', 'Follow my computer'], ['light', 'Light'], ['dark', 'Dark']].map(([m, l]) => `<button data-mode-pick="${m}" class="${S.ui.mode === m ? 'on' : ''}" aria-pressed="${S.ui.mode === m}">${l}</button>`).join('')}</div></div>
+            <div class="row" style="gap:10px"><button class="btn sm ghost" id="wz-again">Run setup again</button><div class="seg" id="look-seg">${[['system', 'Follow my computer'], ['light', 'Light'], ['dark', 'Dark']].map(([m, l]) => `<button data-mode-pick="${m}" class="${S.ui.mode === m ? 'on' : ''}" aria-pressed="${S.ui.mode === m}">${l}</button>`).join('')}</div></div></div>
         </div></div>
 
       <div class="card"><div class="card-h"><div><h2>App updates</h2><div class="muted" style="font-size:12.5px">${S.app.version ? `You have Copybot v${esc(S.app.version)}. ` : ''}Updates download automatically and only install when you restart. Each one is checked against Copybot's security signature first.</div></div></div>
@@ -1600,6 +1681,7 @@ function renderSettings(el) {
   el.querySelectorAll('[data-mode-pick]').forEach((b) => (b.onclick = () => b.dataset.modePick !== S.ui.mode && setAppearance(b.dataset.modePick)));
   const ui2 = $('#upd-install2'); if (ui2) ui2.onclick = installUpdate;
   $('#s-save').onclick = saveSettings;
+  $('#wz-again').onclick = () => wizard(0);
   bindAlerts();
   el.querySelectorAll('#mode-seg button').forEach((b) => (b.onclick = () => setMode(b.dataset.m)));
   $('#c-save').onclick = async () => {
@@ -1774,8 +1856,10 @@ async function load() {
   try {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
+    const firstLoad = !S.loadedOnce; S.loadedOnce = true;
     Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout });
     render();
+    if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }
 }
 const h = location.hash.slice(1);
