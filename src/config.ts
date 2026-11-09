@@ -110,6 +110,8 @@ export type Config = {
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
   /** New wallets start small and grow as they prove themselves; any wallet pauses after a losing streak. */
   trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number };
+  /** The ready-made strategy last applied ('' = none); the UI shows "modified" once settings differ. */
+  strategy: string;
   /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
   alerts: { trades: boolean; errors: boolean; guard: boolean; autopilot: boolean };
   /** Claude autopilot. Off until the user turns it on and adds an Anthropic API key. */
@@ -160,6 +162,7 @@ export const DEFAULT_CONFIG: Config = {
   execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
   trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
+  strategy: '',
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
@@ -322,6 +325,8 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       ...(typeof w.pausedReason === 'string' && w.pausedReason && w.enabled === false ? { pausedReason: w.pausedReason.replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, 120) } : {}),
     });
   }
+
+  if (typeof input?.strategy === 'string' && /^[a-z]{1,20}$/.test(input.strategy)) out.strategy = input.strategy;
 
   const g = input?.ai?.guidance;
   if (typeof g === 'string') {

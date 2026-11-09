@@ -189,6 +189,23 @@ button.wz-choice:hover { border-color: var(--accent); }
 .pick .why { color: var(--muted); font-size: 13px; margin: 8px 0 10px; }
 .pick .nums { display: flex; gap: 14px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
 .pick .nums b { color: var(--text); }
+.strat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.strat { display: flex; flex-direction: column; position: relative; overflow: hidden; padding: 18px 20px; }
+.strat::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--c); }
+.strat.on { box-shadow: 0 0 0 2px var(--c); }
+.strat h3 { margin: 0; font-size: 17px; }
+.strat .tag-risk { font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 99px; background: var(--panel-2); color: var(--muted); }
+.strat .tag-risk.Higher { background: var(--red-bg); color: var(--red); }
+.strat .tag-risk.Lower { background: var(--green-bg); color: var(--green); }
+.strat .tag-risk.Medium { background: var(--amber-bg); color: var(--amber); }
+.strat dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; margin: 12px 0 16px; }
+.strat dt { color: var(--muted); }
+.strat dd { margin: 0; text-align: right; font-weight: 560; }
+.strat .acts { margin-top: auto; display: flex; gap: 8px; }
+.strat .acts .btn { flex: 1; }
+.chg { width: 100%; border-collapse: collapse; font-size: 13px; }
+.chg td { padding: 5px 4px; border-top: 1px solid var(--border); }
+.chg td:nth-child(2), .chg td:nth-child(3) { text-align: right; white-space: nowrap; }
 .bt-curve { padding: 8px 18px 16px; }
 .bt-curve svg { width: 100%; height: 220px; display: block; }
 .bt-axis { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; margin-top: 6px; }
@@ -458,6 +475,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
     <button class="nav" data-page="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg>Markets</button>
     <button class="nav" data-page="wallets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Wallets<span class="count" id="nav-wallets"></span></button>
     <button class="nav" data-page="research"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Find wallets</button>
+    <button class="nav" data-page="strategies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 2 5-6"/><circle cx="19" cy="7" r="1.5"/></svg>Strategies</button>
     <button class="nav" data-page="backtest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>Backtest</button>
     <button class="nav" data-page="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h14l-4-4M17 17H3l4 4"/></svg>Trades</button>
     <button class="nav" data-page="autopilot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Autopilot<span class="count" id="nav-ai"></span></button>
@@ -712,13 +730,13 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------------- pages ----------------
-const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
+const TITLES = { markets: 'Markets', dashboard: 'Dashboard', wallets: 'Wallets to copy', research: 'Find wallets', strategies: 'Strategies', backtest: 'Backtest', trades: 'Trade history', autopilot: 'Autopilot', learn: 'Learn', settings: 'Settings' };
 function render() {
   if (!S.config) return;
   renderChrome();
   $('#page-title').textContent = TITLES[S.page];
   const el = $('#content');
-  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
+  ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
     el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-06">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
@@ -1085,6 +1103,73 @@ function bindJobs() {
   document.querySelectorAll('[data-analyze-list]').forEach((b) => (b.onclick = () => startAnalyze(b.dataset.analyzeList.split(','))));
 }
 
+// ----- strategies -----
+const STRAT_COLORS = { balanced: 'var(--r-blue)', sniper: 'var(--r-red)', whale: 'var(--r-cyan)', momentum: 'var(--r-orange)', conservative: 'var(--r-green)' };
+/** Label and display for a config key, borrowed from the Settings page fields. */
+function fieldInfo(k) {
+  const f = FIELDS.flatMap((s) => s.fields).find((x) => x.k === k);
+  return f || { k, label: k, unit: '' };
+}
+// Settings where 0 means "off".
+const ZERO_OFF = /^(exits\.(recoverCostAtPct|tp1AtPct|tp2AtPct|trailingAfterPct|trailingStopPct)|risk\.(takeProfitPct|maxPriceDriftPct)|filters\.|protect\.(liquidityDropPct|crashPct|maxSellBuyRatio))/;
+function fmtVal(f, v) {
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (v === 0 && ZERO_OFF.test(f.k)) return 'off';
+  const n = f.toView ? f.toView(v) : v;
+  return `${typeof n === 'number' ? +n.toFixed(4) : esc(String(n))}${f.unit ? `${f.unit.startsWith('%') ? '' : ' '}<span class="muted">${esc(f.unit)}</span>` : ''}`;
+}
+function stratDiff(s) {
+  const out = [];
+  for (const [sec, vals] of Object.entries(s.patch)) for (const [k, v] of Object.entries(vals)) { const key = `${sec}.${k}`, cur = getP(S.config, key); if (cur !== v) out.push([key, cur, v]); }
+  return out;
+}
+const stratActive = () => (S.strategies || []).find((s) => stratDiff(s).length === 0)?.id || null;
+function renderStrategies(el) {
+  const list = S.strategies || [], act = stratActive(), last = S.config.strategy;
+  const lastS = list.find((s) => s.id === last);
+  const k = (s) => s.patch;
+  const tp = (x) => [x.recoverCostAtPct ? `cost back +${x.recoverCostAtPct}%` : '', x.tp1AtPct ? `+${x.tp1AtPct}%` : '', x.tp2AtPct ? `+${x.tp2AtPct}%` : ''].filter(Boolean).join(', ') || 'their sells only';
+  const card = (s) => `<div class="card strat ${act === s.id ? 'on' : ''}" style="--c:${STRAT_COLORS[s.id] || 'var(--accent)'}">
+    <div class="row" style="justify-content:space-between;gap:8px"><h3>${esc(s.name)}</h3><span class="tag-risk ${esc(s.risk)}">${esc(s.risk)} risk</span></div>
+    <p class="muted" style="margin:8px 0 4px;font-size:13.5px">${esc(s.tagline)}</p>
+    <div style="font-size:12.5px"><b>Best for:</b> <span class="muted">${esc(s.bestFor)}</span></div>
+    <dl>
+      <dt>Copies their buys from</dt><dd>${k(s).buy.minTargetBuySol} SOL</dd>
+      <dt>Don't chase above</dt><dd>+${k(s).risk.maxPriceDriftPct}%</dd>
+      <dt>Min liquidity</dt><dd>$${(k(s).filters.minLiquidityUsd / 1000).toFixed(0)}K</dd>
+      <dt>Min token age</dt><dd>${k(s).filters.minTokenAgeMin ? (k(s).filters.minTokenAgeMin >= 60 ? `${k(s).filters.minTokenAgeMin / 60} h` : `${k(s).filters.minTokenAgeMin} min`) : 'any'}</dd>
+      <dt>Stop-loss</dt><dd>−${k(s).risk.stopLossPct}%</dd>
+      <dt>Take profit</dt><dd>${tp(k(s).exits)}</dd>
+      <dt>Trailing stop</dt><dd>${k(s).exits.trailingStopPct ? `${k(s).exits.trailingStopPct}% after +${k(s).exits.trailingAfterPct}%` : 'off'}</dd>
+    </dl>
+    <div class="acts">${act === s.id ? '<button class="btn" disabled>✓ In use</button>' : `<button class="btn primary" data-use-strat="${esc(s.id)}">Use this</button>`}<button class="btn" data-bt-strat="${esc(s.id)}" title="Backtest the wallets you copy with this strategy">Backtest it</button></div>
+  </div>`;
+  el.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-b row" style="justify-content:space-between;gap:12px">
+      <div><div style="font-size:17px;font-weight:650">Your strategy: ${act ? esc(list.find((s) => s.id === act).name) : lastS ? `${esc(lastS.name)} <span class="tag paper">modified</span>` : 'Custom'}</div>
+        <div class="muted" style="font-size:13px;margin-top:4px">A strategy sets how Copybot trades: which buys to copy, which tokens to skip, and when to sell. It never changes your SOL per buy, your limits or the safety checks.${act ? '' : ' Your settings don\'t match a preset exactly, so you\'re on your own mix.'}</div></div>
+      <button class="btn ghost" onclick="go('settings')">Fine-tune in Settings</button>
+    </div></div>
+    <div class="strat-grid">${list.map(card).join('')}</div>
+    <div class="banner info" style="margin-top:16px"><div><b>Not sure?</b> Press <b>Backtest it</b> on two or three strategies: each one replays the wallets you copy over the last 7 days, so you can compare before switching.</div></div>`;
+  el.querySelectorAll('[data-use-strat]').forEach((b) => (b.onclick = () => useStrategy(b.dataset.useStrat)));
+  el.querySelectorAll('[data-bt-strat]').forEach((b) => (b.onclick = () => {
+    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    if (!wallets.length) return toast('Add wallets to copy first, or run a backtest with any wallets on the Backtest page', true);
+    startBacktest(wallets, null, S.btDelay ?? 5, b.dataset.btStrat);
+  }));
+}
+async function useStrategy(id) {
+  const s = S.strategies.find((x) => x.id === id);
+  const diff = stratDiff(s);
+  const rows = diff.map(([key, from, to]) => { const f = fieldInfo(key); return `<tr><td>${esc(f.label)}</td><td class="muted">${fmtVal(f, from)}</td><td>→ ${fmtVal(f, to)}</td></tr>`; }).join('');
+  const ok = await confirmModal({ title: `Use the ${esc(s.name)} strategy?`, confirm: 'Use this strategy',
+    body: `<p>${esc(s.tagline)}</p>${diff.length ? `<div style="max-height:320px;overflow:auto"><table class="chg"><tbody>${rows}</tbody></table></div>` : '<p class="muted">Your settings already match it.</p>'}<p class="muted" style="font-size:12.5px;margin-top:10px">Your SOL per buy, limits, safety checks and wallets stay as they are. Wallets with their own exit settings keep them.</p>` });
+  if (!ok) return;
+  const r = await act(() => api('POST', '/api/strategy', { id }), `${s.name} strategy on`);
+  if (r) { S.config = r.config; if (r.restarted) toast('Bot restarted with the new strategy'); render(); }
+}
+
 // ----- backtest -----
 const dateFmt = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
 const BT_PERIODS = [['1d', 'Last 24 hours'], ['3d', 'Last 3 days'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom dates…'], ['txs', 'Last N transactions']];
@@ -1100,8 +1185,8 @@ function btPeriodBody() {
   }
   return { from: now - { '1d': 1, '3d': 3, '7d': 7, '30d': 30 }[p] * 864e5, to: now };
 }
-async function startBacktest(wallets, _txs, delayPct) {
-  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, ...btPeriodBody(), delayPct, replayExits: S.btExits !== false }));
+async function startBacktest(wallets, _txs, delayPct, strategy) {
+  const j = await act(() => api('POST', '/api/jobs/backtest', { wallets, ...btPeriodBody(), delayPct, replayExits: S.btExits !== false, ...(strategy ? { strategy } : {}) }));
   if (j) { upsertJob(j); S.btJob = j.id; S.btWallets = wallets.join('\n'); go('backtest'); }
 }
 document.addEventListener('click', (e) => {
@@ -1136,8 +1221,8 @@ function btResult(j) {
   const copied = r.wallets.reduce((a, w) => a + w.copied, 0);
   const unpriced = r.open.filter((o) => o.valueSol === null).length;
   return `
-    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''} · ${r.period ? `${dateFmt(r.period.from)} to ${dateFmt(r.period.to)}` : r.from ? `${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
-      <div class="muted" style="font-size:12.5px">Your settings: ${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, ${r.period ? `trades from ${new Date(r.period.from).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} to ${new Date(r.period.to).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : `last ${s.txs} transactions per wallet`}.</div></div></div></div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Result${j.input.strategy ? ` · ${esc((S.strategies || []).find((s) => s.id === j.input.strategy)?.name || j.input.strategy)} strategy` : ''} · ${j.input.wallets.length} wallet${j.input.wallets.length > 1 ? 's' : ''} · ${r.period ? `${dateFmt(r.period.from)} to ${dateFmt(r.period.to)}` : r.from ? `${dateFmt(r.from)} to ${dateFmt(r.to)}` : ''}</h2>
+      <div class="muted" style="font-size:12.5px">${j.input.strategy ? `The ${esc((S.strategies || []).find((x) => x.id === j.input.strategy)?.name || '')} strategy applied to your settings: ` : 'Your settings: '}${s.sizing === 'fixed' ? `${s.fixedSol} SOL per buy` : `${s.percentOfTarget}% of their buy`}, ${s.copySells ? 'copying their sells' : 'not copying sells'}, ${s.delayPct}% copy-delay cost, ${r.period ? `trades from ${new Date(r.period.from).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} to ${new Date(r.period.to).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : `last ${s.txs} transactions per wallet`}.</div></div></div></div>
     ${r.truncated?.length ? `<div class="banner warn"><div><b>Very active wallet${r.truncated.length > 1 ? 's' : ''}.</b> ${r.truncated.map((x) => `${esc(short(x.wallet))} had more than 5,000 transactions in these dates, so only back to ${x.oldestMs ? new Date(x.oldestMs).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'part of the period'} was included`).join('; ')}. Pick a shorter period for the full picture.</div></div>` : ''}
     ${!r.from ? `<div class="card"><div class="empty"><h3>No SOL swaps found</h3>${r.period ? 'These wallets made no token trades in these dates. Try a longer period.' : 'These wallets have no token trades in the transactions read. Try a longer history.'}</div></div>` : `
     <div class="grid stats">
@@ -1203,7 +1288,7 @@ function renderBacktest(el) {
           <div class="row" style="gap:8px"><button class="btn primary" id="bt-go" style="flex:1">Run backtest</button><button class="btn" id="bt-opt" style="flex:1" title="Compare 16 exit setups on the same wallets and period">Find my best settings</button></div>
         </div>
       </div></div>
-    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.kind === 'optimize' ? 'Best settings · ' : ''}${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
+    ${list.length > 1 ? `<div class="bt-hist" style="margin-bottom:12px"><span class="muted" style="font-size:12.5px;align-self:center">Earlier runs:</span>${list.map((x) => `<button class="fchip ${x === j ? 'on' : ''}" data-bt-open="${x.id}" style="--c:var(--accent)">${x.kind === 'optimize' ? 'Best settings · ' : x.input.strategy ? `${esc((S.strategies || []).find((s) => s.id === x.input.strategy)?.name || '')} · ` : ''}${x.input.from ? `${dateFmt(x.input.from)}–${dateFmt(x.input.to)}` : time(x.createdAt)} · ${x.input.wallets.length} wallet${x.input.wallets.length > 1 ? 's' : ''}</button>`).join('')}</div>` : ''}
     ${!j ? `<div class="card"><div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No backtests yet</h3>Enter wallets above, or press <b>Backtest</b> next to any wallet on the Wallets or Find wallets pages.</div></div>`
       : j.status === 'done' ? (j.kind === 'optimize' ? optResult(j) : btResult(j))
       : j.status === 'error' ? `<div class="banner danger"><div><b>Backtest failed.</b> ${esc(j.error)}</div></div>`
@@ -1920,7 +2005,7 @@ async function load() {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
     const firstLoad = !S.loadedOnce; S.loadedOnce = true;
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout });
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, strategies: d.strategies || [] });
     render();
     if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }

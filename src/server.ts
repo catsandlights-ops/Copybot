@@ -28,6 +28,7 @@ import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
 import { optimizeExits } from './optimize';
+import { applyStrategy, STRATEGIES, strategyById } from './strategies';
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
@@ -609,7 +610,7 @@ function trialAndResume(next: import('./config').Config) {
 }
 
 // ---------- backtest data (shared by Backtest and "Find my best settings") ----------
-type BacktestSpec = { wallets: string[]; delayPct: number; replayExits: boolean; range: { from: number; to: number } | null; txs: number; endAt?: number; input: Record<string, unknown> };
+type BacktestSpec = { wallets: string[]; delayPct: number; replayExits: boolean; range: { from: number; to: number } | null; txs: number; endAt?: number; strategy: string | null; input: Record<string, unknown> };
 
 function backtestSpec(b: any): BacktestSpec {
   const wallets = addressList(b.wallets, 5, 'wallet address');
@@ -628,7 +629,9 @@ function backtestSpec(b: any): BacktestSpec {
   }
   const txs = range ? 5000 : Math.min(2000, Math.max(100, Number(b.txs) || 600));
   const endAt = range && range.to < now - 30 * 60_000 ? range.to : undefined; // past period: value holdings at its end
-  return { wallets, delayPct, replayExits, range, txs, endAt, input: { wallets, txs: range ? null : txs, from: range?.from ?? null, to: range?.to ?? null, delayPct, replayExits } };
+  const strategy = b.strategy === undefined || b.strategy === null ? null : strategyById(b.strategy)?.id ?? null;
+  if (b.strategy && !strategy) throw new HttpError(400, 'Unknown strategy');
+  return { wallets, delayPct, replayExits, range, txs, endAt, strategy, input: { wallets, txs: range ? null : txs, from: range?.from ?? null, to: range?.to ?? null, delayPct, replayExits, strategy } };
 }
 
 /**
@@ -659,8 +662,8 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
     stats.failed += ws.failed;
     if (ws.truncated) truncated.push({ wallet: w, oldestMs: ws.oldestMs ?? null });
   }
-  // Your current settings; wallets you don't copy yet use size ×1 and no budget.
-  const cfg = structuredClone(engine.cfg);
+  // Your current settings (or a strategy applied to them); wallets you don't copy yet use size ×1 and no budget.
+  const cfg = spec.strategy ? applyStrategy(engine.cfg, strategyById(spec.strategy)!) : structuredClone(engine.cfg);
   for (const w of wallets) if (!cfg.wallets.some((x) => x.address === w)) cfg.wallets.push({ address: w, label: w.slice(0, 4), enabled: true, sizeMultiplier: 1, maxExposureSol: 0 });
   const opts = { delayPct: spec.delayPct, feeSol: 0.0002, endAt: spec.endAt };
   // "Follow their sells only" leaves the most positions open, so it shows every token that might need a price.
@@ -741,6 +744,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       connection: connectionInfo(),
       jobs,
       scout: lastScout,
+      strategies: STRATEGIES,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
       ui: uiPrefs,
     });
@@ -1059,6 +1063,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       return { ...o, unreadable: d.stats.failed, read: d.stats.read, period: spec.range, truncated: d.truncated, priced: { tokens: d.bought, withPrices: d.prices.size }, delayPct: spec.delayPct };
     });
     return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/strategy') {
+    const s = strategyById((await readBody(req)).id);
+    if (!s) throw new HttpError(400, 'Unknown strategy');
+    const next = applyStrategy(engine.cfg, s);
+    next.strategy = s.id;
+    let clean;
+    try {
+      clean = sanitizeConfig(next, true);
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    const restarted = await applyChange(() => saveConfig(clean));
+    engine.log(`Strategy changed to ${s.name}.`, 'system');
+    return send(res, 200, { ok: true, restarted, config: engine.cfg });
   }
 
   if (route === 'POST /api/apply-exits') {

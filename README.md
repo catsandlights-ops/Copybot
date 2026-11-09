@@ -32,6 +32,9 @@ Mac and Linux: build from source (see [Building it yourself](#building-it-yourse
 - **Copy their sells** proportionally: if they sell half, you sell half.
 - **Wallet scoreboard:** your own profit, win rate and number of trades from each wallet you copy, with a "losing money" flag.
 
+### Strategies
+Five ready-made trading styles on the **Strategies** page: **Balanced** (the defaults), **Sniper** (early, small, fast profits, tight stops), **Whale follower** (only big buys, ride winners longer), **Momentum** (tokens already moving, profits in steps) and **Conservative** (strict filters, tight stop, cost back early). Each shows exactly which settings it changes before you switch, can be backtested on your wallets first, and never changes your SOL per buy, limits, wallets or safety checks.
+
 ### Exits and risk
 - **Staged exits:** take your cost back at 2x, take profit at +300% and +900%, and a **trailing stop** protects the rest.
 - **Stop-loss**, max open positions and max SOL in trades.
