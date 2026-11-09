@@ -399,7 +399,8 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
   const seen = new Set<string>();
   for (let w of wallets.slice(0, 100)) {
     // Each chain has its own address format: Solana (base58) or Base and other EVM chains (0x…, stored lowercase).
-    const chain = (KNOWN_CHAINS as readonly string[]).includes(w?.chain) ? w.chain : DEFAULT_CHAIN;
+    // No chain given (e.g. a wallet added by the finder): tell from the address format.
+    const chain = (KNOWN_CHAINS as readonly string[]).includes(w?.chain) ? w.chain : typeof w?.address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(w.address) ? 'base' : DEFAULT_CHAIN;
     const evm = chain !== 'solana';
     if (evm ? !(typeof w?.address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(w.address)) : !isAddress(w?.address)) {
       fail(`Not a valid ${evm ? 'Base (0x…)' : 'Solana'} address: ${cleanLabel(w?.address)}`);

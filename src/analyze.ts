@@ -43,6 +43,11 @@ export async function fetchSwaps(
   onProgress?: (n: number, total: number) => void,
   opts: { tries?: number; stats?: FetchStats; since?: number; until?: number; onScan?: (n: number) => void } = {},
 ): Promise<Swap[]> {
+  // Base wallets (0x…) read their history from Alchemy instead.
+  if (/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+    const { fetchBaseSwaps } = await import('./chains/base');
+    return fetchBaseSwaps(wallet.toLowerCase(), maxTxs, { since: opts.since, until: opts.until, stats: opts.stats, onProgress });
+  }
   const pk = new PublicKey(wallet);
   const sigs: string[] = [];
   const byDate = opts.since !== undefined;

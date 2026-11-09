@@ -1249,11 +1249,11 @@ function renderWallets(el) {
         <input class="input" style="flex:1;min-width:140px" name="label" placeholder="Nickname (optional)" autocomplete="off">
         <button class="btn primary">Add wallet</button>
       </form>
-      <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a> · <b>New:</b> Base wallets (addresses starting with 0x) can be copied in <b>paper mode</b>. Analyze, backtests and the check-up are Solana-only for now.</div>
+      <div class="muted" style="font-size:12.5px;margin-top:8px">Don't have any yet? <a href="#" onclick="go('research');return false">Find profitable wallets →</a> · <b>New:</b> Base wallets (addresses starting with 0x) can be copied in <b>paper mode</b>. Analyzing and backtesting them needs a free Alchemy key (Settings → Connection).</div>
     </div></div>
     ${healthCard()}
     <div class="card">
-      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm primary" id="health-go" ${healthJob() ? 'disabled' : ''}>${healthJob() ? 'Checking…' : 'Check my wallets'}</button> ` : ''}${solanaWallets(ws).length ? `<button class="btn sm" data-backtest="${esc(solanaWallets(ws).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${solanaWallets(ws).length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
+      <div class="card-h"><h2>${ws.length} wallet${ws.length === 1 ? '' : 's'}</h2><span class="spacer"></span>${ws.length ? `<button class="btn sm primary" id="health-go" ${healthJob() ? 'disabled' : ''}>${healthJob() ? 'Checking…' : 'Check my wallets'}</button> ` : ''}${ws.length ? `<button class="btn sm" data-backtest="${esc(ws.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address).join(','))}">Backtest my wallets</button> ` : ''}${ws.length > 1 ? '<button class="btn sm" id="analyze-all">Analyze all</button>' : ''}</div>
       ${ws.length ? `<div class="card-b muted" style="padding-bottom:0;font-size:13px">Your results from copying each wallet (${S.config.mode} mode). Review them weekly and pause wallets that lose you money. <b>Size ×</b> scales every buy copied from that wallet; <b>Budget</b> caps the SOL in its open positions (0 = no cap).</div>
       <div class="tbl-wrap"><table class="wallets-tbl"><thead><tr><th>Active</th><th>Nickname</th><th>Address</th><th class="r">Your profit</th><th class="r">Win rate</th><th class="r" title="How much worse your price was than theirs, because you trade after them (median)">Copy gap</th><th class="r">Open</th><th class="r">Size ×</th><th class="r" title="SOL limit for this wallet's open positions (0 = no limit)">Budget</th><th></th></tr></thead><tbody>
         ${ws.map((w, i) => {
@@ -1271,7 +1271,7 @@ function renderWallets(el) {
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> ${chainOfW(w) === 'solana' ? `<button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button>` : '<span class="chip" title="Base wallet: copied in paper mode">Base</span>'} <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button>${chainOfW(w) === 'base' ? ' <span class="chip" title="Base wallet: copied in paper mode">Base</span>' : ''} <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;
@@ -1312,7 +1312,7 @@ function renderWallets(el) {
       saveWallets(ws.filter((_, i) => i != b.dataset.remove), 'Wallet removed');
   }));
   el.querySelectorAll('[data-analyze]').forEach((b) => (b.onclick = () => startAnalyze([b.dataset.analyze])));
-  const aa = $('#analyze-all'); if (aa) aa.onclick = () => startAnalyze(solanaWallets(ws).map((w) => w.address));
+  const aa = $('#analyze-all'); if (aa) aa.onclick = () => startAnalyze(ws.map((w) => w.address));
 }
 async function saveWallets(wallets, msg) {
   const r = await act(() => api('PUT', '/api/config', { ...S.config, wallets }), msg);
@@ -1352,12 +1352,14 @@ function scoutCard() {
         <div class="muted">It scans tokens that are moving right now (trending, new launches, top volume), finds the wallets that bought before the move, checks their real track record, and ${c.hasAnthropicKey ? 'Claude picks the most suitable ones' : 'ranks the best ones (connect Claude on the Autopilot page to have it choose)'}. ${auto ? `<b>Autopilot is on, so picks are added to your copy list automatically</b> (up to ${cfg.ai.scoutMaxPicks} per search${cfg.ai.scoutEveryHours ? `, every ${cfg.ai.scoutEveryHours} h while the bot runs` : ''}).` : 'You decide which picks to copy.'}</div>
         <div class="scout-steps"><span>1 · Moving tokens</span><span>2 · Buyers before the move</span><span>3 · Track records</span><span>4 · ${c.hasAnthropicKey ? 'Claude picks' : 'Best ranked'}</span></div></div>
       <div style="text-align:right">${run ? `<div class="row" style="gap:8px"><span class="spinner"></span><span class="muted" style="font-size:13px;max-width:280px">${esc(run.progress)}</span></div>` : `<button class="btn primary" id="scout-go">Find wallets for me</button>`}
-        <div class="muted" style="font-size:12px;margin-top:6px">Takes 5–15 minutes${c.usingPublicRpc ? ', slower on the public RPC' : ''}</div></div>
+        <div class="seg" style="margin-top:8px;justify-content:flex-end">${[['solana', 'Solana'], ['base', 'Base']].map(([k, l]) => `<button data-scout-chain="${k}" class="${(S.scoutChain || 'solana') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+        <div class="muted" style="font-size:12px;margin-top:6px">${(S.scoutChain || 'solana') === 'base' ? (c.baseRpcUrl && /alchemy/i.test(c.baseRpcUrl) ? 'Base: copied in paper mode for now' : 'Base needs a free Alchemy key (Settings → Connection)') : `Takes 5–15 minutes${c.usingPublicRpc ? ', slower on the public RPC' : ''}`}</div></div>
     </div>${result}</div>`;
 }
 function bindScout() {
   const g = $('#scout-go');
-  if (g) g.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); if (S.page === 'research') render(); } };
+  if (g) g.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout', { chain: S.scoutChain || 'solana' })); if (j) { upsertJob(j); if (S.page === 'research') render(); } };
+  document.querySelectorAll('[data-scout-chain]').forEach((b) => (b.onclick = () => { S.scoutChain = b.dataset.scoutChain; render(); }));
   document.querySelectorAll('[data-scout-add]').forEach((b) => (b.onclick = () => saveWallets([...S.config.wallets, { address: b.dataset.scoutAdd, label: `scout-${b.dataset.scoutAdd.slice(0, 4)}`, enabled: true, sizeMultiplier: Number(b.dataset.mult) || 1, maxExposureSol: Number(b.dataset.budget) || 0, ...(b.dataset.strat ? { strategy: b.dataset.strat } : {}) }], 'Added to your copy list')));
 }
 function renderResearch(el) {
@@ -1487,13 +1489,13 @@ function renderStrategies(el) {
     <div class="strat-grid">${list.map(card).join('')}</div>
     <div class="banner info" style="margin-top:16px"><div><b>Not sure?</b> Press <b>Compare on my wallets</b>: it replays the wallets you copy with every strategy over your chosen period (last 7 days by default) and ranks them.</div></div>`;
   $('#st-compare').onclick = () => {
-    const wallets = solanaWallets(S.config.wallets).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
     if (!wallets.length) return toast('Add wallets to copy first, or compare any wallets from the Backtest page', true);
     startCompare(wallets);
   };
   el.querySelectorAll('[data-use-strat]').forEach((b) => (b.onclick = () => useStrategy(b.dataset.useStrat)));
   el.querySelectorAll('[data-bt-strat]').forEach((b) => (b.onclick = () => {
-    const wallets = solanaWallets(S.config.wallets).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+    const wallets = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
     if (!wallets.length) return toast('Add wallets to copy first, or run a backtest with any wallets on the Backtest page', true);
     startBacktest(wallets, null, S.btDelay ?? 5, b.dataset.btStrat);
   }));
@@ -1640,7 +1642,7 @@ function optResult(j) {
 function renderBacktest(el) {
   const list = S.jobs.filter((j) => j.kind === 'backtest' || j.kind === 'optimize' || j.kind === 'compare');
   const j = list.find((x) => x.id === S.btJob) || list[0];
-  const mine = solanaWallets(S.config.wallets).filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
+  const mine = S.config.wallets.filter((w) => w.enabled !== false).slice(0, 5).map((w) => w.address);
   el.innerHTML = `
     <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>What would copying have made?</h2><div class="muted" style="font-size:12.5px">Replays up to 5 wallets' real trades with your current settings (buy size, limits, budgets, copying sells, daily loss limit).</div></div></div>
       <div class="card-b bt-form">

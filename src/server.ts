@@ -26,6 +26,7 @@ import { buildBackup, checkBackup, restoreBackup } from './backup';
 import { liveChecklist, overallVerdict, sourceReport } from './readiness';
 import { runChecks, summary as statusSummary, type Check, type CheckResult } from './status';
 import { baseRpc } from './chains/base';
+import { alchemyUrl, NEEDS_ALCHEMY } from './chains/base-history';
 import { getChain as getChainAdapter, isChainId as isChainIdFn } from './chains';
 import { getQuote } from './jupiter';
 import { downsample, pushPoint, runningTotal, since, type Pt } from './series';
@@ -381,8 +382,7 @@ async function quickBacktest(wallet: string, swaps: import('./decode').Swap[], d
   const marks = new Map<string, number | null>();
   for (const o of first.open.slice(0, 8)) {
     const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
-    const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
-    marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+    marks.set(o.mint, await solPerUnit(o.mint, raw, cfg.safety.slippageBps));
   }
   const r = runBacktest(swaps, cfg, opts, marks);
   return { totalSol: r.totalSol, roiPct: r.roiPct, closed: r.closed, wins: r.wins, delayPct };
@@ -404,23 +404,26 @@ function rememberScoutMints(mints: string[]) {
   fs.writeFileSync(SCOUT_HISTORY, JSON.stringify(l));
 }
 
-function startScout(auto: boolean) {
+function startScout(auto: boolean, chain: import('./chains').ChainId = 'solana') {
   if (scoutRunning || jobs.some((j) => j.kind === 'scout' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'The wallet scout is already running.');
+  if (chain === 'base' && !alchemyUrl()) throw new HttpError(400, NEEDS_ALCHEMY);
   scoutRunning = true;
-  return addJob('scout', { auto }, async (progress) => {
+  return addJob('scout', { auto, chain }, async (progress) => {
     try {
-      return await runScout(progress, auto);
+      return await runScout(progress, auto, chain);
     } finally {
       scoutRunning = false;
     }
   });
 }
 
-async function runScout(progress: (p: string) => void, auto = false): Promise<ScoutResult> {
+async function runScout(progress: (p: string) => void, auto = false, chain: import('./chains').ChainId = 'solana'): Promise<ScoutResult> {
   const notes: string[] = [];
   const at = Date.now();
-  progress('Looking for coins that are moving: trending, new launches, top volume and older coins…');
-  const rows = await markets.scoutPools();
+  const onBase = chain === 'base';
+  progress(`Looking for coins that are moving${onBase ? ' on Base' : ''}: trending, new launches, top volume and older coins…`);
+  const rows = await markets.scoutPools(chain);
+  if (onBase) notes.push('Base search: traders who caught recent moves (early-buyer and DexCheck searches are Solana-only). Base wallets are copied in paper mode for now.');
   const tokens = pickTokens(rows, at, 7, recentScoutMints(), 2);
   if (!tokens.length) throw new Error('No suitable coins right now (none up 30%+ in 6 or 24 hours with real liquidity, or older coins up 15%+). Try again later.');
   const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
@@ -429,13 +432,13 @@ async function runScout(progress: (p: string) => void, auto = false): Promise<Sc
   const pump = new Map<string, string[]>();
   for (const [i, t] of tokens.entries()) {
     progress(`Token ${i + 1}/${tokens.length} (${t.symbol}): finding buyers who caught the move…`);
-    const trades = await markets.poolTrades(t.pool, 300).catch(() => []);
-    for (const w of pumpBuyers(trades, t.priceUsd, 40).keys()) pump.set(w, [...(pump.get(w) ?? []), t.symbol]);
+    const trades = await markets.poolTrades(t.pool, 300, chain).catch(() => []);
+    for (const w of pumpBuyers(trades, t.priceUsd, 40).keys()) pump.set(onBase ? w.toLowerCase() : w, [...(pump.get(onBase ? w.toLowerCase() : w) ?? []), t.symbol]);
   }
   // 2. True early buyers, for tokens quiet enough to read back to their launch.
   const conn = makeConnection();
   const perMint = new Map<string, Map<string, number>>();
-  const quiet = tokens.filter((t) => t.quiet).slice(0, 3);
+  const quiet = onBase ? [] : tokens.filter((t) => t.quiet).slice(0, 3);
   for (const [i, t] of quiet.entries()) {
     progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol})…`);
     perMint.set(
@@ -444,7 +447,7 @@ async function runScout(progress: (p: string) => void, auto = false): Promise<Sc
     );
   }
   const top = new Map<string, string[]>();
-  if (hasSecret('DEXCHECK_API_KEY')) {
+  if (!onBase && hasSecret('DEXCHECK_API_KEY')) {
     progress('Adding DexCheck top traders…');
     for (const t of tokens) {
       const traders = await markets.topTraders(t.pool, '7d').catch(() => []);
@@ -828,10 +831,12 @@ function send(res: http.ServerResponse, code: number, data: unknown) {
 }
 
 const addressList = (v: unknown, max: number, what: string): string[] => {
-  const list = (Array.isArray(v) ? v : []).map((s) => String(s).trim()).filter(Boolean);
+  // Wallets may be Solana or Base (0x…, lowercased); tokens for "discover" are Solana only.
+  const evm = what === 'wallet address';
+  const list = (Array.isArray(v) ? v : []).map((s) => String(s).trim()).filter(Boolean).map((s) => (evm && /^0x[0-9a-fA-F]{40}$/.test(s) ? s.toLowerCase() : s));
   if (!list.length) throw new HttpError(400, `Enter at least one ${what}`);
   if (list.length > max) throw new HttpError(400, `At most ${max} at a time`);
-  const bad = list.find((s) => !isAddress(s)) as string | undefined;
+  const bad = list.find((s) => !isAddress(s) && !(evm && /^0x[0-9a-f]{40}$/.test(s))) as string | undefined;
   if (bad) throw new HttpError(400, `Not a valid ${what}: ${bad.slice(0, 50)}`);
   return [...new Set(list)];
 };
@@ -958,7 +963,7 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
     const times = swaps.filter((s) => s.mint === mint && s.blockTime).map((s) => s.blockTime! * 1000);
     const from = Math.min(...times);
     const to = stillOpen.has(mint) ? spec.endAt ?? Date.now() : Math.max(...times) + 3_600_000;
-    const h = await markets.priceHistory(mint, from, to).catch(() => null);
+    const h = await markets.priceHistory(mint, from, to, chainForAddr(mint)).catch(() => null);
     if (h) prices.set(mint, h);
   }
   // A period that ends now: price what would still be held at today's prices.
@@ -968,8 +973,7 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
     for (const [i, o] of open.entries()) {
       progress(`Pricing open positions (${i + 1}/${open.length})…`);
       const raw = BigInt(Math.max(1, Math.floor(o.tokensRaw)));
-      const q = await quoteSell(o.mint, raw, cfg.safety.slippageBps).catch(() => null);
-      marks.set(o.mint, q ? Number(q.outAmount) / 1e9 / Number(raw) : null);
+      marks.set(o.mint, await solPerUnit(o.mint, raw, cfg.safety.slippageBps));
     }
   }
   return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
@@ -1036,6 +1040,17 @@ setInterval(() => {
     /* busy: next hour */
   }
 }, 60 * 60_000).unref();
+
+/** Which chain a token (or wallet) address belongs to, from its format. */
+const chainForAddr = (a: string): import('./chains').ChainId => (/^0x[0-9a-fA-F]{40}$/.test(a) ? 'base' : 'solana');
+/** What `raw` units of a token would sell for right now, in SOL per unit (any chain). */
+async function solPerUnit(mint: string, raw: bigint, slippageBps: number): Promise<number | null> {
+  const c = getChainAdapter(chainForAddr(mint));
+  const q = await c.quoteSell(mint, raw, slippageBps).catch(() => null);
+  if (!q) return null;
+  const sol = await c.nativeToSol(Number(q.outAmount) / 10 ** c.meta.native.decimals).catch(() => null);
+  return sol == null ? null : sol / Number(raw);
+}
 
 // ---------- connection status: is every outside service working? ----------
 const usesBase = () => engine.cfg.wallets.some((w) => chainOf(w) === 'base');
@@ -2108,7 +2123,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/jobs/health') {
     const b = await readBody(req);
-    const wallets = engine.cfg.wallets.filter((w) => chainOf(w) === 'solana').slice(0, 15); // the check-up reads Solana history
+    // Base wallets are checked too when an Alchemy key is set (their history comes from Alchemy).
+    const wallets = engine.cfg.wallets.filter((w) => chainOf(w) === 'solana' || alchemyUrl()).slice(0, 15);
     if (!wallets.length) throw new HttpError(400, 'The check-up reads Solana history: add Solana wallets to check.');
     if (jobs.some((j) => j.kind === 'health' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A wallet check is already running.');
     const delayPct = Number.isFinite(Number(b.delayPct)) ? Math.min(50, Math.max(0, Number(b.delayPct))) : measuredCopyGap() ?? 5;
@@ -2162,7 +2178,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   if (route === 'POST /api/jobs/scout') {
-    return send(res, 200, startScout(false));
+    return send(res, 200, startScout(false, (await readBody(req)).chain === 'base' ? 'base' : 'solana'));
   }
 
   if (route === 'POST /api/jobs/discover') {

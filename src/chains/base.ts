@@ -11,6 +11,7 @@
 import type { Swap } from '../decode';
 import type { Quote } from '../jupiter';
 import { getSolUsd } from '../market';
+import { swapsFromTransfers, toSwaps, walletTransfers } from './base-history';
 import { addrTopic, decodeEvmSwap, EvmRpc, isEvmAddress, NATIVE_PLACEHOLDER, TRANSFER_TOPIC, type EvmSwap } from './evm';
 import type { ChainAdapter, ChainMeta } from './types';
 
@@ -184,6 +185,39 @@ function watch(wallets: string[], onSwap: (s: Swap) => void, onError: (e: Error)
     }
   })();
   return { stop: () => (stopped = true) };
+}
+
+// ---------------- a wallet's history (Analyze, backtests, the finder) ----------------
+
+/**
+ * A Base wallet's swaps from the last `maxTxs` trades (or since a date), via Alchemy. Sells paid
+ * out in plain ETH that Alchemy doesn't list are worked out from the wallet's ETH balance change.
+ */
+export async function fetchBaseSwaps(wallet: string, maxTxs: number, opts: { since?: number; until?: number; stats?: { read: number; failed: number }; onProgress?: (n: number, t: number) => void } = {}): Promise<Swap[]> {
+  const head = await baseRpc.blockNumber();
+  const now = Date.now();
+  // Base makes a block every 2 seconds: turn the start date into a block number (default: the last 30 days).
+  const sinceBlock = head - Math.ceil(((now - (opts.since ?? now - 30 * 86_400_000)) / 1000) / 2);
+  const transfers = await walletTransfers(wallet, sinceBlock, Math.max(1000, maxTxs * 4), (n) => opts.onProgress?.(n, n));
+  let hs = swapsFromTransfers(transfers, wallet, WETH, new Set(Object.keys(STABLES)));
+  if (opts.until) hs = hs.filter((h) => !h.blockTime || h.blockTime * 1000 <= opts.until!);
+  hs = hs.slice(-maxTxs);
+  // Proceeds paid in plain ETH: read the balance change (only for a limited number, to stay fast).
+  let unknown = 0;
+  for (const h of hs.filter((x) => x.quote === 'unknown').slice(-150)) {
+    const rc = await baseRpc.call<any>('eth_getTransactionReceipt', [h.hash]).catch(() => null);
+    const fee = rc ? BigInt(rc.gasUsed ?? 0) * BigInt(rc.effectiveGasPrice ?? 0) + BigInt(rc.l1Fee ?? 0) : 0n;
+    const d = rc && rc.from?.toLowerCase() === wallet.toLowerCase() ? await baseRpc.nativeDelta(wallet, h.block, fee).catch(() => undefined) : undefined;
+    if (d != null && d > 0n) {
+      h.quote = 'native';
+      h.quoteRaw = d;
+    } else unknown++;
+  }
+  if (opts.stats) {
+    opts.stats.read += hs.length;
+    opts.stats.failed += unknown;
+  }
+  return toSwaps(hs, wallet, await solPerEth());
 }
 
 // ---------------- the adapter ----------------
