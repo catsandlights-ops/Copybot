@@ -2,6 +2,9 @@ import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
 import { jupKey, jupUrl } from './env';
 import { WSOL } from './decode';
 import { verifySwapTransaction } from './txguard';
+import bs58 from 'bs58';
+
+const bs58encode = (b: Uint8Array) => bs58.encode(b);
 
 export type Quote = {
   inputMint: string;
@@ -27,6 +30,8 @@ export async function getQuote(inputMint: string, outputMint: string, amount: bi
   url.searchParams.set('slippageBps', String(slippageBps));
   url.searchParams.set('restrictIntermediateTokens', 'true');
   const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(10_000) });
+  // Busy or down is not the same as "no route": say so, instead of calling a good token a honeypot.
+  if (res.status === 429 || res.status >= 500) throw new Error(`Jupiter is busy (HTTP ${res.status}); try again in a moment`);
   if (!res.ok) return null; // usually "no route found"
   const q = (await res.json()) as Quote;
   // Only accept a quote for exactly what we asked for.
@@ -51,7 +56,9 @@ const JITO_SEND = 'https://mainnet.block-engine.jito.wtf/api/v1/transactions';
  * With a Jito tip, the swap pays that tip instead of a priority fee and is sent to Jito's block
  * engine as well as your RPC (same signature, so it can only land once).
  */
-export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, priorityLevel: string, maxPriorityLamports: number, jitoTipLamports = 0): Promise<string> {
+export type SwapOpts = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void };
+
+export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, priorityLevel: string, maxPriorityLamports: number, jitoTipLamports = 0, opts: SwapOpts = {}): Promise<string> {
   const res = await fetch(`${jupUrl()}/swap`, {
     method: 'POST',
     headers: headers(),
@@ -61,6 +68,8 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
       userPublicKey: kp.publicKey.toBase58(),
       wrapAndUnwrapSol: true,
       dynamicComputeUnitLimit: true,
+      // Slippage worked out per trade by Jupiter, never above the maximum in the quote.
+      ...(opts.dynamicSlippage ? { dynamicSlippage: true } : {}),
       prioritizationFeeLamports: jitoTipLamports > 0 ? { jitoTipLamports } : { priorityLevelWithMaxLamports: { maxLamports: maxPriorityLamports, priorityLevel } },
     }),
   });
@@ -79,7 +88,34 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
 
   tx.sign([kp]);
   const raw = tx.serialize();
-  if (jitoTipLamports > 0) {
+  // Front-running protection: send only to Jito as a one-transaction bundle, so the swap never
+  // sits where bots can see it. If Jito won't take it, fall back to the normal send.
+  if (opts.mevProtect && jitoTipLamports > 0) {
+    const ok = await fetch(`${JITO_SEND}?bundleOnly=true`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [Buffer.from(raw).toString('base64'), { encoding: 'base64' }] }),
+      signal: AbortSignal.timeout(5_000),
+    })
+      .then(async (r) => r.ok && !(await r.json().catch(() => ({})))?.error)
+      .catch(() => false);
+    if (ok) {
+      const sig = bs58encode(tx.signatures[0]);
+      try {
+        const conf = await conn.confirmTransaction({ signature: sig, blockhash: tx.message.recentBlockhash, lastValidBlockHeight }, 'confirmed');
+        if (conf.value.err) throw new Error(`Swap ${sig} failed on-chain: ${JSON.stringify(conf.value.err)}`);
+        return sig;
+      } catch (e) {
+        const st = (await conn.getSignatureStatus(sig, { searchTransactionHistory: true })).value;
+        if (st?.confirmationStatus && !st.err) return sig;
+        if (st?.err) throw e;
+        // Not landed through Jito in time: the blockhash has expired, so nothing can land twice.
+        throw new Error("The private (Jito) send didn't land in time. Nothing was traded; it will be tried again on the next signal.");
+      }
+    }
+    opts.onNote?.("Jito didn't accept the private send; sent the normal way instead.");
+  }
+  if (jitoTipLamports > 0 && !opts.mevProtect) {
     await fetch(JITO_SEND, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

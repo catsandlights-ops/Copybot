@@ -10,6 +10,97 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
+    teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
+    body: `
+<h3>Phone access</h3>
+<p>Check your profit and positions, start and stop the bot, and sell from your phone, at home over Wi-Fi or anywhere with the free Tailscale app. Set it up in <b>Settings → Phone access</b>. Your phone can't change settings or touch your keys and wallets. <a href="#" data-guide="phone">Set it up →</a></p>
+<h3>Market scanner</h3>
+<p>A new <b>Scanner</b> page with two switches, both off until you turn them on:</p>
+<ul>
+<li><b>Find traders:</b> keeps looking at new <i>and older</i> coins for traders who are winning, backtests them with your settings, and adds the best on a trial.</li>
+<li><b>Trade coins:</b> buys coins that are rising on strong buying, on its own, with its own budget, stop-loss and take-profit, through every safety check. Try it in paper mode first. <a href="#" data-guide="scanner">How it works →</a></li>
+</ul>
+<h3>Is the scanner any good?</h3>
+<p>The Scanner page now shows a <b>live track record</b>: every coin it flags (bought or not) is checked later against the real price. <b>Test on the past</b> replays its rules on the last 1 to 3 days with different buying rules and exits, and lets you switch to the best one in a click.</p>
+<h3>Your own orders</h3>
+<p>A new <b>Orders</b> page: buy a coin when it drops to a price, sell when it reaches a target, or buy a little every few hours (DCA). Every buy goes through your limits and safety checks. Use <b>Place an order</b> on any coin in Markets.</p>
+<h3>Live graphs</h3>
+<p>Charts that update by themselves: your <b>wallet value</b> on the Dashboard (last hour, 6 or 24 hours), a trend line next to every open position (click it for a live chart with its stop-loss, targets and your buys and sells), each open <b>order's price against its target</b>, the scanner's results and the coins rising now, a profit line per <b>wallet</b>, a running total on the Trades report, and the same on your phone. Hover any chart to read exact values.</p>
+<h3>Faster, smarter, safer trades</h3>
+<ul>
+<li><b>Faster copies:</b> the safety checks before a buy now run at the same time instead of one after another, and what never changes about a coin is remembered, so the bot gets in closer to the wallet you copy. The activity log shows how long the checks took.</li>
+<li><b>Smart sizing</b> (Settings → Smart sizing): buy 1.5× when 2+ of your wallets buy the same coin within 10 minutes (and buy more once if a second wallet confirms a coin you hold); wallets that make you money get up to 1.5×, losing or hard-to-copy ones less; optionally skip a coin only one wallet bought small.</li>
+<li><b>Market mood:</b> when SOL is dropping or most trending coins are falling, buys from signals are halved or paused until it improves.</li>
+<li><b>Rug memory:</b> after a rug pull, Copybot never buys that coin again, nor coins from the wallet that created it.</li>
+<li><b>Weekly settings check:</b> compares your exits with other setups on the last 7 days and suggests a better one on the Dashboard (nothing changes unless you press Use).</li>
+<li><b>Live mode:</b> smart slippage per trade, and optional front-running protection that sends trades privately through Jito.</li>
+</ul>
+<h3>Panic button</h3>
+<p><b>Sell everything &amp; stop</b> on the Dashboard and on your phone. Optionally set a <b>panic limit</b> (Settings → Limits) so Copybot does it by itself if today's total loss gets too big.</p>
+<h3>Reports and taxes</h3>
+<p>The Trades page shows your profit by day, week or month, your best and worst trades, and results per wallet. <b>Tax export</b> gives a year of trades with USD values and the gain on every sale.</p>
+<h3>Fixes</h3>
+<ul>
+<li>The one-press paper experiment no longer fails with "Couldn't find active traders" when the market data service is busy: it retries, says what went wrong, and falls back to your last Find wallets results.</li>
+<li>Find wallets now also looks at older, established coins.</li>
+<li>The bot can start with only the scanner on, no wallets needed.</li>
+<li>Selling part of a position by hand no longer sets off dump protection.</li>
+</ul>
+<h3>Under the hood</h3>
+<ul>
+<li>Groundwork for trading on more blockchains later: every trade, position, wallet and order now records which chain it's on (all Solana for now), and Settings show the dollar value of SOL amounts. Nothing changes in how Copybot trades.</li>
+</ul>`,
+  },
+  {
+    id: 'phone', cat: 'features', mins: 3, title: 'Control Copybot from your phone (Tailscale)',
+    teaser: 'Check profit and positions, start and stop, and sell from your phone, at home or anywhere.',
+    body: `
+<p>Copybot keeps running on your computer. Your phone gets a small Copybot screen that talks to it.</p>
+<h3>Set it up once</h3>
+<ol>
+<li><b>Install Tailscale</b> on your computer and on your phone from <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>. It's free. Sign in with the <b>same account</b> on both. Tailscale is a private, encrypted link between your own devices: your phone can reach your computer from anywhere, and nobody else can.</li>
+<li>In Copybot, go to <b>Settings → Phone access</b> and turn it on. If Windows asks whether to allow Copybot on networks, choose <b>Allow</b>.</li>
+<li>Press <b>Pair a phone</b> and scan the QR code with your phone's camera. Give the phone a name and press <b>Pair this phone</b>.</li>
+<li>In your phone's browser menu, choose <b>Add to Home Screen</b>. Now Copybot has its own icon.</li>
+</ol>
+<p>At home, your phone can also connect over the same Wi-Fi without Tailscale (pick <b>Home Wi-Fi</b> above the QR code). Away from home, keep Tailscale switched on, on the phone.</p>
+<h3>What the phone can do</h3>
+<ul>
+<li>See your profit, open positions, trades and live activity.</li>
+<li>Start and stop the bot, sell half or all of a position, and resume buying after the daily loss limit.</li>
+<li>Turn the market scanner's two switches on and off.</li>
+</ul>
+<p>It <b>can't</b> change settings, switch between paper and live, or see or change keys and wallets. Those stay on the computer, so a lost phone can't empty your wallet.</p>
+<h3>Staying safe</h3>
+<ul>
+<li>Each pairing QR code works <b>once</b> and only for 5 minutes. Don't share screenshots of it.</li>
+<li>Copybot only answers your home network and Tailscale. Even if your router were set up to expose it, it refuses connections from the open internet. For the strictest setup, tick <b>Tailscale only</b>.</li>
+<li>Lost a phone? Press <b>Remove</b> next to it in Settings → Phone access. It loses access immediately.</li>
+<li>Your computer has to be on, with Copybot open, for the phone to connect.</li>
+</ul>`,
+  },
+  {
+    id: 'scanner', cat: 'features', mins: 4, title: 'The market scanner: finding traders and coins',
+    teaser: 'Let Copybot look for opportunities while it runs: winning traders to copy, and rising coins to trade.',
+    body: `
+<p>The <b>Scanner</b> page has two switches. Both only work while the bot is running, and both stay inside your limits.</p>
+<h3>Find traders</h3>
+<p>Every few hours (6 by default) Copybot looks at coins that are moving: new launches <i>and</i> older, established coins. It finds traders who caught the move and reads their real track record. Then it <b>backtests</b> them with your settings and copy delay. Only traders whose backtest made money can be added, and they start on a <b>trial</b> at ¼ size, growing as they make you money. Any trader who loses 5 times in a row is paused.</p>
+<h3>Trade coins</h3>
+<p>About once a minute Copybot checks trending, new and high-volume coins and looks for one that is <b>rising the right way</b>:</p>
+<ul>
+<li>up over the last hour, but hasn't already run (not a coin that is up 300% today);</li>
+<li>more buyers than sellers in the last hour;</li>
+<li>more trading than usual;</li>
+<li>not falling in the last 5 minutes.</li>
+</ul>
+<p>Older coins need deeper liquidity and a smaller move. You can turn new or older coins off in Settings → Market scanner.</p>
+<p>Every scanner buy goes through the <b>same checks as a copied buy</b>: your loss limits, max positions and exposure, liquidity and holder filters, and the buy-then-sell honeypot check. It has its <b>own budget</b> and its <b>own quick exits</b>: stop-loss −20%, take profit +50%, a trailing stop once it's up 15%, and it sells after 12 hours. Momentum fades, so it doesn't hold forever.</p>
+<h3>Be careful</h3>
+<p>Momentum trading is risky. Many coins that are rising fall back, so expect plenty of small losses and hope for bigger wins. <b>Run it in paper mode first</b> and watch its profit on the Scanner page. It stops buying coins by itself after 5 losing trades in a row (the same rule that pauses a losing wallet).</p>`,
+  },
+  {
     id: 'whats-new-07', cat: 'news', mins: 4, title: "What's new in Copybot 0.7",
     teaser: 'Ready-made strategies, smarter wallet picking, a wallet check-up, better backtests and a profit chart.',
     body: `

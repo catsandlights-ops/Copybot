@@ -15,7 +15,15 @@ import crypto from 'node:crypto';
 import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { BotEngine } from './engine';
-import { isAddress, sanitizeConfig, saveConfig } from './config';
+import { isAddress, sanitizeConfig, saveConfig, SCANNER_SOURCE } from './config';
+import { coinSignals, entryRulesFor, exitVariants, replayExit, replaySignals, RULES, signalStats, type CoinSignal, type ExitReplay, type ScanExits } from './scanner';
+import * as remote from './remote';
+import QRCode from 'qrcode';
+import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report';
+import { describeOrder, makeOrder } from './orders';
+import { downsample, pushPoint, runningTotal, since, type Pt } from './series';
+import { exitConfigFor } from './config';
+import { PublicKey } from '@solana/web3.js';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { readSecret } from './env';
 import { canEncryptKey, encryptPlaintextKey, hasSecret, isHttpsUrl, saveSecret, secretIsEncrypted, jupKey, jupUrl, keyIsEncrypted, makeConnection, parseKeypair, rpcUrl, savePrivateKey, updateEnv } from './env';
@@ -23,7 +31,7 @@ import { fetchSwaps, score } from './analyze';
 import { earlyBuyers, rankCandidates } from './discover';
 import * as markets from './markets';
 import { getSolUsd } from './market';
-import { experimentPicks, healthVerdict, marketSkipReason, median, walletRecords } from './rules';
+import { experimentPicks, healthVerdict, marketSkipReason, median, walletExposureSol, walletRecords } from './rules';
 import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
@@ -148,7 +156,7 @@ engine.on('status', () => {
 // ---------- background jobs (wallet analysis / discovery), run one at a time ----------
 type Job = {
   id: number;
-  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare' | 'health' | 'quickstart';
+  kind: 'analyze' | 'discover' | 'scout' | 'backtest' | 'optimize' | 'compare' | 'health' | 'quickstart' | 'scannertest';
   status: 'queued' | 'running' | 'done' | 'error';
   progress: string;
   input: unknown;
@@ -393,20 +401,20 @@ function startScout(auto: boolean) {
   scoutRunning = true;
   return addJob('scout', { auto }, async (progress) => {
     try {
-      return await runScout(progress);
+      return await runScout(progress, auto);
     } finally {
       scoutRunning = false;
     }
   });
 }
 
-async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
+async function runScout(progress: (p: string) => void, auto = false): Promise<ScoutResult> {
   const notes: string[] = [];
   const at = Date.now();
-  progress('Looking for tokens that are moving: trending, new launches and top volume…');
+  progress('Looking for coins that are moving: trending, new launches, top volume and older coins…');
   const rows = await markets.scoutPools();
-  const tokens = pickTokens(rows, at, 6, recentScoutMints());
-  if (!tokens.length) throw new Error('No suitable tokens right now (none up 30%+ in 6 or 24 hours with real liquidity, 1 hour to 14 days old). Try again later.');
+  const tokens = pickTokens(rows, at, 7, recentScoutMints(), 2);
+  if (!tokens.length) throw new Error('No suitable coins right now (none up 30%+ in 6 or 24 hours with real liquidity, or older coins up 15%+). Try again later.');
   const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
 
   // 1. "Caught the pump": recent big buyers now well in profit (every token, fast).
@@ -462,10 +470,15 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
 
   // Let Claude choose; fall back to the rule-based ranking.
   const cfg = engine.cfg;
-  const autoAdd = cfg.ai.enabled && cfg.ai.manageWallets;
-  const free = Math.max(0, cfg.ai.maxWallets - cfg.wallets.filter((w) => w.enabled).length);
-  const max = autoAdd ? Math.min(cfg.ai.scoutMaxPicks, free) : cfg.ai.scoutMaxPicks;
-  if (autoAdd && !free) notes.push(`You already copy ${cfg.ai.maxWallets} wallets (the autopilot's maximum), so nothing new was added.`);
+  // Added automatically by the autopilot, or by the market scanner's trader finder on its own runs.
+  const byAi = cfg.ai.enabled && cfg.ai.manageWallets;
+  const byScanner = !byAi && auto && cfg.scanner.findTraders;
+  const autoAdd = byAi || byScanner;
+  const maxWallets = byAi ? cfg.ai.maxWallets : cfg.scanner.maxWallets;
+  const perRun = byAi ? cfg.ai.scoutMaxPicks : byScanner ? cfg.scanner.picksPerRun : cfg.ai.scoutMaxPicks;
+  const free = Math.max(0, maxWallets - cfg.wallets.filter((w) => w.enabled).length);
+  const max = autoAdd ? Math.min(perRun, free) : perRun;
+  if (autoAdd && !free) notes.push(`You already copy ${maxWallets} wallets (the ${byAi ? "autopilot's" : "scanner's"} maximum), so nothing new was added.`);
   // Only wallets that pass the basic checks can be picked, by Claude or by the rules.
   const basics = reports.filter(passesBasics);
   const eligible = basics.filter(passesBacktest);
@@ -500,7 +513,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   if (autoAdd && picks.length) {
     const next = structuredClone(engine.cfg);
     for (const p of picks) {
-      if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= cfg.ai.maxWallets) continue;
+      if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= maxWallets) continue;
       next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy } : {}) });
       added.push(p.address);
     }
@@ -508,7 +521,7 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
       const clean = sanitizeConfig(next, false);
       trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
-      for (const a of added) engine.log(`Wallet scout: now copying ${a.slice(0, 4)}…${a.slice(-4)}: ${picks.find((p) => p.address === a)!.reason}`, 'ai');
+      for (const a of added) engine.log(`${byAi ? 'Wallet scout' : 'Market scanner'}: now copying ${a.slice(0, 4)}…${a.slice(-4)} on a trial: ${picks.find((p) => p.address === a)!.reason}`, byAi ? 'ai' : 'system');
     }
   }
   const result: ScoutResult = { at, tokens, reports, picks, pickedBy, summary, added, notes };
@@ -520,18 +533,247 @@ async function runScout(progress: (p: string) => void): Promise<ScoutResult> {
   return result;
 }
 
-// Automatic scouting while the bot is running with the autopilot managing wallets.
+// Automatic scouting while the bot is running: by the autopilot, or the scanner's trader finder.
+let lastAutoScoutTry = 0;
 setInterval(() => {
   const a = engine.cfg.ai;
-  if (!engine.running || !a.enabled || !a.manageWallets || !a.scoutEveryHours || scoutRunning) return;
-  if (Date.now() - (lastScout?.at ?? 0) < a.scoutEveryHours * 3_600_000) return;
+  const sc = engine.cfg.scanner;
+  if (!engine.running || scoutRunning) return;
+  const aiDue = a.enabled && a.manageWallets && a.scoutEveryHours > 0 && Date.now() - (lastScout?.at ?? 0) >= a.scoutEveryHours * 3_600_000;
+  const scanDue = sc.findTraders && Date.now() - (lastScout?.at ?? 0) >= sc.traderEveryHours * 3_600_000;
+  if (!aiDue && !scanDue) return;
+  if (Date.now() - lastAutoScoutTry < 30 * 60_000) return; // a failed search waits half an hour
+  lastAutoScoutTry = Date.now();
   try {
     startScout(true);
-    engine.log('Wallet scout: searching for new wallets to copy…', 'ai');
+    engine.log(aiDue ? 'Wallet scout: searching for new wallets to copy…' : 'Market scanner: looking at new and older coins for traders worth copying…', aiDue ? 'ai' : 'system');
   } catch {
     /* already running */
   }
-}, 10 * 60_000).unref();
+}, 60_000).unref();
+
+// ---------- market scanner: coins to trade ----------
+type ScanState = { at: number; signals: CoinSignal[]; error: string | null; bought: { mint: string; symbol: string; at: number }[] };
+let lastScan: ScanState = { at: 0, signals: [], error: null, bought: [] };
+const scanTried = new Map<string, number>(); // mint -> when the scanner last tried it (6 h cooldown)
+let scanBusy = false;
+
+// Every signal is written down and checked later against real prices: "is the scanner any good?"
+type SignalRec = { chain?: import('./chains').ChainId; mint: string; symbol: string; kind: 'new' | 'old'; at: number; priceUsd: number; why: string; bought: boolean; skipped?: string; exits: ScanExits; outcome?: ExitReplay; checks?: number };
+const SIGNALS_FILE = 'data/signals.json';
+let signalLog: SignalRec[] = (() => {
+  try {
+    const j = JSON.parse(fs.readFileSync(SIGNALS_FILE, 'utf8'));
+    return Array.isArray(j) ? j : [];
+  } catch {
+    return [];
+  }
+})();
+const saveSignals = () => {
+  signalLog = signalLog.slice(-1000);
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(SIGNALS_FILE + '.tmp', JSON.stringify(signalLog));
+  fs.renameSync(SIGNALS_FILE + '.tmp', SIGNALS_FILE);
+};
+const scanExits = (): ScanExits => {
+  const { stopLossPct, takeProfitPct, trailingAfterPct, trailingStopPct, maxHoldHours } = engine.cfg.scanner;
+  return { stopLossPct, takeProfitPct, trailingAfterPct, trailingStopPct, maxHoldHours };
+};
+function noteSignal(s: CoinSignal, now: number) {
+  // One entry per coin per 6 hours, like the scanner's own cooldown.
+  if (!s.priceUsd || signalLog.some((r) => r.mint === s.mint && now - r.at < 6 * 3_600_000)) return null;
+  const rec: SignalRec = { chain: engine.chain.meta.id, mint: s.mint, symbol: s.symbol, kind: s.kind, at: now, priceUsd: s.priceUsd, why: s.why, bought: false, exits: scanExits() };
+  signalLog.push(rec);
+  return rec;
+}
+
+/** Check how past signals did: replay their exits on the price since. A few per round (rate limits). */
+let checkingSignals = false;
+async function checkSignals() {
+  if (checkingSignals) return;
+  checkingSignals = true;
+  try {
+    const now = Date.now();
+    const due = signalLog.filter((r) => !r.outcome?.done && now - r.at >= 3_600_000 && (r.checks ?? 0) < 30).slice(0, 4);
+    for (const r of due) {
+      const h = await markets.priceHistory(r.mint, r.at, now).catch(() => null);
+      r.checks = (r.checks ?? 0) + 1;
+      if (!h) continue;
+      r.outcome = replayExit(r.priceUsd, r.at + 60_000, h.candles, r.exits);
+      // A coin that never hit an exit is settled at its last price once the hold limit (or a day) has passed.
+      const limitMs = (r.exits.maxHoldHours || 24) * 3_600_000 + 3_600_000;
+      if (!r.outcome.done && now - r.at > limitMs) r.outcome = { ...r.outcome, done: true, reason: 'time limit' };
+    }
+    if (due.length) {
+      saveSignals();
+      broadcast('scanner', scannerView());
+    }
+  } finally {
+    checkingSignals = false;
+  }
+}
+setInterval(() => checkSignals().catch(() => {}), 10 * 60_000).unref();
+setTimeout(() => checkSignals().catch(() => {}), 60_000).unref();
+
+function signalProof() {
+  const sc = engine.cfg.scanner;
+  const done = signalLog.filter((r) => r.outcome?.done);
+  const stats = (list: SignalRec[]) => signalStats(list.map((r) => r.outcome!), sc.buySol);
+  return {
+    tracked: signalLog.length,
+    waiting: signalLog.length - done.length,
+    all: stats(done),
+    bought: stats(done.filter((r) => r.bought)),
+    newCoins: stats(done.filter((r) => r.kind === 'new')),
+    oldCoins: stats(done.filter((r) => r.kind === 'old')),
+    since: signalLog[0]?.at ?? null,
+    curve: downsample(runningTotal(done.map((r) => ({ t: r.outcome!.exitAt, v: (sc.buySol * r.outcome!.pnlPct) / 100 }))), 200),
+    recent: signalLog
+      .slice(-15)
+      .reverse()
+      .map((r) => ({ mint: r.mint, symbol: r.symbol, kind: r.kind, at: r.at, bought: r.bought, skipped: r.skipped ?? null, outcome: r.outcome ?? null })),
+  };
+}
+
+async function scanCoins() {
+  const sc = engine.cfg.scanner;
+  if (!engine.running || (!sc.tradeCoins && !sc.trackSignals) || scanBusy) return;
+  scanBusy = true;
+  try {
+    const now = Date.now();
+    for (const [m, t] of scanTried) if (now - t > 6 * 3_600_000) scanTried.delete(m);
+    let rows: import('./markets').PoolRow[];
+    try {
+      rows = await markets.scoutPools();
+    } catch (e) {
+      lastScan = { ...lastScan, at: now, error: (e as Error).message };
+      broadcast('scanner', scannerView());
+      return;
+    }
+    const skip = new Set([...Object.keys(engine.state.positions), ...scanTried.keys(), ...engine.cfg.safety.blacklist]);
+    const signals = coinSignals(rows, now, { rules: sc.rules, newCoins: sc.newCoins, oldCoins: sc.oldCoins, minLiquidityUsd: engine.cfg.filters.minLiquidityUsd, skip });
+    lastScan = { ...lastScan, at: now, signals: signals.slice(0, 8), error: null };
+    refreshSparks(signals.slice(0, 5).map((s) => s.mint)).then(() => broadcast('scanner', scannerView())).catch(() => {});
+    const notes = new Map<string, SignalRec>();
+    for (const s of signals.slice(0, 8)) {
+      const rec = noteSignal(s, now);
+      if (rec) notes.set(s.mint, rec);
+    }
+    // Only try to buy when the scanner has room, so a full scanner doesn't fill the log.
+    const positions = Object.values(engine.state.positions);
+    const held = positions.filter((p) => p.sources.includes(SCANNER_SOURCE)).length;
+    const room = sc.tradeCoins && held < sc.maxPositions && sc.budgetSol - walletExposureSol(positions, SCANNER_SOURCE) >= Math.max(0.001, sc.buySol / 2);
+    if (sc.tradeCoins && !room) for (const r of notes.values()) r.skipped = 'scanner full';
+    if (!sc.tradeCoins) for (const r of notes.values()) r.skipped = 'watching only';
+    if (room) {
+      for (const s of signals.slice(0, 2)) {
+        scanTried.set(s.mint, now);
+        const why = await engine.scannerBuy({ mint: s.mint, symbol: s.symbol, why: s.why });
+        const rec = notes.get(s.mint);
+        if (rec) {
+          rec.bought = !why;
+          if (why) rec.skipped = why;
+        }
+        if (!why) {
+          lastScan.bought = [{ mint: s.mint, symbol: s.symbol, at: Date.now() }, ...lastScan.bought].slice(0, 10);
+          break; // one coin per scan
+        }
+        if (!engine.running || !engine.cfg.scanner.tradeCoins) break;
+      }
+    }
+    if (notes.size) saveSignals();
+    broadcast('scanner', scannerView());
+  } finally {
+    scanBusy = false;
+  }
+}
+
+// ---------- "Test on the past": replay the scanner's rules on recent price history ----------
+const SCANTEST_FILE = 'data/scanner-test.json';
+type ScanTestRow = { entry: 'normal' | 'strict' | 'loose'; exitId: string; name: string; exits: ScanExits; stats: ReturnType<typeof signalStats> };
+type ScanTest = { at: number; days: number; coins: { symbol: string; kind: 'new' | 'old'; signals: number }[]; rows: ScanTestRow[]; trades: { symbol: string; kind: string; at: number; up1hPct: number; result: ExitReplay }[]; skippedCoins: number };
+let lastScannerTest: ScanTest | null = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(SCANTEST_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+const ENTRY_NAMES = { normal: 'Your rules', strict: 'Pickier rules', loose: 'Looser rules' } as const;
+
+function scannerTestSummary(t: ScanTest) {
+  const ranked = [...t.rows].sort((a, b) => b.stats.totalSol - a.stats.totalSol);
+  const current = t.rows.find((r) => r.entry === 'normal' && r.exitId === 'current')!;
+  const best = ranked[0];
+  const verdict = current.stats.signals < 10 ? 'few' : best.stats.totalSol <= 0 ? 'all-lose' : current.stats.totalSol > 0 ? (best === current ? 'current-best' : 'works') : 'current-loses';
+  return { at: t.at, days: t.days, coins: t.coins.length, coinsWithSignals: t.coins.filter((c) => c.signals).length, skippedCoins: t.skippedCoins, current, best, verdict, rows: ranked.map((r) => ({ ...r, entryName: ENTRY_NAMES[r.entry] })), trades: t.trades.slice(0, 60) };
+}
+
+async function runScannerTest(days: number, progress: (p: string) => void): Promise<ScanTest> {
+  const sc = engine.cfg.scanner;
+  progress('Finding coins to test on: trending, new and top volume…');
+  const rows = await markets.scoutPools();
+  const now = Date.now();
+  // One pool per coin (its deepest), with enough liquidity and trading to be a scanner candidate.
+  const best = new Map<string, import('./markets').PoolRow>();
+  for (const r of rows) {
+    if (!r.createdAt || now - r.createdAt < 3_600_000) continue;
+    const kind = now - r.createdAt <= 7 * 86_400_000 ? 'new' : 'old';
+    if (kind === 'new' ? !sc.newCoins : !sc.oldCoins) continue;
+    if ((r.liquidityUsd ?? 0) < RULES[kind].minLiq || (r.volume24h ?? 0) < RULES[kind].minVol24) continue;
+    if (['So11111111111111111111111111111111111111112', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'].includes(r.mint)) continue;
+    const prev = best.get(r.mint);
+    if (!prev || (r.liquidityUsd ?? 0) > (prev.liquidityUsd ?? 0)) best.set(r.mint, r);
+  }
+  const coins = [...best.values()].sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0)).slice(0, 24);
+  if (!coins.length) throw new Error('No coins with enough liquidity and trading to test on right now. Try again later.');
+  const series: { r: import('./markets').PoolRow; kind: 'new' | 'old'; candles: import('./markets').Candle[]; step: number }[] = [];
+  let skipped = 0;
+  for (const [i, r] of coins.entries()) {
+    progress(`Loading price history ${i + 1}/${coins.length} (${r.symbol})…`);
+    // A day extra before the test period, for the "usual volume" and 24-hour change.
+    const h = await markets.priceHistory(r.mint, now - (days + 1) * 86_400_000, now).catch(() => null);
+    // 5-minute candles for 1 day, 15-minute for longer (the service returns at most 1000 candles).
+    if (!h || h.step > 900_000 || h.candles.length < (3_600_000 / h.step) * 26) {
+      skipped++;
+      continue;
+    }
+    series.push({ r, kind: now - r.createdAt! <= 7 * 86_400_000 ? 'new' : 'old', candles: h.candles, step: h.step });
+  }
+  if (!series.length) throw new Error("Couldn't load price history for any coin. The market data service may be busy: try again in a few minutes.");
+  progress('Replaying the scanner rules…');
+  const from = now - days * 86_400_000;
+  const out: ScanTestRow[] = [];
+  let trades: ScanTest['trades'] = [];
+  const coinSignalsCount = new Map<string, number>();
+  for (const entry of ['normal', 'strict', 'loose'] as const) {
+    for (const v of exitVariants(scanExits())) {
+      const results: ExitReplay[] = [];
+      for (const s of series) {
+        const sig = replaySignals(s.candles, s.step, entryRulesFor(s.kind, entry), v.exits).filter((x) => x.at >= from);
+        results.push(...sig.map((x) => x.result));
+        if (entry === 'normal' && v.id === 'current') {
+          coinSignalsCount.set(s.r.mint, sig.length);
+          trades.push(...sig.map((x) => ({ symbol: s.r.symbol, kind: s.kind, at: x.at, up1hPct: x.up1hPct, result: x.result })));
+        }
+      }
+      out.push({ entry, exitId: v.id, name: v.name, exits: v.exits, stats: signalStats(results, sc.buySol) });
+    }
+  }
+  trades = trades.sort((a, b) => b.at - a.at);
+  const result: ScanTest = { at: now, days, coins: series.map((s) => ({ symbol: s.r.symbol, kind: s.kind, signals: coinSignalsCount.get(s.r.mint) ?? 0 })), rows: out, trades, skippedCoins: skipped };
+  lastScannerTest = result;
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(SCANTEST_FILE, JSON.stringify(result));
+  return result;
+}
+
+function scannerView() {
+  const rec = walletRecords(engine.readTrades(), engine.cfg.mode)[SCANNER_SOURCE] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 };
+  return { ...lastScan, sparks: Object.fromEntries(lastScan.signals.map((s) => [s.mint, downsample(sparkCache.get(s.mint)?.pts ?? [], 48)])), record: rec, proof: signalProof(), test: lastScannerTest ? scannerTestSummary(lastScannerTest) : null, nextTraderSearch: engine.cfg.scanner.findTraders ? (lastScout?.at ?? 0) + engine.cfg.scanner.traderEveryHours * 3_600_000 : null };
+}
+
+setInterval(() => scanCoins().catch((e) => engine.log(`Market scanner: ${(e as Error).message}`, 'warn')), 60_000).unref();
 
 // Automatic wallet reviews while the bot is running.
 setInterval(() => {
@@ -614,6 +856,8 @@ function trialAndResume(next: import('./config').Config) {
       delete w.pausedReason;
     }
   }
+  // The scanner's losing streak counts afresh when it's turned back on.
+  if (next.scanner.tradeCoins && !engine.cfg.scanner.tradeCoins) engine.scannerSince = Date.now();
 }
 
 // ---------- wallet health check ----------
@@ -716,6 +960,320 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
 }
 
+// ---------- weekly auto-tune: your exits vs other setups on the last 7 days ----------
+type Tune = { at: number; status: 'better' | 'fine' | 'error'; message: string; best?: { name: string; stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits']; totalSol: number }; currentSol?: number; dismissed?: boolean };
+const TUNE_FILE = 'data/autotune.json';
+let lastTune: Tune | null = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(TUNE_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+})();
+function saveTune() {
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(TUNE_FILE, JSON.stringify(lastTune));
+  broadcast('autotune', lastTune);
+}
+function runAutoTune(manual = false) {
+  const wallets = engine.cfg.wallets.filter((w) => w.enabled).slice(0, 5).map((w) => w.address);
+  if (!wallets.length) throw new HttpError(400, 'Add wallets to copy first.');
+  if (jobs.some((j) => j.kind === 'optimize' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A settings comparison is already running.');
+  const now = Date.now();
+  const spec = backtestSpec({ wallets, from: now - 7 * 86_400_000, to: now, delayPct: measuredCopyGap() ?? 5 });
+  return addJob('optimize', { ...spec.input, auto: !manual }, async (progress) => {
+    try {
+      const d = await loadBacktestData(spec, progress, true, true);
+      progress('Comparing exit settings…');
+      const o = optimizeExits(d.swaps, d.cfg, d.opts, d.marks, d.prices);
+      const better = o.verdict === 'better';
+      lastTune = {
+        at: Date.now(),
+        status: better ? 'better' : 'fine',
+        message: better
+          ? `On the last 7 days, "${o.best.setup.name}" would have made ${o.best.totalSol >= 0 ? '+' : ''}${o.best.totalSol.toFixed(3)} SOL vs ${o.current.totalSol >= 0 ? '+' : ''}${o.current.totalSol.toFixed(3)} SOL with your exits.`
+          : o.verdict === 'all-lose'
+            ? 'On the last 7 days every exit setup lost money with these wallets: the wallets are the problem, not the exits. Check them on the Wallets page.'
+            : o.verdict === 'few-trades'
+              ? 'Too few trades in the last 7 days to compare exit settings fairly. Checking again next week.'
+              : 'Your exit settings are as good as any on the last 7 days. Nothing to change.',
+        ...(better ? { best: { name: o.best.setup.name, stopLossPct: o.best.setup.stopLossPct, takeProfitPct: o.best.setup.takeProfitPct, exits: o.best.setup.exits, totalSol: o.best.totalSol }, currentSol: o.current.totalSol } : {}),
+      };
+      saveTune();
+      engine.log(`Weekly settings check: ${lastTune.message}`, better ? 'ai' : 'system');
+      if (better) alert('autopilot', `🔧 ${lastTune.message} Open Copybot to use them.`);
+      return o;
+    } catch (e) {
+      lastTune = { at: Date.now(), status: 'error', message: `The weekly settings check couldn't run: ${(e as Error).message}` };
+      saveTune();
+      throw e;
+    }
+  });
+}
+setInterval(() => {
+  if (!engine.cfg.tune.weekly || !engine.running || !engine.cfg.wallets.some((w) => w.enabled)) return;
+  if (Date.now() - (lastTune?.at ?? 0) < 7 * 86_400_000) return;
+  try {
+    runAutoTune();
+    engine.log('Weekly settings check: comparing your exits with other setups on the last 7 days…', 'system');
+  } catch {
+    /* busy: next hour */
+  }
+}, 60 * 60_000).unref();
+
+// ---------- live portfolio value (sampled every 30 s, kept for 24 hours, per mode) ----------
+const SERIES_FILE = (mode: string) => `data/series-${mode}.json`;
+const portfolio = new Map<string, Pt[]>();
+function portfolioSeries(mode: string): Pt[] {
+  if (!portfolio.has(mode)) {
+    let pts: Pt[] = [];
+    try {
+      const j = JSON.parse(fs.readFileSync(SERIES_FILE(mode), 'utf8'));
+      if (Array.isArray(j)) pts = j.filter((p) => Array.isArray(p) && p.length === 2 && p.every((x: unknown) => typeof x === 'number'));
+    } catch {
+      /* nothing saved yet */
+    }
+    portfolio.set(mode, pts);
+  }
+  return portfolio.get(mode)!;
+}
+/** What everything is worth now: paper wallet (start + closed + open), or live balance + open positions. */
+function portfolioValue(): number | null {
+  const s = engine.snapshot();
+  const open = s.positions.reduce((a: number, p: any) => a + (p.valueSol ?? p.costSol), 0);
+  if (s.paper) return s.paper.startSol + s.realizedPnlSol + s.unrealizedPnlSol;
+  return s.wallet?.balance == null ? null : s.wallet.balance + open;
+}
+let seriesSaved = 0;
+setInterval(() => {
+  if (!engine.running && !Object.keys(engine.state.positions).length) return;
+  const v = portfolioValue();
+  if (v == null) return;
+  const mode = engine.cfg.mode;
+  const now = Date.now();
+  const pts = portfolioSeries(mode);
+  pushPoint(pts, [now, Math.round(v * 1e6) / 1e6], 3000);
+  while (pts.length && pts[0][0] < now - 86_400_000) pts.shift();
+  broadcast('point', { mode, p: pts[pts.length - 1] });
+  if (now - seriesSaved > 120_000) {
+    seriesSaved = now;
+    fs.mkdirSync('data', { recursive: true });
+    fs.writeFileSync(SERIES_FILE(mode), JSON.stringify(pts));
+  }
+}, 30_000).unref();
+
+// Price lines for the scanner's top coins (6 hours of 5-minute closes), refreshed at most every 5 minutes.
+const sparkCache = new Map<string, { at: number; pts: Pt[] }>();
+async function refreshSparks(mints: string[]) {
+  for (const m of mints.slice(0, 5)) {
+    const hit = sparkCache.get(m);
+    if (hit && Date.now() - hit.at < 5 * 60_000) continue;
+    const h = await markets.priceHistory(m, Date.now() - 6 * 3_600_000, Date.now()).catch(() => null);
+    sparkCache.set(m, { at: Date.now(), pts: h ? h.candles.map((k) => [k.t, k.c] as Pt) : [] });
+  }
+  while (sparkCache.size > 60) sparkCache.delete(sparkCache.keys().next().value!);
+}
+const orderCandles = new Map<string, { at: number; pts: Pt[] }>();
+
+// ---------- phone access (a separate door; see remote.ts) ----------
+let remoteCfg = remote.loadRemote();
+const pairing = new remote.Pairing();
+let remoteServer: http.Server | null = null;
+let remoteError: string | null = null;
+const PHONE_FILE = () => path.join(path.dirname(UI_FILE), 'phone.html');
+const PHONE_HEADERS = {
+  ...SECURITY_HEADERS,
+  'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: 'self'; manifest-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+};
+const PHONE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#7c3aed"/><path d="M18 40c8-20 22-22 30-24-2 8-4 22-24 30-3 1-6-2-6-6z" fill="#a8e07a"/><path d="M22 44l14-14" stroke="#3f7a3a" stroke-width="4" stroke-linecap="round"/></svg>`;
+const PHONE_MANIFEST = JSON.stringify({ name: 'Copybot', short_name: 'Copybot', start_url: '/', display: 'standalone', background_color: '#0f0b1e', theme_color: '#7c3aed', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] });
+
+function remoteView() {
+  return {
+    enabled: remoteCfg.enabled,
+    port: remoteCfg.port,
+    tailscaleOnly: remoteCfg.tailscaleOnly,
+    listening: !!remoteServer?.listening,
+    error: remoteError,
+    addresses: remote.localAddresses(),
+    devices: remoteCfg.devices.map(({ hash: _h, ...d }) => d),
+  };
+}
+
+/** Open or close the phone door to match the settings. */
+async function applyRemote() {
+  if (remoteServer) {
+    const s = remoteServer;
+    remoteServer = null;
+    s.closeAllConnections?.();
+    await new Promise<void>((r) => s.close(() => r()));
+  }
+  remoteError = null;
+  if (!remoteCfg.enabled) return;
+  const s = http.createServer((req, res) => handleRemoteSafe(req, res));
+  s.requestTimeout = 30_000;
+  await new Promise<void>((resolve) => {
+    s.once('error', (e: any) => {
+      remoteError = e.code === 'EADDRINUSE' ? `Port ${remoteCfg.port} is already in use by another program. Pick another port.` : `Couldn't open phone access: ${e.message}`;
+      engine.log(remoteError, 'warn');
+      resolve();
+    });
+    s.listen(remoteCfg.port, '0.0.0.0', () => {
+      remoteServer = s;
+      engine.log(`Phone access is on (port ${remoteCfg.port}${remoteCfg.tailscaleOnly ? ', Tailscale only' : ''}).`, 'system');
+      resolve();
+    });
+  });
+}
+
+let lastSeenSave = 0;
+async function handleRemoteSafe(req: http.IncomingMessage, res: http.ServerResponse) {
+  try {
+    // Only the home network and Tailscale: never a public internet address.
+    if (!remote.peerAllowed(req.socket.remoteAddress, remoteCfg.tailscaleOnly)) {
+      res.writeHead(403);
+      return res.end();
+    }
+    await handleRemote(req, res);
+  } catch (e) {
+    if (res.headersSent) return;
+    send(res, e instanceof HttpError ? e.code : 500, { error: e instanceof HttpError ? e.message : 'Something went wrong.' });
+  }
+}
+
+async function handleRemote(req: http.IncomingMessage, res: http.ServerResponse) {
+  const url = new URL(req.url || '/', 'http://phone');
+  const route = `${req.method} ${url.pathname}`;
+  if (route === 'GET /') {
+    res.writeHead(200, { ...PHONE_HEADERS, 'content-type': 'text/html; charset=utf-8' });
+    return res.end(fs.readFileSync(PHONE_FILE()));
+  }
+  if (route === 'GET /icon.svg') {
+    res.writeHead(200, { ...PHONE_HEADERS, 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
+    return res.end(PHONE_ICON);
+  }
+  if (route === 'GET /manifest.webmanifest') {
+    res.writeHead(200, { ...PHONE_HEADERS, 'content-type': 'application/manifest+json' });
+    return res.end(PHONE_MANIFEST);
+  }
+  if (route === 'POST /r/pair') {
+    const b = await readBody(req);
+    const r = pairing.redeem(b.code, Date.now());
+    if (r === 'locked') throw new HttpError(429, 'Too many wrong codes. Wait a minute and scan a new QR code.');
+    if (r === 'bad') throw new HttpError(400, 'This pairing code is wrong or has expired. Make a new QR code on the computer.');
+    let added;
+    try {
+      added = remote.addDevice(remoteCfg, b.name, Date.now());
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    remote.saveRemote(remoteCfg);
+    engine.log(`Phone paired: ${added.device.name}.`, 'system');
+    broadcast('remote', { ...remoteView(), paired: added.device.name });
+    return send(res, 200, { key: added.key, name: added.device.name });
+  }
+  if (!url.pathname.startsWith('/r/')) return send(res, 404, { error: 'not found' });
+
+  const device = remote.findDevice(remoteCfg, req.headers['x-copybot-device'] as string | undefined);
+  if (!device) return send(res, 401, { error: 'This phone is not paired (or was removed). Pair it again from Copybot on your computer: Settings → Phone access.' });
+  device.lastSeen = Date.now();
+  if (Date.now() - lastSeenSave > 5 * 60_000) {
+    lastSeenSave = Date.now();
+    remote.saveRemote(remoteCfg);
+  }
+  const from = (what: string) => engine.log(`From ${device.name}: ${what}`, 'system');
+
+  if (route === 'GET /r/state') return send(res, 200, phoneState());
+  if (route === 'POST /r/start') {
+    await engine.start().catch((e) => {
+      throw new HttpError(400, e.message);
+    });
+    from(`started the bot (${engine.cfg.mode} mode)`);
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/stop') {
+    await engine.stop();
+    from('stopped the bot');
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/sell') {
+    const b = await readBody(req);
+    if (!isAddress(b.mint) || !engine.state.positions[b.mint]) throw new HttpError(400, 'No open position for that token');
+    const fraction = b.fraction === 0.5 ? 0.5 : 1;
+    if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'No trading wallet configured');
+    from(`sold ${fraction === 1 ? 'all' : 'half'} of ${b.mint.slice(0, 4)}…${b.mint.slice(-4)}`);
+    await engine.manualSell(b.mint, fraction);
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/panic') {
+    from('pressed Sell everything & stop');
+    const r = await engine.panic(`${device.name} pressed Sell everything`).catch((e) => {
+      throw new HttpError(409, e.message);
+    });
+    return send(res, 200, { ...phoneState(), panic: r });
+  }
+  if (route === 'POST /r/orders/cancel') {
+    const b = await readBody(req);
+    const o = engine.orders.find((x) => x.id === b.id && x.status === 'active');
+    if (!o || !engine.cancelOrder(o.id)) throw new HttpError(404, 'That order is no longer open.');
+    from(`cancelled an order (${describeOrder(o)})`);
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/resume') {
+    engine.resumeBuying();
+    from('resumed buying for today');
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/scanner') {
+    const b = await readBody(req);
+    const next = structuredClone(engine.cfg);
+    for (const k of ['findTraders', 'tradeCoins'] as const) if (typeof b[k] === 'boolean') next.scanner[k] = b[k];
+    trialAndResume(next);
+    await applyChange(() => saveConfig(next));
+    from(`market scanner: find traders ${next.scanner.findTraders ? 'on' : 'off'}, trade coins ${next.scanner.tradeCoins ? 'on' : 'off'}`);
+    return send(res, 200, phoneState());
+  }
+  if (route === 'POST /r/unpair') {
+    remoteCfg.devices = remoteCfg.devices.filter((d) => d.id !== device.id);
+    remote.saveRemote(remoteCfg);
+    engine.log(`${device.name} unpaired itself.`, 'system');
+    broadcast('remote', remoteView());
+    return send(res, 200, { ok: true });
+  }
+  return send(res, 404, { error: 'not found' });
+}
+
+/** What the phone sees: no keys, no wallet addresses, no settings beyond the scanner switches. */
+function phoneState() {
+  const s = engine.snapshot();
+  const sc = engine.cfg.scanner;
+  const scan = scannerView();
+  return {
+    version: process.env.COPYBOT_VERSION ?? null,
+    running: s.running,
+    startedAt: s.startedAt,
+    mode: s.mode,
+    realizedPnlSol: s.realizedPnlSol,
+    unrealizedPnlSol: s.unrealizedPnlSol,
+    exposureSol: s.exposureSol,
+    maxExposureSol: engine.cfg.risk.maxTotalExposureSol,
+    paper: s.paper,
+    balance: s.wallet?.balance ?? null,
+    guard: s.guard,
+    panicking: s.panicking,
+    orders: engine.orders.filter((o) => o.status === 'active').map((o) => ({ id: o.id, text: describeOrder(o), note: o.note ?? null })),
+    wallets: engine.cfg.wallets.filter((w) => w.enabled).length,
+    positions: s.positions.map((p: any) => ({ mint: p.mint, from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt, trail: downsample(p.trail ?? [], 30) })),
+    series: downsample(since(portfolioSeries(s.mode), Date.now() - 86_400_000), 120),
+    logs: engine.logs.slice(-40).map((l) => ({ t: l.t, level: l.level, msg: l.msg })),
+    trades: readTrades()
+      .filter((t: any) => t.mode === s.mode)
+      .slice(0, 20)
+      .map((t: any) => ({ t: t.t, side: t.side, mint: t.mint, sol: t.sol, pnl: t.pnl ?? null, reason: t.reason ?? null })),
+    scanner: { findTraders: sc.findTraders, tradeCoins: sc.tradeCoins, record: scan.record, signals: scan.signals.slice(0, 3).map((x) => ({ symbol: x.symbol, why: x.why })) },
+  };
+}
+
 // ---------- routes ----------
 async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url || '/', 'http://localhost');
@@ -756,6 +1314,91 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return res.end(tradesCsv(readTrades(1e9).reverse().filter((t: any) => mode !== 'paper' && mode !== 'live' ? true : t.mode === mode), labels));
   }
 
+  if (route === 'GET /api/report') {
+    const by = (['day', 'week', 'month'] as Period[]).find((p) => p === url.searchParams.get('by')) ?? 'day';
+    const mode = url.searchParams.get('mode') === 'live' ? 'live' : 'paper';
+    const r = profitReport(readTrades(1e9), mode, by);
+    const labels = new Map<string, string>([[SCANNER_SOURCE, 'Market scanner'], ...engine.cfg.wallets.map((w) => [w.address, w.label] as [string, string])]);
+    const name = (s: string) => labels.get(s) ?? (s === 'unknown' || s === 'manual' ? s : `${s.slice(0, 4)}…${s.slice(-4)}`);
+    const curve = downsample(runningTotal(readTrades(1e9).filter((t: any) => t.mode === mode && t.side === 'sell' && typeof t.pnl === 'number').map((t: any) => ({ t: t.t, v: t.pnl }))), 400);
+    return send(res, 200, { ...r, mode, curve, bySource: r.bySource.map((x) => ({ ...x, name: name(x.source) })) });
+  }
+
+  if (route === 'GET /api/tax') {
+    // ?year=2026&mode=live[&csv=1]
+    const year = Number(url.searchParams.get('year'));
+    if (!Number.isInteger(year) || year < 2020 || year > 2100) throw new HttpError(400, 'Pick a year');
+    const mode = url.searchParams.get('mode') === 'paper' ? 'paper' : 'live';
+    const all = readTrades(1e9).reverse();
+    const mints = [...new Set(all.filter((t: any) => t.mode === mode).map((t: any) => t.mint as string))].filter(isAddress);
+    const prices = await markets.solUsdDaily().catch((e) => {
+      throw new HttpError(502, (e as Error).message);
+    });
+    const days = [...prices.keys()].sort((a, b) => a - b);
+    const solUsdAt = (t: number) => {
+      const day = Math.floor(t / 86_400_000) * 86_400_000;
+      if (prices.has(day)) return prices.get(day)!;
+      // Today's candle may not be closed yet: use the latest day before.
+      const before = days.filter((d) => d <= day).pop();
+      return before != null && day - before <= 3 * 86_400_000 ? prices.get(before)! : null;
+    };
+    // Token decimals from the chain (100 per request) and symbols from Dexscreener (30 per request).
+    const decimals = new Map<string, number>();
+    const conn = makeConnection();
+    for (let i = 0; i < mints.length; i += 100) {
+      const infos = await conn.getMultipleParsedAccounts(mints.slice(i, i + 100).map((m) => new PublicKey(m))).catch(() => null);
+      infos?.value.forEach((a, j) => {
+        const d = (a?.data as any)?.parsed?.info?.decimals;
+        if (typeof d === 'number') decimals.set(mints[i + j], d);
+      });
+    }
+    const symbols = new Map<string, string>();
+    for (let i = 0; i < mints.length; i += 30) {
+      const list = await markets.tokens(mints.slice(i, i + 30)).catch(() => []);
+      for (const t of list as any[]) if (t?.mint && t?.symbol && t.symbol !== '?') symbols.set(t.mint, t.symbol);
+    }
+    const rows = taxRows(all, mode, solUsdAt, decimals, symbols).filter((r) => new Date(r.t).getUTCFullYear() === year);
+    if (url.searchParams.get('csv')) {
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'text/csv; charset=utf-8' });
+      return res.end(taxCsv(rows));
+    }
+    return send(res, 200, { year, mode, ...taxSummary(rows), missingDecimals: mints.length - decimals.size });
+  }
+
+  if (route === 'GET /api/series') {
+    const hours = { '1h': 1, '6h': 6, '24h': 24 }[url.searchParams.get('range') ?? '6h'] ?? 6;
+    const mode = engine.cfg.mode;
+    return send(res, 200, { mode, points: downsample(since(portfolioSeries(mode), Date.now() - hours * 3_600_000), 400) });
+  }
+
+  if (route === 'GET /api/position-chart') {
+    const mint = url.searchParams.get('mint');
+    const p = mint ? engine.state.positions[mint] : null;
+    if (!p) throw new HttpError(404, 'That position is closed.');
+    const trades = readTrades(2000)
+      .filter((t: any) => t.mint === mint && t.mode === engine.cfg.mode && t.t >= p.openedAt - 60_000)
+      .map((t: any) => ({ t: t.t, side: t.side, sol: t.sol, pnl: t.pnl ?? null, reason: t.reason ?? null }))
+      .reverse();
+    const ex = exitConfigFor(engine.cfg, p.sources);
+    return send(res, 200, { mint, openedAt: p.openedAt, costSol: p.costSol, trail: p.trail ?? [], peakMultiple: p.peakMultiple ?? 1, steps: p.steps ?? [], trades, exits: { stopLossPct: ex.risk.stopLossPct, takeProfitPct: ex.risk.takeProfitPct, ...ex.exits } });
+  }
+
+  if (route === 'GET /api/orders/chart') {
+    const mint = url.searchParams.get('mint');
+    if (!isAddress(mint)) throw new HttpError(400, 'Not a valid token address');
+    let c = orderCandles.get(mint);
+    if (!c || Date.now() - c.at > 5 * 60_000) {
+      const h = await markets.priceHistory(mint, Date.now() - 86_400_000, Date.now()).catch(() => null);
+      c = { at: Date.now(), pts: h ? h.candles.map((k) => [k.t, k.c] as Pt) : [] };
+      orderCandles.set(mint, c);
+      while (orderCandles.size > 40) orderCandles.delete(orderCandles.keys().next().value!);
+    }
+    // Market candles for context, then the live prices Copybot has seen since (every 15 s).
+    const live = engine.orderPrices.get(mint) ?? [];
+    const lastCandle = c.pts[c.pts.length - 1]?.[0] ?? 0;
+    return send(res, 200, { points: [...downsample(c.pts, 200), ...live.filter((p) => p[0] > lastCandle)] });
+  }
+
   if (route === 'GET /api/state') {
     return send(res, 200, {
       status: engine.snapshot(),
@@ -765,9 +1408,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       connection: connectionInfo(),
       jobs,
       scout: lastScout,
+      scanner: scannerView(),
+      tune: lastTune,
       strategies: STRATEGIES,
       health: lastHealth,
       app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
+      chain: { id: engine.chain.meta.id, name: engine.chain.meta.name, symbol: engine.chain.meta.native.symbol, usd: await engine.chain.nativeUsd().catch(() => null) },
       ui: uiPrefs,
     });
   }
@@ -778,21 +1424,46 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (jobs.some((j) => j.kind === 'quickstart' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'Already setting up an experiment.');
     const job = addJob('quickstart', {}, async (progress) => {
       progress('Looking at tokens that are moving right now…');
-      const tokens = pickTokens(await markets.scoutPools(), Date.now(), 6, new Set());
+      const pools = await markets.scoutPools();
+      const tokens = pickTokens(pools, Date.now(), 8, new Set());
       if (!tokens.length) throw new Error('No tokens are moving enough right now. Try again in a while, or add wallets yourself.');
-      const caught = new Map<string, { tokens: string[]; bestGainPct: number }>();
+      const mine = new Set(engine.cfg.wallets.map((w) => w.address));
+      // Recent big trades for each token (kept so the gain bar can be lowered without fetching again).
+      const tradesBy: { t: (typeof tokens)[number]; trades: Awaited<ReturnType<typeof markets.poolTrades>> }[] = [];
+      let failed = 0;
       for (const [i, t] of tokens.entries()) {
         progress(`Finding traders who caught ${t.symbol}'s move (${i + 1}/${tokens.length})…`);
-        const trades = await markets.poolTrades(t.pool, 300).catch(() => []);
-        for (const [w, gain] of pumpBuyers(trades, t.priceUsd, 40)) {
-          const c = caught.get(w) ?? { tokens: [], bestGainPct: 0 };
-          c.tokens.push(t.symbol);
-          c.bestGainPct = Math.max(c.bestGainPct, gain);
-          caught.set(w, c);
+        try {
+          tradesBy.push({ t, trades: await markets.poolTrades(t.pool, 300) });
+        } catch (e) {
+          failed++;
+          engine.log(`Experiment: couldn't load ${t.symbol}'s trades (${(e as Error).message})`, 'warn');
         }
       }
-      const picks = experimentPicks(caught, new Set(engine.cfg.wallets.map((w) => w.address)), 3);
-      if (!picks.length) throw new Error("Couldn't find active traders right now. Try again in a while, or use Find wallets.");
+      if (!tradesBy.length) throw new Error(`The market data service (GeckoTerminal) isn't answering right now (${failed} requests failed). Wait a minute and try again.`);
+      const collect = (minGain: number) => {
+        const caught = new Map<string, { tokens: string[]; bestGainPct: number }>();
+        for (const { t, trades } of tradesBy) {
+          for (const [w, gain] of pumpBuyers(trades, t.priceUsd, minGain)) {
+            const c = caught.get(w) ?? { tokens: [], bestGainPct: 0 };
+            c.tokens.push(t.symbol);
+            c.bestGainPct = Math.max(c.bestGainPct, gain);
+            caught.set(w, c);
+          }
+        }
+        return experimentPicks(caught, mine, 3);
+      };
+      // Prefer traders up 40%+; if the market has cooled off, accept 15%+.
+      let picks = collect(40);
+      if (picks.length < 3) picks = [...picks, ...collect(15).filter((p) => !picks.some((x) => x.wallet === p.wallet))].slice(0, 3);
+      // Still nobody: fall back to the last wallet-scout search.
+      if (!picks.length) {
+        picks = (lastScout?.reports ?? [])
+          .filter((r) => !mine.has(r.wallet) && r.swaps > 0)
+          .slice(0, 3)
+          .map((r) => ({ wallet: r.wallet, tokens: [...(r.pumpOn ?? []), ...r.earlyOn].slice(0, 2), bestGainPct: 0 }));
+      }
+      if (!picks.length) throw new Error(`No trader on today's ${tradesBy.length} trending tokens is in profit right now (prices have fallen back). Try again in a while, or use Find wallets.`);
       if (engine.cfg.mode !== 'paper') throw new Error('Switched to live mode, so the experiment was cancelled.');
       progress('Starting the bot in paper mode…');
       const next = structuredClone(engine.cfg);
@@ -833,11 +1504,84 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return send(res, 200, { ok: true, status: engine.snapshot() });
   }
 
+  // ---------- phone access (desktop side) ----------
+  if (route === 'GET /api/remote') return send(res, 200, remoteView());
+  if (route === 'PUT /api/remote') {
+    const b = await readBody(req);
+    if (b.port !== undefined && !remote.validPort(b.port)) throw new HttpError(400, 'Port must be a whole number between 1024 and 65535');
+    const before = JSON.stringify([remoteCfg.enabled, remoteCfg.port, remoteCfg.tailscaleOnly]);
+    if (typeof b.enabled === 'boolean') remoteCfg.enabled = b.enabled;
+    if (typeof b.tailscaleOnly === 'boolean') remoteCfg.tailscaleOnly = b.tailscaleOnly;
+    if (b.port !== undefined) remoteCfg.port = b.port;
+    remote.saveRemote(remoteCfg);
+    if (JSON.stringify([remoteCfg.enabled, remoteCfg.port, remoteCfg.tailscaleOnly]) !== before) {
+      if (!remoteCfg.enabled) pairing.cancelAll();
+      await applyRemote();
+      if (!remoteCfg.enabled) engine.log('Phone access is off.', 'system');
+    }
+    return send(res, 200, remoteView());
+  }
+  if (route === 'POST /api/remote/pair') {
+    if (!remoteServer?.listening) throw new HttpError(400, 'Turn phone access on first.');
+    if (remoteCfg.devices.length >= remote.MAX_DEVICES) throw new HttpError(400, `At most ${remote.MAX_DEVICES} paired devices. Remove one first.`);
+    const { code, expiresAt } = pairing.create(Date.now());
+    const a = remote.localAddresses();
+    const hosts = [...a.tailscale.map((h) => ({ via: 'tailscale', h })), ...(remoteCfg.tailscaleOnly ? [] : a.lan.map((h) => ({ via: 'wifi', h })))];
+    if (!hosts.length) throw new HttpError(400, remoteCfg.tailscaleOnly ? "Tailscale isn't running on this computer. Open Tailscale and sign in, then try again." : "This computer isn't on a network. Connect to Wi-Fi (or start Tailscale) and try again.");
+    const links = await Promise.all(
+      hosts.slice(0, 4).map(async ({ via, h }) => {
+        const link = `http://${h}:${remoteCfg.port}/#pair=${code}`;
+        return { via, host: h, url: link, qr: await QRCode.toString(link, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }) };
+      }),
+    );
+    return send(res, 200, { links, expiresAt });
+  }
+  if (route === 'DELETE /api/remote/device') {
+    const id = url.searchParams.get('id');
+    const d = remoteCfg.devices.find((x) => x.id === id);
+    if (!d) throw new HttpError(404, 'No such device');
+    remoteCfg.devices = remoteCfg.devices.filter((x) => x.id !== id);
+    remote.saveRemote(remoteCfg);
+    engine.log(`Removed ${d.name} from phone access.`, 'system');
+    return send(res, 200, remoteView());
+  }
+
   if (route === 'POST /api/start') {
     await engine.start().catch((e) => {
       throw new HttpError(400, e.message);
     });
     return send(res, 200, engine.snapshot());
+  }
+
+  if (route === 'POST /api/orders') {
+    const b = await readBody(req);
+    if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'Live mode needs a trading wallet first (Settings → Trading wallet).');
+    const o = makeOrder(b, Date.now(), crypto.randomBytes(6).toString('hex'));
+    if (typeof o === 'string') throw new HttpError(400, o);
+    if (!o.symbol) {
+      const info = await markets.tokens([o.mint]).catch(() => []);
+      const sym = (info as any[])[0]?.symbol;
+      if (sym && sym !== '?') o.symbol = sym;
+    }
+    try {
+      engine.addOrder(o);
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    return send(res, 200, engine.snapshot());
+  }
+
+  if (route === 'DELETE /api/orders') {
+    if (!engine.cancelOrder(url.searchParams.get('id') ?? '')) throw new HttpError(404, 'That order is no longer open.');
+    return send(res, 200, engine.snapshot());
+  }
+
+  if (route === 'POST /api/panic') {
+    if (engine.cfg.mode === 'live' && !engine.kp && Object.keys(engine.state.positions).length) throw new HttpError(400, 'No trading wallet configured');
+    const r = await engine.panic('you pressed Sell everything').catch((e) => {
+      throw new HttpError(409, e.message);
+    });
+    return send(res, 200, { ...r, status: engine.snapshot() });
   }
 
   if (route === 'POST /api/stop') {
@@ -1137,6 +1881,55 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return send(res, 200, job);
   }
 
+  if (route === 'POST /api/jobs/scannertest') {
+    const days = Math.min(3, Math.max(1, Math.round(Number((await readBody(req)).days) || 3)));
+    if (jobs.some((j) => j.kind === 'scannertest' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'The scanner test is already running.');
+    const job = addJob('scannertest', { days }, async (progress) => {
+      const t = await runScannerTest(days, progress);
+      broadcast('scanner', scannerView());
+      return scannerTestSummary(t);
+    });
+    return send(res, 200, job);
+  }
+
+  if (route === 'POST /api/scanner/use-test') {
+    const b = await readBody(req);
+    const v = lastScannerTest?.rows.find((r) => r.exitId === b.exitId && r.entry === b.entry);
+    if (!v) throw new HttpError(400, 'Run "Test on the past" first.');
+    const next = structuredClone(engine.cfg);
+    next.scanner = { ...next.scanner, ...v.exits, rules: v.entry };
+    let clean;
+    try {
+      clean = sanitizeConfig(next, true);
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    await applyChange(() => saveConfig(clean));
+    engine.log(`Scanner now uses ${ENTRY_NAMES[v.entry].toLowerCase()} with "${v.name}" exits (from the test on the past).`, 'system');
+    return send(res, 200, { config: engine.cfg });
+  }
+
+  if (route === 'POST /api/autotune/run') return send(res, 200, runAutoTune(true));
+  if (route === 'POST /api/autotune/apply') {
+    const best = lastTune?.best;
+    if (!best || lastTune?.status !== 'better') throw new HttpError(400, 'There is no suggestion to apply.');
+    const next = structuredClone(engine.cfg);
+    next.risk.stopLossPct = best.stopLossPct;
+    next.risk.takeProfitPct = best.takeProfitPct;
+    next.exits = { ...best.exits };
+    const clean = sanitizeConfig(next, true);
+    await applyChange(() => saveConfig(clean));
+    engine.log(`Exit settings changed to "${best.name}" (weekly settings check).`, 'system');
+    lastTune = { ...lastTune!, status: 'fine', message: `You switched to "${best.name}". The next check is in a week.`, dismissed: true };
+    saveTune();
+    return send(res, 200, { config: engine.cfg, tune: lastTune });
+  }
+  if (route === 'POST /api/autotune/dismiss') {
+    if (lastTune) lastTune.dismissed = true;
+    saveTune();
+    return send(res, 200, { tune: lastTune });
+  }
+
   if (route === 'POST /api/jobs/optimize') {
     const spec = backtestSpec(await readBody(req));
     const job = addJob('optimize', spec.input, async (progress) => {
@@ -1267,6 +2060,7 @@ export function startServer(port = PORT, openBrowser = true): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, HOST, () => {
+      applyRemote().catch(() => {});
       const actual = (server.address() as { port: number }).port;
       const url = `http://localhost:${actual}/?t=${TOKEN}`;
       if (!process.env.COPYBOT_DESKTOP) console.log(`\n  Copybot is running. If the browser didn't open, go to:\n  ${url}\n  (keep this window open; press Ctrl+C to quit)\n`);

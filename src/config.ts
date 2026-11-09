@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { PublicKey } from '@solana/web3.js';
 import { strategyById } from './presets';
+import { DEFAULT_CHAIN, KNOWN_CHAINS } from './chains/types';
 
 /** sizeMultiplier scales every buy copied from this wallet; maxExposureSol caps SOL in its positions (0 = no cap). */
 export type ExitOverrides = Partial<{
@@ -19,6 +20,7 @@ export type ExitOverrides = Partial<{
  * since: when the current trial stage, or the wallet's last resume, began (results before it don't count).
  */
 export type WalletCfg = {
+  chain?: import('./chains/types').ChainId; // which blockchain this wallet trades on (missing = Solana)
   address: string;
   label: string;
   enabled: boolean;
@@ -45,7 +47,22 @@ const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
  * The rules for one wallet: global settings, then the wallet's own strategy (its exits, stop-loss,
  * minimum buy size and "don't chase"), then the wallet's own exit overrides.
  */
-export function walletRules(cfg: Pick<Config, 'risk' | 'exits' | 'wallets' | 'buy'>, address: string | undefined): { risk: Config['risk']; exits: Config['exits']; minTargetBuySol: number } {
+/** Positions the market scanner opened (not copied from a wallet) carry this as their source. */
+export const SCANNER_SOURCE = 'scanner';
+/** Positions bought by the user's own limit and DCA orders. */
+export const ORDER_SOURCE = 'order';
+
+/** The scanner's own quick exits: stop-loss, take-profit, and a trailing stop once it's up. */
+export function scannerRules(cfg: Pick<Config, 'risk' | 'exits'> & { scanner?: Config['scanner'] }): { risk: Config['risk']; exits: Config['exits'] } {
+  const s = cfg.scanner ?? DEFAULT_CONFIG.scanner;
+  return {
+    risk: { ...cfg.risk, stopLossPct: s.stopLossPct, takeProfitPct: s.takeProfitPct },
+    exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: s.trailingAfterPct, trailingStopPct: s.trailingStopPct },
+  };
+}
+
+export function walletRules(cfg: Pick<Config, 'risk' | 'exits' | 'wallets' | 'buy'> & { scanner?: Config['scanner'] }, address: string | undefined): { risk: Config['risk']; exits: Config['exits']; minTargetBuySol: number } {
+  if (address === SCANNER_SOURCE) return { ...scannerRules(cfg), minTargetBuySol: 0 };
   const w = cfg.wallets.find((x) => x.address === address);
   let risk = cfg.risk;
   let exits = cfg.exits;
@@ -66,7 +83,7 @@ export function walletRules(cfg: Pick<Config, 'risk' | 'exits' | 'wallets' | 'bu
 }
 
 /** Exit settings for a position: those of the wallet that opened it (see walletRules). */
-export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'> & Partial<Pick<Config, 'buy'>>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
+export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'> & Partial<Pick<Config, 'buy' | 'scanner'>>, sources: string[]): Pick<Config, 'risk' | 'exits'> {
   const r = walletRules({ ...cfg, buy: cfg.buy ?? ({ minTargetBuySol: 0 } as Config['buy']) }, sources[0]);
   return { risk: r.risk, exits: r.exits };
 }
@@ -74,7 +91,19 @@ export function exitConfigFor(cfg: Pick<Config, 'risk' | 'exits' | 'wallets'> & 
 export type Config = {
   mode: 'paper' | 'live';
   wallets: WalletCfg[];
-  buy: { sizing: 'fixed' | 'percent'; fixedSol: number; percentOfTarget: number; minSol: number; maxSol: number; minTargetBuySol: number };
+  buy: {
+    sizing: 'fixed' | 'percent';
+    fixedSol: number;
+    percentOfTarget: number;
+    minSol: number;
+    maxSol: number;
+    minTargetBuySol: number;
+    consensusBoost: number; // size × when 2+ copied wallets buy the same coin (1 = off)
+    consensusWindowMin: number;
+    consensusAddOn: boolean; // buy more of a coin you hold when a second wallet confirms it (once)
+    soloMinTheirSol: number; // skip a coin only one wallet bought, if they spent less than this (0 = off)
+    sizeByRecord: boolean; // bigger buys for wallets that make you money, smaller for losers / late copies
+  };
   sell: { copySells: boolean };
   risk: {
     maxOpenPositions: number;
@@ -85,6 +114,8 @@ export type Config = {
     maxSignalAgeSec: number;
     solReserve: number;
     maxPriceDriftPct: number; // don't chase: skip if our price is this much above the copied wallet's entry (0 = off)
+    panicLossSol: number;
+    moodFilter: boolean; // buy less (or nothing) from signals when SOL is dropping or most coins are falling // sell everything and stop when today's closed + open result reaches −this (0 = off)
     dailyLossLimitSol: number; // stop new buys for the day after losing this much (0 = off)
     pauseAfterLosses: number; // pause new buys after this many losing sells in a row (0 = off)
     pauseMinutes: number;
@@ -124,13 +155,18 @@ export type Config = {
     rejectMintAuthority: boolean;
     rejectToken2022: boolean;
     blacklist: string[];
+    rugMemory: boolean; // after a rug pull, never buy that coin again, nor coins from the same creator
   };
   execution: {
     priorityLevel: 'medium' | 'high' | 'veryHigh';
     priorityFeeMaxLamports: number;
     jitoTipLamports: number; // 0 = off; otherwise pay this Jito tip instead of a priority fee
     fastStream: boolean; // Helius enhanced websocket for faster signals (needs a Helius RPC)
+    dynamicSlippage: boolean; // live: let Jupiter set the slippage per trade (never above your max)
+    mevProtect: boolean; // live, with a Jito tip: send privately through Jito only (no front-running)
   };
+  /** Weekly check of your exit settings against the last 7 days; suggests better ones. */
+  tune: { weekly: boolean };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
   /** New wallets start small and grow as they prove themselves; any wallet pauses after a losing streak. */
   trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number };
@@ -140,6 +176,30 @@ export type Config = {
   strategy: string;
   /** Which events are sent to Telegram/Discord (when a channel is set up in Settings → Alerts). */
   alerts: { trades: boolean; errors: boolean; guard: boolean; autopilot: boolean };
+  /**
+   * Market scanner, while the bot runs. findTraders: keep looking at new and older coins for
+   * winning traders, backtest them and add the best on a trial. tradeCoins: buy rising coins on
+   * its own, with its own budget and quick exits, through every safety check.
+   */
+  scanner: {
+    findTraders: boolean;
+    traderEveryHours: number;
+    maxWallets: number; // stop adding once this many wallets are being copied
+    picksPerRun: number;
+    tradeCoins: boolean;
+    rules: 'normal' | 'strict' | 'loose'; // entry rules: the defaults, pickier, or looser
+    trackSignals: boolean; // while the bot runs, note every coin signal and check later how it did (no buying)
+    newCoins: boolean; // 1 hour to 7 days old
+    oldCoins: boolean; // over 7 days old
+    buySol: number;
+    budgetSol: number; // most SOL in scanner positions at once
+    maxPositions: number;
+    stopLossPct: number;
+    takeProfitPct: number;
+    trailingAfterPct: number;
+    trailingStopPct: number;
+    maxHoldHours: number; // sell whatever is left after this long (0 = never)
+  };
   /** Claude autopilot. Off until the user turns it on and adds an Anthropic API key. */
   ai: {
     enabled: boolean;
@@ -159,7 +219,7 @@ export type Config = {
 export const DEFAULT_CONFIG: Config = {
   mode: 'paper',
   wallets: [],
-  buy: { sizing: 'fixed', fixedSol: 0.05, percentOfTarget: 5, minSol: 0.01, maxSol: 0.2, minTargetBuySol: 0.2 },
+  buy: { sizing: 'fixed', fixedSol: 0.05, percentOfTarget: 5, minSol: 0.01, maxSol: 0.2, minTargetBuySol: 0.2, consensusBoost: 1.5, consensusWindowMin: 10, consensusAddOn: true, soloMinTheirSol: 0, sizeByRecord: true },
   sell: { copySells: true },
   risk: {
     maxOpenPositions: 5,
@@ -171,6 +231,8 @@ export const DEFAULT_CONFIG: Config = {
     solReserve: 0.05,
     maxPriceDriftPct: 15,
     dailyLossLimitSol: 0.3,
+    panicLossSol: 0,
+    moodFilter: true,
     pauseAfterLosses: 4,
     pauseMinutes: 60,
   },
@@ -184,13 +246,16 @@ export const DEFAULT_CONFIG: Config = {
     rejectMintAuthority: false,
     rejectToken2022: false,
     blacklist: [],
+    rugMemory: true,
   },
-  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true },
+  execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true, dynamicSlippage: true, mevProtect: false },
+  tune: { weekly: true },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
   trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
   strategy: '',
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
+  scanner: { findTraders: false, traderEveryHours: 6, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, buySol: 0.05, budgetSol: 0.3, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 
@@ -201,9 +266,13 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'buy.minSol': [0.001, 100, 'Smallest buy'],
   'buy.maxSol': [0.001, 100, 'Largest buy'],
   'buy.minTargetBuySol': [0, 10_000, 'Ignore their buys under'],
+  'buy.consensusBoost': [1, 3, 'Size when wallets agree'],
+  'buy.consensusWindowMin': [1, 240, 'Agreement window'],
+  'buy.soloMinTheirSol': [0, 10_000, 'Single-wallet minimum'],
   'risk.maxOpenPositions': [1, 100, 'Max tokens held at once'],
   'risk.maxTotalExposureSol': [0.001, 10_000, 'Max SOL in open positions'],
   'risk.stopLossPct': [1, 100, 'Stop-loss'],
+  'risk.panicLossSol': [0, 10_000, 'Panic limit'],
   'risk.takeProfitPct': [0, 100_000, 'Sell everything at'],
   'risk.maxSignalAgeSec': [1, 600, 'Ignore trades older than'],
   'risk.solReserve': [0, 100, 'Always keep in wallet'],
@@ -238,6 +307,17 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'paper.startSol': [0.1, 100_000, 'Paper wallet start'],
   'trial.winsToStepUp': [1, 50, 'Profitable copies to step up'],
   'trial.pauseAfterLosses': [0, 50, 'Pause a wallet after losses in a row'],
+  'scanner.traderEveryHours': [1, 168, 'Look for traders every'],
+  'scanner.maxWallets': [1, 50, 'Most wallets to copy'],
+  'scanner.picksPerRun': [1, 5, 'New traders per search'],
+  'scanner.buySol': [0.001, 100, 'Scanner amount per buy'],
+  'scanner.budgetSol': [0.001, 10_000, 'Scanner budget'],
+  'scanner.maxPositions': [1, 20, 'Scanner coins at once'],
+  'scanner.stopLossPct': [3, 90, 'Scanner stop-loss'],
+  'scanner.takeProfitPct': [0, 1_000, 'Scanner take-profit'],
+  'scanner.trailingAfterPct': [0, 1_000, 'Scanner trailing stop starts at'],
+  'scanner.trailingStopPct': [0, 90, 'Scanner trailing stop'],
+  'scanner.maxHoldHours': [0, 168, 'Scanner max hold'],
   'ai.reviewEveryMin': [5, 1_440, 'Review positions every'],
   'ai.walletReviewHours': [1, 720, 'Review wallets every'],
   'ai.maxWallets': [1, 50, 'Max wallets for the AI'],
@@ -245,11 +325,12 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
   'execution.priorityLevel': ['medium', 'high', 'veryHigh'],
+  'scanner.rules': ['normal', 'strict', 'loose'],
 };
 
 const get = (o: any, path: string) => path.split('.').reduce((a, k) => a?.[k], o);
@@ -342,6 +423,7 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       if (exits.tp1AtPct && exits.tp2AtPct && exits.tp2AtPct <= exits.tp1AtPct) fail(`${cleanLabel(w.label) || 'Wallet'}: take-profit 2 must be higher than take-profit 1`);
     }
     out.wallets.push({
+      chain: (KNOWN_CHAINS as readonly string[]).includes(w.chain) ? w.chain : DEFAULT_CHAIN,
       address: w.address,
       label: cleanLabel(w.label) || `trader-${out.wallets.length + 1}`,
       enabled: w.enabled !== false,

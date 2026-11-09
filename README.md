@@ -64,6 +64,38 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **Backtest** (any period: last 24h/3d/7d/30d or custom dates): replay up to 5 wallets' real trades with your current settings, with an adjustable copy-delay cost (you always buy higher and sell lower than they did) and fees. Shows total profit, win rate, worst dip, a profit chart, per-wallet results, skipped trades and every trade. Exits follow their sells, and your stop-loss, take-profits and trailing stop are replayed from GeckoTerminal price candles.
 - **Wallet scout** (*Find wallets for me*): Copybot picks tokens that pumped recently, finds their early buyers (plus DexCheck top traders), checks each wallet's real record, and **Claude picks the most suitable ones** and explains why (a rule-based ranking without Claude). It searches trending, new and top-volume tokens, finds wallets that bought early or caught a recent move, and only picks wallets whose backtest with your settings made money. With the autopilot managing wallets, it runs once a day and adds its picks, up to your maximum.
 
+### Market scanner
+- **Find traders:** while the bot runs, it keeps looking at new *and older* coins that are moving, finds traders who caught the move, backtests them with your settings, and adds the best on a trial. No Claude needed.
+- **Trade coins:** buys coins that are rising on real buying (up over the last hour but not already run, more buyers than sellers, more volume than usual, not falling right now), through every limit and safety check, with its own budget, stop-loss, take-profit, trailing stop and maximum hold time. It stops itself after a losing streak. Both switches are off by default.
+
+- **Is it working?** A live track record of every coin signal (bought or not), checked later against real prices, and a **test on the past** that replays the rules on recent history with different buying rules and exits.
+
+### Your own orders
+- **Limit orders:** buy when a coin drops to (or rises past) a price; sell part or all when it hits a target or a floor. Optional expiry.
+- **DCA:** buy a fixed amount every 15 minutes to a week, a set number of times, optionally only under a price cap.
+- Every buy goes through your limits and safety checks. Orders run while the bot runs; paper and live orders are kept apart.
+
+### Faster, smarter, safer trades
+- **Faster copies:** all pre-buy checks (market data, holders, token safety, rug memory, wallet balance) run in parallel, and unchanging token facts are cached.
+- **Smart sizing:** bigger buys when several of your wallets buy the same coin (with a one-time top-up when a second wallet confirms), sizes by each wallet's record and copy gap, optional skip of lone small buys.
+- **Market mood filter:** halves or pauses buys from signals when SOL is dropping or most trending coins are falling.
+- **Rug memory:** never rebuys a coin that rugged you, nor coins from the same creator.
+- **Weekly settings check:** compares your exits with 15 setups on the last 7 days and suggests a better one.
+- **Live execution:** per-trade dynamic slippage, and optional private (bundle-only) Jito sends against front-running. A busy swap service is reported as busy, never as a honeypot.
+
+### Live graphs
+- Wallet value over the last hour, 6 or 24 hours (sampled every 30 seconds and kept across restarts), a trend line per open position with a click-through live chart showing its exits and your buys and sells, each order's price against its target, the scanner's results and rising coins, profit per wallet, a running total on the report, and the same on the phone. Hover for exact values.
+
+### Panic button, reports and taxes
+- **Sell everything & stop** from the Dashboard or your phone, plus an optional **panic limit** that does it automatically when today's closed and open result reaches a loss you set.
+- **Profit report** by day, week or month, with best and worst trades and results per wallet.
+- **Tax export:** a year of trades with USD values (daily SOL prices) and the gain or loss on each sale (average-cost method).
+
+### Phone access
+- **Control Copybot from your phone** at home over Wi-Fi, or anywhere with the free [Tailscale](https://tailscale.com/download) app: profit, positions, trades and activity; start and stop; sell half or all of a position; the scanner switches.
+- **Paired with a one-time QR code** (5 minutes, single use). Each phone has its own key, stored only as a hash, and can be removed at any time.
+- Off by default, and **only answers your home network and Tailscale**, never the open internet. A phone can't change settings, switch to live mode, or see keys and wallets.
+
 ### Alerts, speed and reliability
 - **Phone alerts** on Telegram or Discord: trades, problems, the circuit breaker and autopilot decisions, with rate limiting.
 - **Backup RPC** with automatic failover and switch-back.

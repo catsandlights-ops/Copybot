@@ -129,6 +129,15 @@ export type DangerInputs = {
 };
 
 /** Why an open position should be sold right away to escape a rug or dump, or null. */
+/**
+ * The crash check compares the price per token over time, not the position's total value: selling
+ * part of a position (or buying more) changes the total without the price moving at all.
+ */
+export const perTokenValue = (valueSol: number, amountRaw: string | bigint) => {
+  const raw = Number(amountRaw);
+  return raw > 0 ? (valueSol / raw) * 1e9 : 0;
+};
+
 export function dangerReason(d: DangerInputs, p: Config['protect']): string | null {
   if (p.liquidityDropPct > 0 && d.liquidityUsd != null && d.peakLiquidityUsd && d.peakLiquidityUsd > 0) {
     const drop = (1 - d.liquidityUsd / d.peakLiquidityUsd) * 100;
@@ -140,7 +149,7 @@ export function dangerReason(d: DangerInputs, p: Config['protect']): string | nu
     const high = Math.max(...recent, 0);
     if (high > 0 && recent.length >= 2) {
       const drop = (1 - d.valueSol / high) * 100;
-      if (drop >= p.crashPct) return `dump protection: value fell ${drop.toFixed(0)}% in under ${p.crashWindowMin} min`;
+      if (drop >= p.crashPct) return `dump protection: price fell ${drop.toFixed(0)}% in under ${p.crashWindowMin} min`;
     }
   }
   if (p.maxSellBuyRatio > 0 && d.sells5m != null && d.sells5m >= 20) {
@@ -238,6 +247,16 @@ export const median = (xs: number[]) => {
 // ---------------------------------------------------------------------------
 // Circuit breaker: daily loss limit + pause after a losing streak
 // ---------------------------------------------------------------------------
+
+/**
+ * Automatic panic: today's closed-trade result plus what open positions are worth right now,
+ * at or below −limit SOL. 0 = off. Returns the message to act on, or null.
+ */
+export function panicReason(dayPnlSol: number, unrealizedSol: number, limitSol: number): string | null {
+  if (!(limitSol > 0)) return null;
+  const total = dayPnlSol + unrealizedSol;
+  return total <= -limitSol ? `today's total is ${total.toFixed(3)} SOL (closed ${dayPnlSol.toFixed(3)}, open ${unrealizedSol.toFixed(3)}), past your ${limitSol} SOL panic limit` : null;
+}
 
 export type GuardState = { day: string; dayPnlSol: number; lossStreak: number; pausedUntil: number; resumedDay?: string };
 
