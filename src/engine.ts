@@ -11,7 +11,7 @@ import type { CheckResult } from './safety';
 import { chainOf, getChain, type ChainAdapter, type ChainId } from './chains';
 import { setBaseLive } from './chains/base';
 import { lessonFor, type Entry, type Lesson } from './learn';
-import { skipCategory, type SignalStats, plainSkip } from './readiness';
+import { skipCategory, skipGroup, type SignalStats, plainSkip } from './readiness';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
 import { getHolderStats, HolderStats } from './solscan';
@@ -543,7 +543,10 @@ export class BotEngine extends EventEmitter {
     const c = getChain(swap);
     const amount = swap.nativeAmount != null ? `${swap.nativeAmount.toFixed(4)} ${c.meta.native.symbol} (≈ ${swap.quoteAmount.toFixed(3)} SOL)` : `${swap.quoteAmount.toFixed(2)} ${swap.quote}`;
     if (!this.quietSignal(swap)) this.log(`${this.labels.get(swap.wallet) ?? short(swap.wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} on ${c.meta.name} for ${amount} (${age.toFixed(1)}s ago)`, 'signal');
-    if (age > this.cfg.risk.maxSignalAgeSec) return this.log('  skipped: signal too old', 'skip');
+    if (age > this.cfg.risk.maxSignalAgeSec) {
+      if (swap.side === 'buy') { this.noteActivity('seen'); this.noteActivity('skip', 'signal too old'); }
+      return this.log('  skipped: signal too old', 'skip');
+    }
     this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
   }
 
@@ -552,7 +555,10 @@ export class BotEngine extends EventEmitter {
     if (!swap) return;
     const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
     if (!this.quietSignal(swap)) this.log(`${this.labels.get(wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} for ${swap.quoteAmount.toFixed(3)} ${swap.quote} (${age.toFixed(1)}s ago)`, 'signal');
-    if (age > this.cfg.risk.maxSignalAgeSec) return this.log('  skipped: signal too old', 'skip');
+    if (age > this.cfg.risk.maxSignalAgeSec) {
+      if (swap.side === 'buy') { this.noteActivity('seen'); this.noteActivity('skip', 'signal too old'); }
+      return this.log('  skipped: signal too old', 'skip');
+    }
     this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
   }
 
@@ -662,6 +668,28 @@ export class BotEngine extends EventEmitter {
       .catch(() => this.log(`Rug memory: won't buy ${short(mint)} again (${why}).`, 'system'));
   }
 
+  /** What happened to the buys your wallets made: seen, copied, or skipped and why (last 24 hours). */
+  private activity: { t: number; k: 'seen' | 'copied' | 'skip'; why?: string }[] = [];
+  private noteActivity(k: 'seen' | 'copied' | 'skip', why?: string) {
+    const now = Date.now();
+    this.activity.push({ t: now, k, ...(why ? { why } : {}) });
+    if (this.activity.length > 5000 || this.activity[0].t < now - 86_400_000) this.activity = this.activity.filter((a) => a.t >= now - 86_400_000).slice(-5000);
+  }
+  /** "Why so few trades?": the last `hours` in plain groups, biggest first. */
+  activitySummary(hours = 1) {
+    const since = Date.now() - hours * 3_600_000;
+    const recent = this.activity.filter((a) => a.t >= since);
+    const groups = new Map<string, { group: string; setting: string | null; n: number }>();
+    for (const a of recent) {
+      if (a.k !== 'skip' || !a.why) continue;
+      const g = skipGroup(a.why);
+      const x = groups.get(g.group) ?? { ...g, n: 0 };
+      x.n++;
+      groups.set(g.group, x);
+    }
+    return { hours, since: this.startedAt && this.startedAt > since ? this.startedAt : since, seen: recent.filter((a) => a.k === 'seen').length, copied: recent.filter((a) => a.k === 'copied').length, skips: [...groups.values()].sort((a, b) => b.n - a.n) };
+  }
+
   /** Copied sells too small to follow on their own, added up per coin until they're worth a trade. */
   private smallSells = new Map<string, number>();
 
@@ -741,12 +769,14 @@ export class BotEngine extends EventEmitter {
     // Count every signal and why it was skipped (for the "ready for live?" report).
     const st = (this.sigStats[s.wallet] ??= { seen: 0, copied: 0, skips: {} });
     st.seen++;
+    this.noteActivity('seen');
     this.sigDirty = true;
     const skip = (raw: string) => {
       const why = plainSkip(raw);
       if (why !== raw) this.logError(new Error(raw)); // one tip a minute about a private RPC
       const c = skipCategory(why);
       st.skips[c] = (st.skips[c] ?? 0) + 1;
+      this.noteActivity('skip', why);
       this.logSkip(why);
     };
 
@@ -852,7 +882,10 @@ export class BotEngine extends EventEmitter {
       if (!d) {
         this.log(`  Claude unavailable: ${ai.aiStatus(cfg).lastError ?? 'no answer'} Following the rules: buy.`, 'warn');
       } else {
-        if (!d.buy) return this.log(`  skipped by Claude: ${d.reason}`, 'skip');
+        if (!d.buy) {
+          this.noteActivity('skip', 'Claude decided against it');
+          return this.log(`  skipped by Claude: ${d.reason}`, 'skip');
+        }
         this.log(`  Claude says buy${d.size !== 1 ? ` (size ×${d.size})` : ''}: ${d.reason}`, 'ai');
         // Resize within the limits, then re-check: the price may have moved while Claude thought.
         const resized = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol * d.size));
@@ -870,6 +903,7 @@ export class BotEngine extends EventEmitter {
     }
     await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined, chain);
     st.copied++;
+    this.noteActivity('copied');
     this.noteEntry(s.mint, entry, chain);
     if (addOn && state.positions[s.mint]) {
       state.positions[s.mint].addedOn = true;
@@ -1175,6 +1209,7 @@ export class BotEngine extends EventEmitter {
     return {
       running: this.running,
       startedAt: this.startedAt,
+      activity: this.activitySummary(1),
       stream: !this.cfg.execution.fastStream ? null : !heliusWsUrl(rpcUrl()) ? 'needs a Helius RPC' : this.stream ? ({ connecting: 'connecting…', connected: 'on', unavailable: 'not on your Helius plan', reconnecting: 'reconnecting…', off: 'off' } as const)[this.stream.status] : 'starts with the bot',
       mode: this.cfg.mode,
       realizedPnlSol: this.state.realizedPnlSol,

@@ -277,6 +277,11 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; font-family:
 .seg button.on.live { color: var(--red); }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
+.act-row { display: grid; grid-template-columns: 36px 120px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.act-n { text-align: right; font-weight: 600; }
+.act-bar { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+.act-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+@media (max-width: 700px) { .act-row { grid-template-columns: 30px minmax(0, 1fr); } .act-bar { display: none; } .act-row a { grid-column: 2; } }
 .set-top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 8px 0; }
 .set-tabs { flex-wrap: wrap; }
 #set-q { flex: 1; min-width: 200px; }
@@ -929,6 +934,7 @@ function renderDashboard(el) {
             <div class="s" style="margin-top:4px">copying ${enabled.length} wallet${enabled.length === 1 ? '' : 's'} · <a href="#" id="paper-reset">Reset</a></div></div>`; })()
         : `<div class="card stat"><div class="k">${ICON.key}Copying</div><div class="v num">${enabled.length} <small style="font-size:13px" class="muted">wallet${enabled.length === 1 ? '' : 's'}</small></div><div class="s">${todays.length} trade${todays.length === 1 ? '' : 's'} today</div></div>`}
     </div>
+    ${activityCard()}
     ${portfolioCard()}
     ${pnlChart()}
     <div class="grid two">
@@ -1097,6 +1103,38 @@ function loadOrderChart(mint) {
   S.orderCharts[mint] = { ...(c || {}), loading: true };
   api('GET', '/api/orders/chart?mint=' + encodeURIComponent(mint)).then((r) => { S.orderCharts[mint] = { at: Date.now(), pts: r.points }; if (S.page === 'orders') paintOrderLists(); }).catch(() => { S.orderCharts[mint] = { at: Date.now(), pts: [] }; });
 }
+
+/** "Why so few trades?": what happened to the buys your wallets made in the last hour. */
+function activityCard() {
+  const st = S.status, a = st.activity;
+  if (!st.running || !a) return '';
+  const mins = Math.max(1, Math.round((Date.now() - a.since) / 60000));
+  const span = mins >= 55 ? 'the last hour' : `the last ${mins} minute${mins === 1 ? '' : 's'}`;
+  const sc = S.config.scanner;
+  if (!a.seen) {
+    const tips = [];
+    if (!S.config.wallets.some((w) => w.enabled !== false)) tips.push('you are not copying any wallet yet');
+    if (!(sc.findTraders && sc.tradeCoins)) tips.push('<a href="#" onclick="go(\'scanner\');return false">turn on Always hunting</a> to find more traders and coins');
+    return `<div class="card" style="margin-bottom:16px"><div class="card-b"><b>No buys from your wallets in ${span}.</b> <span class="muted">The wallets you copy haven't traded${tips.length ? `; ${tips.join(', and ')}` : ''}.</span></div></div>`;
+  }
+  const max = Math.max(...a.skips.map((x) => x.n), 1);
+  const rows = a.skips.slice(0, 6).map((x) => `<div class="act-row"><span class="num act-n">${x.n}</span><div class="act-bar"><i style="width:${Math.max(4, (x.n / max) * 100)}%"></i></div><span>${esc(x.group)}</span>${x.setting ? `<a href="#" class="muted" data-setting="${esc(x.setting)}">${esc(x.setting)} →</a>` : ''}</div>`).join('');
+  const pctCopied = Math.round((a.copied / a.seen) * 100);
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>What your wallets did in ${span}</h2><div class="muted" style="font-size:12.5px">They bought <b>${a.seen}</b> time${a.seen === 1 ? '' : 's'}; you copied <b>${a.copied}</b> (${pctCopied}%).${a.skips.length ? ' Why the rest were skipped, and the setting that decides it:' : ''}</div></div></div>
+    ${rows ? `<div class="card-b stack" style="gap:8px;font-size:13px">${rows}</div>` : ''}</div>`;
+}
+/** Open Settings with one setting searched for ("Buying → Ignore their buys under"). */
+async function openSettingFor(path) {
+  const name = path.split('→').pop().replace(/\(.*\)/, '').trim();
+  if (/^(Wallets|Autopilot|Dashboard)/.test(path)) return go(path.startsWith('Wallets') ? 'wallets' : path.startsWith('Autopilot') ? 'autopilot' : 'dashboard');
+  await go('settings');
+  S.setQuery = name;
+  const i = $('#set-q'); if (i) i.value = name;
+  applySettingsView();
+  window.scrollTo({ top: 0 });
+}
+
+document.addEventListener('click', (e) => { const l = e.target.closest?.('[data-setting]'); if (l) { e.preventDefault(); openSettingFor(l.dataset.setting); } });
 
 /** Realized profit over time from your own sells (current mode), as a chart card on the Dashboard. */
 function pnlChart() {

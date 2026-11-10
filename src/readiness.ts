@@ -114,3 +114,33 @@ export function overallVerdict(sources: SourceReport[], checklist: CheckItem[]):
   if (failing.length) return { level: 'partly', text: `${ready.length} source${ready.length === 1 ? ' looks' : 's look'} ready, but fix ${failing.length} setting${failing.length === 1 ? '' : 's'} below first.` };
   return { level: 'ready', text: `Ready to try live with ${ready.map((s) => s.name).join(', ')}. Start small, and keep the others in paper.` };
 }
+
+/** Skip reasons grouped into plain categories, each with the setting that controls it (for "why so few trades?"). */
+const SKIP_GROUPS: [RegExp, string, string | null][] = [
+  [/their buy is below/, 'their buy was smaller than your minimum', 'Buying → Ignore their buys under'],
+  [/already holding/, 'you already held that coin', "Safety → Don't buy more of a token you hold"],
+  [/max open positions/, 'you already held the most coins allowed', 'Basics → Max tokens held at once'],
+  [/max total exposure|no room left/, 'your max SOL in trades was reached', 'Basics → Max SOL in open positions'],
+  [/budget is used up/, "that wallet's budget was used up", 'Wallets'],
+  [/paper wallet has only/, 'the paper wallet ran out of SOL', 'Dashboard → Reset'],
+  [/paused after|losing trades in a row/, 'buying was paused after a losing streak', 'Safety → Pause after losses in a row'],
+  [/daily loss limit/, 'the daily loss limit was reached', 'Basics → Daily loss limit'],
+  [/is paused/, 'that wallet is paused', 'Wallets'],
+  [/market mood/, 'the market mood was bad', 'Safety → Market mood filter'],
+  [/only one wallet bought/, 'only one wallet bought it, small', 'Buying → Skip lone small buys under'],
+  [/price is already|above their entry/, 'the price had already run up past their entry', "Buying → Don't chase"],
+  [/signal too old|older than/, 'the trade was seen too late', 'Safety → Ignore trades older than (or a private RPC)'],
+  [/liquidity/, 'the coin had too little liquidity', 'Safety → Minimum liquidity'],
+  [/market cap/, "the coin's market cap was outside your range", 'Safety → Token filters'],
+  [/token age|too new|minutes old/, 'the coin was too new', 'Safety → Minimum token age'],
+  [/holder|largest|top 10/, 'too few holders own too much of it', 'Safety → Token filters'],
+  [/learned:/, 'Learning: that kind of trade has been losing lately', 'Autopilot → Learning'],
+  [/live trading on .* is off/, 'live trading on that chain is off', 'Connections → Trading wallet'],
+  [/busy|429|rate|timed out|unavailable|fetch failed|no answer/i, 'a service was busy', 'Connections (a private RPC helps)'],
+  [/honeypot|route|freeze|mint authority|token-2022|tax|round-trip|blacklist|rug|pausable|owner|safety/i, 'the coin failed a safety check', 'Safety → Safety checks'],
+  [/Claude/, 'Claude decided against it', 'Autopilot'],
+];
+export function skipGroup(why: string): { group: string; setting: string | null } {
+  for (const [re, group, setting] of SKIP_GROUPS) if (re.test(why)) return { group, setting };
+  return { group: why.replace(/\d+(\.\d+)?/g, '#').slice(0, 60), setting: null };
+}

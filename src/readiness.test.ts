@@ -68,3 +68,15 @@ test('plainSkip: raw "too many requests" errors read plainly and still count as 
   assert.equal(plainSkip('liquidity $925 is below $10.0K'), 'liquidity $925 is below $10.0K');
   assert.equal(plainSkip('Jupiter is busy (HTTP 429); try again in a moment'), 'Jupiter is busy (HTTP 429); try again in a moment');
 });
+
+test('skipGroup: every skip reason lands in a plain group with the setting behind it', async () => {
+  const { skipGroup } = await import('./readiness');
+  assert.deepEqual(skipGroup('their buy is below 0.2 SOL'), { group: 'their buy was smaller than your minimum', setting: 'Buying → Ignore their buys under' });
+  assert.equal(skipGroup('liquidity $8.4K is below $10.0K').group, 'the coin had too little liquidity');
+  assert.equal(skipGroup('paused after 4 losing trades in a row, until 12:19 AM.').group, 'buying was paused after a losing streak');
+  assert.equal(skipGroup('price is already 22% above their entry (max 15%)').group, 'the price had already run up past their entry');
+  assert.equal(skipGroup('learned: coins under 1 hour old lost you 30% on average').group, 'Learning: that kind of trade has been losing lately');
+  assert.equal(skipGroup('the Solana node is busy (too many requests on the free public RPC)').group, 'a service was busy');
+  assert.equal(skipGroup('no sell route (possible honeypot)').group, 'the coin failed a safety check');
+  assert.equal(skipGroup('something new 12 times').group, 'something new # times');
+});
