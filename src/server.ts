@@ -513,9 +513,15 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
       notes.push(`Checked ${i} of ${cands.length} wallets in 40 minutes (the network was slow), so the rest wait for the next search. A private RPC such as Helius makes searches much faster.`);
       break;
     }
-    const swaps = await fetchSwaps(conn, c.wallet, 500, (n, t) => {
-      if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
-    }).catch(() => null);
+    const swaps = await fetchSwaps(
+      conn,
+      c.wallet,
+      500,
+      (n, t) => {
+        if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
+      },
+      { deadline: reports.length ? deadline : undefined },
+    ).catch(() => null);
     if (swaps) {
       history.set(c.wallet, swaps);
       reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });

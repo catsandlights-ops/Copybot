@@ -41,7 +41,7 @@ export async function fetchSwaps(
   wallet: string,
   maxTxs: number,
   onProgress?: (n: number, total: number) => void,
-  opts: { tries?: number; stats?: FetchStats; since?: number; until?: number; onScan?: (n: number) => void } = {},
+  opts: { tries?: number; stats?: FetchStats; since?: number; until?: number; onScan?: (n: number) => void; deadline?: number } = {},
 ): Promise<Swap[]> {
   // Base wallets (0x…) read their history from Alchemy instead.
   if (/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
@@ -96,6 +96,8 @@ export async function fetchSwaps(
       onProgress?.(++done, sigs.length);
       return cached.swap;
     }
+    // Out of time: give up on this wallet (a half-read history would misjudge it).
+    if (opts.deadline && Date.now() > opts.deadline) throw new Error('out of time');
     const tx = await getTx(sig, opts.tries ?? 2).catch(() => {
       if (opts.stats) opts.stats.failed++;
       return undefined;
