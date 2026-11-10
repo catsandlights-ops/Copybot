@@ -286,7 +286,9 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; font-family:
 .set-tabs { flex-wrap: wrap; }
 #set-q { flex: 1; min-width: 200px; }
 #set-none { margin-bottom: 16px; }
-.card[hidden], .field[hidden], .more-set[hidden] { display: none !important; }
+.card[hidden], .field[hidden], .more-set[hidden], .banner[hidden] { display: none !important; }
+.pa-opt { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.pa-opt input { flex: none; margin-top: 3px; }
 .more-set { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 13px; }
 .savebar { position: sticky; bottom: 16px; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--text); color: var(--bg); border-radius: 12px; margin-top: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 .savebar .spacer { flex: 1; }
@@ -801,6 +803,48 @@ function quickStartUpdate(j) {
       <div class="row"><span class="spacer" style="flex:1"></span><button class="btn" onclick="document.getElementById('modal-root').innerHTML=''">Close</button><button class="btn primary" onclick="document.getElementById('modal-root').innerHTML='';go('research')">Find wallets</button></div></div></div>`;
   } else if (msg) msg.textContent = j.progress;
 }
+/** How much pretend SOL paper trading has; keep the results so far, or start fresh with it. */
+function paperAmount() {
+  const cur = S.config.paper.startSol, usd = S.chain?.usd;
+  const open = (S.status.positions || []).reduce((a, p) => a + p.costSol, 0);
+  const presets = [1, 5, 10, 25, 100];
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal" role="dialog" aria-modal="true" style="max-width:480px">
+    <h3>Paper wallet amount</h3>
+    <p class="muted" style="margin-top:0">Pretend SOL for paper trading. It's best set close to what you'd really trade with, so sizes and limits behave the same.</p>
+    <div class="seg" id="pa-presets" style="flex-wrap:wrap;margin-bottom:10px">${presets.map((n) => `<button data-v="${n}" class="${n === cur ? 'on' : ''}">${n} SOL</button>`).join('')}</div>
+    <div style="display:flex;gap:10px;align-items:center"><div class="with-unit" style="width:200px"><input type="number" id="pa-sol" value="${cur}" min="0.1" step="any"><span>SOL</span></div><span class="muted" id="pa-usd"></span></div>
+    <div class="stack" style="gap:6px;margin:14px 0">
+      <label class="pa-opt"><input type="radio" name="pa-mode" value="keep" checked><span><b>Keep my paper results</b><br><span class="muted" style="font-size:12.5px">Profit, open positions and trades stay; only the starting amount changes.</span></span></label>
+      <label class="pa-opt"><input type="radio" name="pa-mode" value="fresh"><span><b>Start fresh with this amount</b><br><span class="muted" style="font-size:12.5px">Paper positions and trades are cleared (a copy is kept in the data folder).</span></span></label>
+    </div>
+    <div class="banner warn" id="pa-warn" hidden style="margin:0 0 12px"><div></div></div>
+    <div class="row"><span class="spacer" style="flex:1"></span><button class="btn" id="pa-cancel">Cancel</button><button class="btn primary" id="pa-save">Save</button></div>
+  </div></div>`;
+  const input = $('#pa-sol');
+  const refresh = () => {
+    const v = Number(input.value);
+    $('#pa-usd').textContent = usd && v > 0 ? `≈ $${Math.round(v * usd).toLocaleString()}` : '';
+    document.querySelectorAll('#pa-presets button').forEach((b) => b.classList.toggle('on', Number(b.dataset.v) === v));
+    const keep = document.querySelector('input[name="pa-mode"]:checked').value === 'keep';
+    const w = $('#pa-warn');
+    w.hidden = !(keep && v > 0 && v < open);
+    w.firstElementChild.textContent = `You have ${open.toFixed(3)} SOL in open paper positions, more than ${v} SOL: new paper buys will wait until enough is sold. Or choose "Start fresh".`;
+  };
+  document.querySelectorAll('#pa-presets button').forEach((b) => (b.onclick = () => { input.value = b.dataset.v; refresh(); }));
+  input.oninput = refresh;
+  document.querySelectorAll('input[name="pa-mode"]').forEach((r) => (r.onchange = refresh));
+  refresh();
+  const close = () => ($('#modal-root').innerHTML = '');
+  $('#pa-cancel').onclick = close;
+  $('#modal-root .modal-bg').onclick = (e) => { if (e.target.classList.contains('modal-bg')) close(); };
+  $('#pa-save').onclick = async () => {
+    const sol = Number(input.value);
+    if (!(sol >= 0.1)) return toast('Enter at least 0.1 SOL', true);
+    const fresh = document.querySelector('input[name="pa-mode"]:checked').value === 'fresh';
+    const r = await act(() => api('POST', '/api/paper/amount', { sol, fresh }), fresh ? `Fresh paper experiment with ${sol} SOL` : `Paper wallet amount: ${sol} SOL`);
+    if (r) { close(); S.config = r.config; load(); }
+  };
+}
 async function resetPaper() {
   if (!(await confirmModal({ title: 'Reset paper results?', confirm: 'Reset', danger: true,
     body: `<p>Your paper wallet goes back to <b>${S.config.paper.startSol} SOL</b>, and paper positions and paper trades are cleared so you can start a fresh experiment.</p><p class="muted">A copy of the old results is kept in the data folder. Live trading is not affected.</p>` }))) return;
@@ -931,7 +975,7 @@ function renderDashboard(el) {
           const openVal = st.positions.reduce((a, p) => a + (p.valueSol ?? p.costSol), 0), total = st.paper.freeSol + openVal, chg = total - st.paper.startSol;
           return `<div class="card stat"><div class="k">${ICON.key}Paper wallet</div><div class="v num">${sol(total, 3)} <small style="font-size:13px" class="muted">SOL</small></div>
             <div class="s"><span class="${cls(chg)}">${signed(chg, 3)}</span> since start (${st.paper.startSol} SOL) · ${sol(Math.max(0, st.paper.freeSol), 3)} free</div>
-            <div class="s" style="margin-top:4px">copying ${enabled.length} wallet${enabled.length === 1 ? '' : 's'} · <a href="#" id="paper-reset">Reset</a></div></div>`; })()
+            <div class="s" style="margin-top:4px">copying ${enabled.length} wallet${enabled.length === 1 ? '' : 's'} · <a href="#" id="paper-amount">Change amount</a> · <a href="#" id="paper-reset">Reset</a></div></div>`; })()
         : `<div class="card stat"><div class="k">${ICON.key}Copying</div><div class="v num">${enabled.length} <small style="font-size:13px" class="muted">wallet${enabled.length === 1 ? '' : 's'}</small></div><div class="s">${todays.length} trade${todays.length === 1 ? '' : 's'} today</div></div>`}
     </div>
     ${activityCard()}
@@ -946,6 +990,7 @@ function renderDashboard(el) {
   el.querySelectorAll('[data-pchart]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); openPositionChart(a.dataset.pchart); }));
   bindPortfolio();
   const pr = $('#paper-reset'); if (pr) pr.onclick = (e) => { e.preventDefault(); resetPaper(); };
+  const pa = $('#paper-amount'); if (pa) pa.onclick = (e) => { e.preventDefault(); paperAmount(); };
   el.querySelectorAll('[data-pnl-range]').forEach((b) => (b.onclick = () => { S.pnlRange = b.dataset.pnlRange; render(); }));
   const rp = $('#refresh-pos'); if (rp) rp.onclick = () => act(() => api('POST', '/api/positions/refresh'));
   const pb = $('#panic-btn'); if (pb) pb.onclick = async () => {
@@ -2421,6 +2466,7 @@ function proofCardHtml(x) {
 // ----- settings -----
 const FIELDS = [
   { title: 'The basics', tab: 'basics', desc: 'The settings that matter most. Everything else has sensible defaults; fine-tune it in the other tabs.', extra: () => sizePresetsHtml(), fields: [
+    { k: 'paper.startSol', label: 'Paper wallet amount', unit: 'SOL', help: 'Pretend SOL for paper trading; paper buys wait when it runs out. Set it close to what you would really trade with. On the Dashboard, Paper wallet → Change amount can also start a fresh experiment with it.' },
     { k: 'buy.sizing', label: 'Buy size', type: 'select', options: [['fixed', 'Same amount every time'], ['percent', 'Percent of their buy']] },
     { k: 'buy.fixedSol', when: ['buy.sizing', 'fixed'], label: 'Amount per buy', unit: 'SOL', help: 'Used for "same amount every time".' },
     { k: 'buy.percentOfTarget', when: ['buy.sizing', 'percent'], label: 'Percent of their buy', unit: '%', help: 'If they spend 10 SOL and this is 5%, you spend 0.5 SOL.' },
@@ -2473,7 +2519,6 @@ const FIELDS = [
     { k: 'filters.skipIfNoMarketData', adv: true, label: 'Skip tokens with no market data', type: 'toggle', help: "Brand-new launches may not be listed yet. On = skip them, off = only the other safety checks apply." },
   ]},
   { title: 'Limits', tab: 'safety', desc: 'Caps that protect your balance.', fields: [
-    { k: 'paper.startSol', adv: true, label: 'Paper wallet starts with', unit: 'SOL', help: 'Paper mode only: a pretend balance for experiments. Paper buys stop when it runs out. Reset it on the Dashboard.' },
     { k: 'risk.skipIfAlreadyHolding', label: "Don't buy more of a token you hold", type: 'toggle' },
     { k: 'risk.maxSignalAgeSec', adv: true, label: 'Ignore trades older than', unit: 'sec', step: 1, help: "If the bot sees a trade late, the price has probably moved." },
     { k: 'risk.solReserve', adv: true, label: 'Always keep in wallet', unit: 'SOL', help: 'Left untouched to pay transaction fees.' },

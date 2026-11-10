@@ -1101,6 +1101,31 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
 }
 
+/** Start a fresh paper experiment: paper positions, P&L and trades are set aside (a copy is kept). */
+async function resetPaper() {
+  const stamp = Date.now();
+  await applyChange(() => {
+    fs.mkdirSync('data', { recursive: true });
+    // Keep a copy, then start fresh: paper positions, paper P&L and paper trades.
+    if (fs.existsSync('data/state-paper.json')) fs.renameSync('data/state-paper.json', `data/state-paper.reset-${stamp}.json`);
+    if (fs.existsSync('data/trades.jsonl')) {
+      const lines = fs.readFileSync('data/trades.jsonl', 'utf8').split('\n').filter(Boolean);
+      const isPaper = (l: string) => {
+        try {
+          return JSON.parse(l).mode === 'paper';
+        } catch {
+          return false;
+        }
+      };
+      fs.writeFileSync(`data/trades-paper.reset-${stamp}.jsonl`, lines.filter(isPaper).join('\n') + '\n');
+      fs.writeFileSync('data/trades.jsonl.tmp', lines.filter((l) => !isPaper(l)).map((l) => l + '\n').join(''));
+      fs.renameSync('data/trades.jsonl.tmp', 'data/trades.jsonl');
+    }
+  });
+  engine.log(`Paper results reset: the paper wallet is back to ${engine.cfg.paper.startSol} SOL. The old results were kept in the data folder.`, 'system');
+  broadcast('trades-reset', {});
+}
+
 // ---------- learning: lessons from your own results, and exits re-tuned as markets change ----------
 type JournalEntry = { at: number; kind: 'lesson' | 'retired' | 'exits' | 'undo'; text: string; setup?: string; undo?: { stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits'] } };
 type Learning = { lessons: Lesson[]; retired: Retired[]; journal: JournalEntry[]; lastAt: number; vetoed?: { setup: string; until: number }[] };
@@ -1871,28 +1896,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/paper/reset') {
     if (engine.cfg.mode !== 'paper') throw new HttpError(400, 'Switch to paper mode to reset paper results.');
-    const stamp = Date.now();
-    await applyChange(() => {
-      fs.mkdirSync('data', { recursive: true });
-      // Keep a copy, then start fresh: paper positions, paper P&L and paper trades.
-      if (fs.existsSync('data/state-paper.json')) fs.renameSync('data/state-paper.json', `data/state-paper.reset-${stamp}.json`);
-      if (fs.existsSync('data/trades.jsonl')) {
-        const lines = fs.readFileSync('data/trades.jsonl', 'utf8').split('\n').filter(Boolean);
-        const isPaper = (l: string) => {
-          try {
-            return JSON.parse(l).mode === 'paper';
-          } catch {
-            return false;
-          }
-        };
-        fs.writeFileSync(`data/trades-paper.reset-${stamp}.jsonl`, lines.filter(isPaper).join('\n') + '\n');
-        fs.writeFileSync('data/trades.jsonl.tmp', lines.filter((l) => !isPaper(l)).map((l) => l + '\n').join(''));
-        fs.renameSync('data/trades.jsonl.tmp', 'data/trades.jsonl');
-      }
-    });
-    engine.log(`Paper results reset: the paper wallet is back to ${engine.cfg.paper.startSol} SOL. The old results were kept in the data folder.`, 'system');
-    broadcast('trades-reset', {});
+    await resetPaper();
     return send(res, 200, { ok: true, status: engine.snapshot() });
+  }
+  if (route === 'POST /api/paper/amount') {
+    // How much pretend SOL paper trading has; optionally start a fresh experiment with it.
+    const b = await readBody(req);
+    const sol = Number(b.sol);
+    if (!Number.isFinite(sol) || sol < 0.1 || sol > 100_000) throw new HttpError(400, 'The paper amount must be between 0.1 and 100,000 SOL.');
+    if (b.fresh && engine.cfg.mode !== 'paper') throw new HttpError(400, 'Switch to paper mode to start a fresh paper experiment.');
+    const next = structuredClone(engine.cfg);
+    next.paper.startSol = Math.round(sol * 1e6) / 1e6;
+    const clean = sanitizeConfig(next, true);
+    await applyChange(() => saveConfig(clean));
+    if (b.fresh) await resetPaper();
+    else engine.log(`Paper wallet amount changed to ${clean.paper.startSol} SOL (results so far kept).`, 'system');
+    return send(res, 200, { ok: true, config: engine.cfg, status: engine.snapshot() });
   }
 
   // ---------- phone access (desktop side) ----------

@@ -15,6 +15,7 @@ window.GUIDES = [
     body: `
 <h3>New in 0.8.6</h3>
 <ul>
+<li><b>Choose your paper amount:</b> Dashboard → Paper wallet → <i>Change amount</i> (1 to 100 SOL, or any amount), keeping your results or starting fresh. Also in Settings → Basics.</li>
 <li><b>Why so few trades?</b> The Dashboard shows what your wallets did in the last hour: how many buys you copied, why the others were skipped, and the setting behind each reason (one click opens it).</li>
 <li><b>Smarter minimum buy:</b> instead of skipping every buy under 0.2 SOL, Copybot learns what each wallet usually buys and skips only its small test buys. Traders who always buy small are copied.</li>
 <li><b>Sells go first:</b> when a trader sells, your sell jumps ahead of any buys waiting in line.</li>
