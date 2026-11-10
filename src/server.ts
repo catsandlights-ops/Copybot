@@ -609,8 +609,8 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
 let lastAutoScoutTry = 0;
 let lastAutoChain: import('./chains').ChainId = 'base'; // so the first search is on Solana
 
-// The spotter runs every 15 minutes while the bot runs and traders are being looked for.
-const SPOT_EVERY_MS = 15 * 60_000;
+// The spotter runs every few minutes (Settings → Market scanner) while traders are being looked for.
+const spotEveryMs = () => engine.cfg.scanner.spotEveryMin * 60_000;
 const nextWalletSearchAt = () => {
   const sc = engine.cfg.scanner;
   return sc.findTraders ? Math.max((lastScout?.at ?? 0) + sc.traderEveryHours * 3_600_000, lastAutoScoutTry + 30 * 60_000) : null;
@@ -618,7 +618,7 @@ const nextWalletSearchAt = () => {
 setInterval(() => {
   const sc = engine.cfg.scanner;
   // Market data only, so it keeps going even while a slow wallet search runs.
-  if (!engine.running || !sc.findTraders || spotBusy || Date.now() - lastSpotAt < SPOT_EVERY_MS) return;
+  if (!engine.running || !sc.findTraders || spotBusy || Date.now() - lastSpotAt < spotEveryMs()) return;
   spotBusy = true;
   lastSpotAt = Date.now();
   const chains: import('./chains').ChainId[] = ['solana', ...(sc.baseCoins || engine.cfg.wallets.some((w) => chainOf(w) === 'base') ? (['base'] as const) : [])];
@@ -735,16 +735,21 @@ function signalProof() {
   };
 }
 
+/** The coin list may be this old (a little under the scan pace, so every scan sees a fresh one). */
+const coinListAge = () => Math.max(20_000, engine.cfg.scanner.coinsEverySec * 1000 - 5_000);
+let lastScanStart = 0;
 async function scanCoins() {
   const sc = engine.cfg.scanner;
   if (!engine.running || (!sc.tradeCoins && !sc.trackSignals) || scanBusy) return;
+  if (Date.now() - lastScanStart < sc.coinsEverySec * 1000 - 2_000) return;
+  lastScanStart = Date.now();
   scanBusy = true;
   try {
     const now = Date.now();
     for (const [m, t] of scanTried) if (now - t > 6 * 3_600_000) scanTried.delete(m);
     let rows: import('./markets').PoolRow[];
     try {
-      rows = await markets.scoutPools();
+      rows = await markets.scoutPools('solana', coinListAge());
     } catch (e) {
       lastScan = { ...lastScan, at: now, error: (e as Error).message };
       broadcast('scanner', scannerView());
@@ -755,7 +760,7 @@ async function scanCoins() {
     const signals: (CoinSignal & { chain: 'solana' | 'base' })[] = coinSignals(rows, now, opts).map((x) => ({ ...x, chain: 'solana' as const }));
     // Base coins too, when turned on.
     if (sc.baseCoins && (engine.cfg.mode === 'paper' || getChainAdapter('base').liveTrading)) {
-      const baseRows = await markets.scoutPools('base').catch(() => []);
+      const baseRows = await markets.scoutPools('base', coinListAge()).catch(() => []);
       signals.push(...coinSignals(baseRows, now, opts).map((x) => ({ ...x, chain: 'base' as const })));
       signals.sort((a, b) => b.score - a.score);
     }
@@ -877,10 +882,10 @@ async function runScannerTest(days: number, progress: (p: string) => void): Prom
 
 function scannerView() {
   const rec = walletRecords(engine.readTrades(), engine.cfg.mode)[SCANNER_SOURCE] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 };
-  return { ...lastScan, sparks: Object.fromEntries(lastScan.signals.map((s) => [s.mint, downsample(sparkCache.get(s.mint)?.pts ?? [], 48)])), record: rec, proof: signalProof(), test: lastScannerTest ? scannerTestSummary(lastScannerTest) : null, nextTraderSearch: nextWalletSearchAt(), spotter: { solana: spottedCount('solana'), base: spottedCount('base'), lastAt: lastSpotAt || null, nextAt: engine.cfg.scanner.findTraders ? Math.max(lastSpotAt + SPOT_EVERY_MS, Date.now()) : null, alternatesBase: !!alchemyUrl() } };
+  return { ...lastScan, sparks: Object.fromEntries(lastScan.signals.map((s) => [s.mint, downsample(sparkCache.get(s.mint)?.pts ?? [], 48)])), record: rec, proof: signalProof(), test: lastScannerTest ? scannerTestSummary(lastScannerTest) : null, nextTraderSearch: nextWalletSearchAt(), spotter: { solana: spottedCount('solana'), base: spottedCount('base'), lastAt: lastSpotAt || null, nextAt: engine.cfg.scanner.findTraders ? Math.max(lastSpotAt + spotEveryMs(), Date.now()) : null, alternatesBase: !!alchemyUrl() } };
 }
 
-setInterval(() => scanCoins().catch((e) => engine.log(`Market scanner: ${(e as Error).message}`, 'warn')), 60_000).unref();
+setInterval(() => scanCoins().catch((e) => engine.log(`Market scanner: ${(e as Error).message}`, 'warn')), 10_000).unref();
 
 // Automatic wallet reviews while the bot is running.
 setInterval(() => {

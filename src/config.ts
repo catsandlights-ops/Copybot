@@ -195,6 +195,8 @@ export type Config = {
   scanner: {
     findTraders: boolean;
     traderEveryHours: number;
+    coinsEverySec: number; // how often the coin scanner gets a fresh list of moving coins
+    spotEveryMin: number; // how often the spotter notes traders who just caught a move
     maxWallets: number; // stop adding once this many wallets are being copied
     picksPerRun: number;
     tradeCoins: boolean;
@@ -268,7 +270,7 @@ export const DEFAULT_CONFIG: Config = {
   strategy: '',
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
-  scanner: { findTraders: false, traderEveryHours: 2, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, baseCoins: false, buySol: 0.1, budgetSol: 0.5, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
+  scanner: { findTraders: false, traderEveryHours: 1, coinsEverySec: 60, spotEveryMin: 5, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, baseCoins: false, buySol: 0.1, budgetSol: 0.5, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 
@@ -323,7 +325,9 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'paper.startSol': [0.1, 100_000, 'Paper wallet start'],
   'trial.winsToStepUp': [1, 50, 'Profitable copies to step up'],
   'trial.pauseAfterLosses': [0, 50, 'Pause a wallet after losses in a row'],
-  'scanner.traderEveryHours': [1, 168, 'Look for traders every'],
+  'scanner.traderEveryHours': [0.5, 168, 'Look for traders every'],
+  'scanner.coinsEverySec': [30, 600, 'Check coins every'],
+  'scanner.spotEveryMin': [2, 60, 'Spot traders every'],
   'scanner.maxWallets': [1, 50, 'Most wallets to copy'],
   'scanner.picksPerRun': [1, 5, 'New traders per search'],
   'scanner.buySol': [0.001, 100, 'Scanner amount per buy'],

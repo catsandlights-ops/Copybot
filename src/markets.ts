@@ -415,22 +415,25 @@ export function solUsdDaily(chain: ChainId = DEFAULT_CHAIN): Promise<Map<number,
 
 // ---------------- wallet scout sources ----------------
 /** Many places to look for tokens that are moving: trending over 1h/6h/24h, new launches, top volume. */
-export function scoutPools(chain: ChainId = DEFAULT_CHAIN): Promise<PoolRow[]> {
-  return cached(`scout:pools:${chain}`, 5 * 60_000, async () => {
-    const paths = [
-      `/networks/${M(chain).geckoNetwork}/trending_pools?include=base_token&duration=1h&page=1`,
-      `/networks/${M(chain).geckoNetwork}/trending_pools?include=base_token&duration=6h&page=1`,
-      `/networks/${M(chain).geckoNetwork}/trending_pools?include=base_token&duration=24h&page=1`,
-      `/networks/${M(chain).geckoNetwork}/new_pools?include=base_token&page=1`,
-      `/networks/${M(chain).geckoNetwork}/pools?include=base_token&page=1&sort=h24_volume_usd_desc`,
-    ];
+export async function scoutPools(chain: ChainId = DEFAULT_CHAIN, maxAgeMs = 5 * 60_000): Promise<PoolRow[]> {
+  const net = M(chain).geckoNetwork;
+  // What moves fast (the last hour's trending coins and brand-new pools) is fetched at the caller's pace;
+  // slower lists (6 h and 24 h trending, top volume) at most every 5 minutes. Fewer requests per scan.
+  const fetchList = async (paths: string[]) => {
     const out: PoolRow[] = [];
     let failed = 0;
     for (const p of paths) out.push(...mapPools(await gecko(p).catch(() => (failed++, null))));
     // Never cache an empty answer from a failed lookup: the next try should ask again.
     if (!out.length) throw new Error(`Couldn't reach the market data service (GeckoTerminal)${failed ? `: ${failed} of ${paths.length} requests failed` : ''}. Try again in a minute.`);
     return out;
-  });
+  };
+  const [fast, slow] = await Promise.allSettled([
+    cached(`scout:fast:${chain}`, Math.min(maxAgeMs, 5 * 60_000), () => fetchList([`/networks/${net}/trending_pools?include=base_token&duration=1h&page=1`, `/networks/${net}/new_pools?include=base_token&page=1`])),
+    cached(`scout:slow:${chain}`, 5 * 60_000, () => fetchList([`/networks/${net}/trending_pools?include=base_token&duration=6h&page=1`, `/networks/${net}/trending_pools?include=base_token&duration=24h&page=1`, `/networks/${net}/pools?include=base_token&page=1&sort=h24_volume_usd_desc`])),
+  ]);
+  const rows = [...(fast.status === 'fulfilled' ? fast.value : []), ...(slow.status === 'fulfilled' ? slow.value : [])];
+  if (!rows.length) throw (fast.status === 'rejected' ? fast.reason : (slow as PromiseRejectedResult).reason);
+  return rows;
 }
 
 export type PoolTrade = { kind: 'buy' | 'sell'; wallet: string; t: number; usd: number; priceUsd: number };

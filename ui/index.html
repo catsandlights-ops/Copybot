@@ -2261,6 +2261,7 @@ function renderAutopilot(el, fresh) {
 }
 
 // ----- market scanner -----
+const everyTxt = (sec) => (sec < 60 ? `${sec} seconds` : sec === 60 ? 'minute' : `${sec / 60} minutes`);
 function renderScanner(el) {
   const cfg = S.config, sc = cfg.scanner, x = S.scanner || { at: 0, signals: [], error: null, bought: [], record: { trades: 0, closed: 0, wins: 0, pnlSol: 0 }, nextTraderSearch: null };
   const running = S.status.running;
@@ -2279,7 +2280,7 @@ function renderScanner(el) {
     : !running ? 'On. Starts when the bot starts.'
     : `Coins checked ${x.at ? `${ago(x.at)} ago` : 'every minute'} · <b>${sp.solana + sp.base}</b> trader${sp.solana + sp.base === 1 ? '' : 's'} spotted catching moves${sp.base ? ` (${sp.base} on Base)` : ''}${sp.nextAt ? `, next look ${when(sp.nextAt)}` : ''} · next full wallet search ${when(x.nextTraderSearch) || 'soon'}${sp.alternatesBase ? ', alternating Solana and Base' : ''}.`;
   el.innerHTML = `
-    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Always hunting</h2><div class="muted" style="font-size:12.5px">While the bot runs: checks coins every minute and buys strong ones, spots traders who just caught a move every 15 minutes, and runs a full wallet search every ${sc.traderEveryHours} h that backtests those traders before copying any.</div></div><span class="spacer"></span>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Always hunting</h2><div class="muted" style="font-size:12.5px">While the bot runs: checks coins every ${everyTxt(sc.coinsEverySec)} and buys strong ones, spots traders who just caught a move every ${sc.spotEveryMin} min, and runs a full wallet search every ${sc.traderEveryHours} h that backtests those traders before copying any.</div></div><span class="spacer"></span>
       <label class="switch" title="Find traders + Trade coins"><input type="checkbox" id="sc-hunt" ${hunting ? 'checked' : ''}><i></i></label></div>
       <div class="card-b muted" style="font-size:13px">${huntLine}</div></div>
     <div class="grid two" style="margin-bottom:16px">
@@ -2323,8 +2324,8 @@ function renderScanner(el) {
     if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
     const v = e.target.checked;
     if (v && !(await confirmModal({ title: 'Always hunt for opportunities?', confirm: 'Start hunting',
-      body: `<p>While the bot runs, Copybot will:</p><ul><li>check coins every minute and <b>buy strong ones on its own</b>: ${sol(sc.buySol, 3)} SOL each, up to ${sc.maxPositions} at once and ${sol(sc.budgetSol, 2)} SOL in total, with a −${sc.stopLossPct}% stop-loss;</li><li>spot traders who just caught a move every 15 minutes;</li><li>search for wallets to copy every ${Math.min(sc.traderEveryHours, 2)} h, backtest them with your settings, and add the best on a trial (¼ size first), up to ${sc.maxWallets} wallets. Losing ones are paused automatically.</li></ul><p>${cfg.mode === 'live' ? '<b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : 'You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
-    const scanner = { ...cfg.scanner, findTraders: v, tradeCoins: v, ...(v ? { trackSignals: true, traderEveryHours: Math.min(cfg.scanner.traderEveryHours, 2) } : {}) };
+      body: `<p>While the bot runs, Copybot will:</p><ul><li>check coins every ${everyTxt(sc.coinsEverySec)} and <b>buy strong ones on its own</b>: ${sol(sc.buySol, 3)} SOL each, up to ${sc.maxPositions} at once and ${sol(sc.budgetSol, 2)} SOL in total, with a −${sc.stopLossPct}% stop-loss;</li><li>spot traders who just caught a move every ${sc.spotEveryMin} minutes;</li><li>search for wallets to copy every ${Math.min(sc.traderEveryHours, 1)} h, backtest them with your settings, and add the best on a trial (¼ size first), up to ${sc.maxWallets} wallets. Losing ones are paused automatically.</li></ul><p>${cfg.mode === 'live' ? '<b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : 'You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
+    const scanner = { ...cfg.scanner, findTraders: v, tradeCoins: v, ...(v ? { trackSignals: true, traderEveryHours: Math.min(cfg.scanner.traderEveryHours, 1) } : {}) };
     const res = await act(() => api('PUT', '/api/config', { ...cfg, scanner }), v ? 'Hunting for opportunities' : 'Stopped hunting');
     if (res) { S.config = res.config; renderChrome(); renderScanner(el); } else e.target.checked = !v;
   };
@@ -2464,7 +2465,9 @@ const FIELDS = [
   ]},
   { title: 'Market scanner', tab: 'automation', id: 'scanner-settings', desc: 'Runs while the bot runs. Turn each part on from the Scanner page. Your limits, loss guards and safety checks always apply.', fields: [
     { k: 'scanner.findTraders', label: 'Find traders', type: 'toggle', help: 'Keep looking at new and older coins for traders who are winning, backtest them with your settings, and add the best ones on a trial.' },
-    { k: 'scanner.traderEveryHours', when: ['scanner.findTraders'], label: 'Look for traders every', unit: 'hours', step: 1 },
+    { k: 'scanner.traderEveryHours', when: ['scanner.findTraders'], label: 'Full wallet search every', unit: 'hours', step: 0.5, help: 'Each search backtests the traders found before copying any. On the free Solana RPC a search can take up to 40 minutes; a private RPC is much faster.' },
+    { k: 'scanner.spotEveryMin', when: ['scanner.findTraders'], label: 'Spot traders who caught a move every', unit: 'min', step: 1, help: 'Quick and light: only market data. The next full search checks what it spotted.' },
+    { k: 'scanner.coinsEverySec', label: 'Check coins every', type: 'select', numeric: true, options: [['30', '30 seconds'], ['60', '1 minute'], ['120', '2 minutes'], ['300', '5 minutes']], help: 'How often the scanner gets a fresh list of moving coins. Faster finds moves sooner but uses more of the free market-data allowance (the Markets page may load a little slower).' },
     { k: 'scanner.picksPerRun', when: ['scanner.findTraders'], label: 'New traders per search', unit: 'wallets', step: 1 },
     { k: 'scanner.maxWallets', when: ['scanner.findTraders'], label: 'Stop adding at', unit: 'wallets', step: 1, help: 'No new traders once you copy this many.' },
     { k: 'scanner.tradeCoins', label: 'Trade coins', type: 'toggle', help: 'Buy coins that are rising on strong buying, on its own (not copying anyone).' },
@@ -2533,7 +2536,7 @@ function fieldHtml(f) {
   const id = 'f-' + f.k.replace(/\./g, '-');
   let ctl;
   if (f.type === 'toggle') ctl = `<label class="switch"><input type="checkbox" id="${id}" data-k="${f.k}" ${v ? 'checked' : ''}><i></i></label>`;
-  else if (f.type === 'select') ctl = `<select class="input" id="${id}" data-k="${f.k}">${f.options.map(([val, l]) => `<option value="${val}" ${val === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  else if (f.type === 'select') ctl = `<select class="input" id="${id}" data-k="${f.k}">${f.options.map(([val, l]) => `<option value="${val}" ${String(val) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   else if (f.type === 'text') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" maxlength="1000" placeholder="none">${esc(v || '')}</textarea>`;
   else if (f.type === 'list') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" placeholder="none">${esc((v || []).join('\n'))}</textarea>`;
   else ctl = `<div class="with-unit"><input type="number" inputmode="decimal" id="${id}" data-k="${f.k}" value="${esc(+Number(v).toFixed(9))}" step="${f.step || 'any'}" min="0"><span>${f.unit}</span></div>`;
@@ -2924,7 +2927,7 @@ async function saveSettings() {
     const el = document.querySelector(`[data-k="${f.k}"]`);
     let v;
     if (f.type === 'toggle') v = el.checked;
-    else if (f.type === 'select') v = el.value;
+    else if (f.type === 'select') v = f.numeric ? Number(el.value) : el.value;
     else if (f.type === 'text') v = el.value;
     else if (f.type === 'list') v = el.value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     else {
