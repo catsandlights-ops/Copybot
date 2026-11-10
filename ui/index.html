@@ -2435,6 +2435,7 @@ const FIELDS = [
   { title: 'Buying', tab: 'buying', desc: 'How much to spend when a wallet you copy buys a token.', fields: [
     { k: 'buy.minSol', label: 'Smallest buy', unit: 'SOL' },
     { k: 'buy.maxSol', label: 'Largest buy', unit: 'SOL' },
+    { k: 'buy.minVsUsualPct', label: 'Skip buys much smaller than their usual', unit: '% of usual', help: "A wallet's small test buys aren't its real bets: skip a buy below this share of what that wallet usually buys (learned from its last 30 buys, after 5). A trader who always buys small is still copied. 0 = off." },
     { k: 'buy.minTargetBuySol', adv: true, label: 'Ignore their buys under', unit: 'SOL', help: 'Skips their tiny test buys.' },
     { k: 'risk.maxPriceDriftPct', label: "Don't chase", unit: '% above', help: 'Skip the buy if the price is already this much higher than what they paid. 0 = off.' },
   ]},

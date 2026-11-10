@@ -369,3 +369,19 @@ export function walletRecords(trades: TradeLike[], mode?: string): Record<string
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// "Much smaller than they usually buy": a wallet's test buys aren't its convictions
+// ---------------------------------------------------------------------------
+
+/**
+ * Why to skip a buy that's much smaller than this wallet usually buys, or null. Needs 5 of its
+ * earlier buys to know what "usual" is; until then (or with pct 0) nothing is skipped this way.
+ */
+export function smallVsUsual(theirSol: number, earlier: number[], pct: number): string | null {
+  if (pct <= 0 || earlier.length < 5) return null;
+  const usual = median(earlier) ?? 0;
+  if (usual <= 0 || theirSol >= (usual * pct) / 100) return null;
+  const f = (n: number) => (n >= 1 ? n.toFixed(2) : n.toPrecision(2));
+  return `their buy (${f(theirSol)} SOL) is much smaller than they usually buy (${f(usual)} SOL)`;
+}

@@ -336,3 +336,15 @@ test('losing streak: near break-even losses (under 2% of cost) do not count', as
   assert.equal(isBreakEvenLoss(-0.005, 0.045), false);
   assert.equal(isBreakEvenLoss(0.001, 0.051), false);
 });
+
+test('smallVsUsual: skips a test buy far below what that wallet usually buys, only once it knows', async () => {
+  const { smallVsUsual, median } = await import('./rules');
+  assert.equal(median([3, 1, 2]), 2);
+  assert.equal(median([1, 2, 3, 4]), 2.5);
+  const usual = [0.8, 1, 1.2, 0.9, 1.1];
+  assert.match(smallVsUsual(0.1, usual, 25)!, /their buy \(0.10 SOL\) is much smaller than they usually buy \(1.00 SOL\)/);
+  assert.equal(smallVsUsual(0.3, usual, 25), null); // 30% of usual: copied
+  assert.equal(smallVsUsual(0.05, [0.05, 0.04, 0.06, 0.05, 0.05], 25), null); // a small trader's normal buy: copied
+  assert.equal(smallVsUsual(0.01, usual.slice(0, 4), 25), null); // only 4 seen: doesn't know "usual" yet
+  assert.equal(smallVsUsual(0.01, usual, 0), null); // off
+});

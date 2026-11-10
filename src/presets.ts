@@ -24,7 +24,7 @@ export const STRATEGIES: Strategy[] = [
     bestFor: 'Most people, and a good starting point.',
     risk: 'Medium',
     patch: {
-      buy: { minTargetBuySol: 0.2 },
+      buy: { minTargetBuySol: 0.02 },
       sell: { copySells: true },
       risk: { stopLossPct: 40, takeProfitPct: 0, maxPriceDriftPct: 15, maxSignalAgeSec: 30 },
       exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30 },

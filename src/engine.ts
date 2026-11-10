@@ -22,7 +22,7 @@ import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
 import { panicReason } from './rules';
 import { perTokenValue } from './rules';
-import { buyBlockReason, dangerReason, isBreakEvenLoss, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
+import { buyBlockReason, dangerReason, isBreakEvenLoss, smallVsUsual, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
 import fs from 'node:fs';
@@ -689,6 +689,29 @@ export class BotEngine extends EventEmitter {
       .catch(() => this.log(`Rug memory: won't buy ${short(mint)} again (${why}).`, 'system'));
   }
 
+  /** The sizes of each wallet's recent buys (SOL), to tell its usual buys from small test buys. */
+  private buySizes: Map<string, number[]> = (() => {
+    try {
+      return new Map(Object.entries(JSON.parse(fs.readFileSync('data/buy-sizes.json', 'utf8'))) as [string, number[]][]);
+    } catch {
+      return new Map();
+    }
+  })();
+  private buySizesSaved = 0;
+  private noteBuySize(wallet: string, sol: number) {
+    if (!(sol > 0)) return;
+    this.buySizes.set(wallet, [...(this.buySizes.get(wallet) ?? []), sol].slice(-30));
+    if (Date.now() - this.buySizesSaved > 60_000) {
+      this.buySizesSaved = Date.now();
+      try {
+        fs.mkdirSync('data', { recursive: true });
+        fs.writeFileSync('data/buy-sizes.json', JSON.stringify(Object.fromEntries(this.buySizes)));
+      } catch {
+        /* next time */
+      }
+    }
+  }
+
   /** What happened to the buys your wallets made: seen, copied, or skipped and why (last 24 hours). */
   private activity: { t: number; k: 'seen' | 'copied' | 'skip'; why?: string }[] = [];
   private noteActivity(k: 'seen' | 'copied' | 'skip', why?: string) {
@@ -818,6 +841,13 @@ export class BotEngine extends EventEmitter {
     if (!holding && Object.keys(state.positions).length >= r.maxOpenPositions) return skip('max open positions reached');
     const rules = walletRules(cfg, s.wallet);
     if (s.quote === 'SOL' && s.quoteAmount < rules.minTargetBuySol) return skip(`their buy is below ${rules.minTargetBuySol} SOL`);
+    // A wallet's small test buys aren't its convictions: compare with what it usually buys.
+    if (s.quote === 'SOL') {
+      const earlier = this.buySizes.get(s.wallet) ?? [];
+      this.noteBuySize(s.wallet, s.quoteAmount);
+      const small = smallVsUsual(s.quoteAmount, earlier, cfg.buy.minVsUsualPct);
+      if (small) return skip(small);
+    }
     if (b.soloMinTheirSol > 0 && agree.length < 2 && s.quote === 'SOL' && s.quoteAmount < b.soloMinTheirSol) return skip(`only one wallet bought it, with less than ${b.soloMinTheirSol} SOL`);
     if (cfg.risk.moodFilter && this.mood.level === 'bad') return skip(`market mood is bad (${this.mood.why})`);
 

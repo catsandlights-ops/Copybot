@@ -102,6 +102,7 @@ export type Config = {
     minSol: number;
     maxSol: number;
     minTargetBuySol: number;
+    minVsUsualPct: number; // skip a buy smaller than this % of what that wallet usually buys (0 = off)
     consensusBoost: number; // size × when 2+ copied wallets buy the same coin (1 = off)
     consensusWindowMin: number;
     consensusAddOn: boolean; // buy more of a coin you hold when a second wallet confirms it (once)
@@ -233,7 +234,7 @@ export type Config = {
 export const DEFAULT_CONFIG: Config = {
   mode: 'paper',
   wallets: [],
-  buy: { sizing: 'fixed', fixedSol: 0.25, percentOfTarget: 5, minSol: 0.05, maxSol: 0.5, minTargetBuySol: 0.2, consensusBoost: 1.5, consensusWindowMin: 10, consensusAddOn: true, soloMinTheirSol: 0, sizeByRecord: true },
+  buy: { sizing: 'fixed', fixedSol: 0.25, percentOfTarget: 5, minSol: 0.05, maxSol: 0.5, minTargetBuySol: 0.02, minVsUsualPct: 25, consensusBoost: 1.5, consensusWindowMin: 10, consensusAddOn: true, soloMinTheirSol: 0, sizeByRecord: true },
   sell: { copySells: true },
   risk: {
     maxOpenPositions: 5,
@@ -281,6 +282,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'buy.minSol': [0.001, 100, 'Smallest buy'],
   'buy.maxSol': [0.001, 100, 'Largest buy'],
   'buy.minTargetBuySol': [0, 10_000, 'Ignore their buys under'],
+  'buy.minVsUsualPct': [0, 100, 'Skip buys much smaller than their usual'],
   'buy.consensusBoost': [1, 3, 'Size when wallets agree'],
   'execution.baseMaxFeeEth': [0.0001, 0.05, 'Max Base fee per transaction'],
   'buy.consensusWindowMin': [1, 240, 'Agreement window'],

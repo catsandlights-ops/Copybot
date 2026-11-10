@@ -118,6 +118,7 @@ export function overallVerdict(sources: SourceReport[], checklist: CheckItem[]):
 /** Skip reasons grouped into plain categories, each with the setting that controls it (for "why so few trades?"). */
 const SKIP_GROUPS: [RegExp, string, string | null][] = [
   [/their buy is below/, 'their buy was smaller than your minimum', 'Buying → Ignore their buys under'],
+  [/much smaller than they usually buy/, 'it was a small test buy for that wallet', 'Buying → Skip buys much smaller than their usual'],
   [/already holding/, 'you already held that coin', "Safety → Don't buy more of a token you hold"],
   [/max open positions/, 'you already held the most coins allowed', 'Basics → Max tokens held at once'],
   [/max total exposure|no room left/, 'your max SOL in trades was reached', 'Basics → Max SOL in open positions'],
