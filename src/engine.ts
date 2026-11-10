@@ -54,7 +54,10 @@ export class BotEngine extends EventEmitter {
   private seen = new Set<string>();
   private subs: number[] = [];
   private labels = new Map<string, string>();
-  private queue: Promise<void> = Promise.resolve();
+  /** One trade at a time; sells (getting out) always go before buys waiting in line. */
+  private urgentJobs: { fn: () => Promise<unknown>; done: () => void }[] = [];
+  private normalJobs: { fn: () => Promise<unknown>; done: () => void }[] = [];
+  private draining = false;
   private lastRateWarn = 0;
   private lastJupWarn = 0;
   private lastBaseWarn = 0;
@@ -154,9 +157,27 @@ export class BotEngine extends EventEmitter {
     if (this.seen.size > 50_000) this.seen = new Set([...this.seen].slice(-20_000));
   }
 
-  private enqueue(fn: () => Promise<unknown>) {
-    this.queue = this.queue.then(fn).then(() => {}).catch((e) => this.logError(e));
-    return this.queue;
+  private enqueue(fn: () => Promise<unknown>, urgent = false): Promise<void> {
+    return new Promise((done) => {
+      (urgent ? this.urgentJobs : this.normalJobs).push({ fn, done });
+      void this.drain();
+    });
+  }
+  private async drain() {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      for (let job = this.urgentJobs.shift() ?? this.normalJobs.shift(); job; job = this.urgentJobs.shift() ?? this.normalJobs.shift()) {
+        try {
+          await job.fn();
+        } catch (e) {
+          this.logError(e);
+        }
+        job.done();
+      }
+    } finally {
+      this.draining = false;
+    }
   }
 
   async start() {
@@ -328,7 +349,7 @@ export class BotEngine extends EventEmitter {
         replace(afterAttempt(o, !why, why ?? `bought ${act.buySol} SOL`, Date.now()));
       } else if ('sellFraction' in act) {
         const pnl = await new Promise<number | null>((resolve) => {
-          this.enqueue(async () => resolve(await this.trader.sell(o.mint, act.sellFraction, `your order: ${describeOrder(o)}`).catch(() => null)));
+          this.enqueue(async () => resolve(await this.trader.sell(o.mint, act.sellFraction, `your order: ${describeOrder(o)}`).catch(() => null)), true);
         });
         replace(afterAttempt(o, pnl !== null, pnl === null ? 'the sell did not go through' : `sold, profit ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} SOL`, Date.now()));
       }
@@ -385,7 +406,7 @@ export class BotEngine extends EventEmitter {
             if (!this.state.positions[mint]) return;
             const pnl = await this.trader.sell(mint, 1, `panic: ${reason}`);
             if (pnl !== null) sold++;
-          });
+          }, true);
         }
         if (!Object.keys(this.state.positions).length) break;
         if (attempt < 4) this.log(`Still selling ${Object.keys(this.state.positions).length} position(s); trying again…`, 'warn');
@@ -467,7 +488,7 @@ export class BotEngine extends EventEmitter {
   }
 
   async manualSell(mint: string, fraction: number) {
-    await this.enqueue(() => this.trader.sell(mint, fraction, 'manual'));
+    await this.enqueue(() => this.trader.sell(mint, fraction, 'manual'), true);
   }
 
   private async onSignature(sig: string, wallet: string) {
@@ -547,7 +568,7 @@ export class BotEngine extends EventEmitter {
       if (swap.side === 'buy') { this.noteActivity('seen'); this.noteActivity('skip', 'signal too old'); }
       return this.log('  skipped: signal too old', 'skip');
     }
-    this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
+    this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)), swap.side === 'sell');
   }
 
   private onTx(tx: RawTx, wallet: string) {
@@ -559,7 +580,7 @@ export class BotEngine extends EventEmitter {
       if (swap.side === 'buy') { this.noteActivity('seen'); this.noteActivity('skip', 'signal too old'); }
       return this.log('  skipped: signal too old', 'skip');
     }
-    this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)));
+    this.enqueue(() => (swap.side === 'buy' ? this.onTargetBuy(swap) : this.onTargetSell(swap)), swap.side === 'sell');
   }
 
   /** Losing streak resets for the scanner when the user turns it back on. */
@@ -1028,7 +1049,7 @@ export class BotEngine extends EventEmitter {
           } finally {
             this.exiting.delete(act.mint);
           }
-        });
+        }, true);
       }
     } finally {
       this.aiBusy = false;
@@ -1110,7 +1131,7 @@ export class BotEngine extends EventEmitter {
               } finally {
                 this.exiting.delete(p.mint);
               }
-            });
+            }, true);
           }
           continue;
         }
@@ -1126,7 +1147,7 @@ export class BotEngine extends EventEmitter {
           } finally {
             this.exiting.delete(p.mint);
           }
-        });
+        }, true);
       }
       if (changed) saveState(this.state, this.cfg.mode);
       // Automatic panic: today's closed + open result past the user's limit.

@@ -71,3 +71,29 @@ test('Base trades confirmed late are booked when they go through; dropped ones c
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('paper trades pay an estimated network fee on the way in and out', async () => {
+  const { solana } = await import('./chains/solana');
+  const { PAPER_FEE_SOL } = await import('./trader');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-fee-'));
+  const prev = process.cwd();
+  const saved = solana.quoteSell;
+  try {
+    process.chdir(dir);
+    fs.mkdirSync('data');
+    const W = solana.meta.native.wrapped;
+    const MINT = '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr';
+    (solana as any).quoteSell = async (_m: string, raw: bigint) => ({ inputMint: MINT, outputMint: W, inAmount: raw.toString(), outAmount: '300000000' });
+    const cfg = sanitizeConfig({}, false);
+    const state = { positions: {}, realizedPnlSol: 0 } as any;
+    const t = new Trader(null as any, cfg, state, null, { log: () => {}, trade: () => {}, name: (w) => w });
+    await t.buy(MINT, 6, { inputMint: W, outputMint: MINT, inAmount: '250000000', outAmount: '1000' } as any, 'w', undefined, solana);
+    assert.ok(Math.abs(state.positions[MINT].costSol - (0.25 + PAPER_FEE_SOL)) < 1e-12); // paid 0.25 + fee
+    const pnl = await t.sell(MINT, 1, 'test');
+    assert.ok(Math.abs(pnl! - (0.3 - PAPER_FEE_SOL - (0.25 + PAPER_FEE_SOL))) < 1e-12); // got 0.3 − fee
+  } finally {
+    (solana as any).quoteSell = saved;
+    process.chdir(prev);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

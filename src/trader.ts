@@ -30,6 +30,9 @@ export type Trade = {
 export type CopyRef = { theirSol: number; theirRaw: bigint; at: number | null };
 
 type Fill = { sig: string; tokenRaw: bigint; sol: number };
+/** Typical network fees per trade (the same estimate backtests use on Solana; Base gas is far cheaper). */
+export const PAPER_FEE_SOL = 0.0002;
+export const PAPER_FEE_BASE_ETH = 0.00002;
 
 export type TraderHooks = { log: (msg: string, level?: string) => void; trade: (t: Trade) => void; name: (wallet: string) => string };
 
@@ -53,6 +56,12 @@ export class Trader {
   /** All trades go through the chain's adapter (today: Solana). */
   chain: ChainAdapter = getChain('solana');
 
+  /** Estimated network fee of one trade, in SOL: what a live trade would pay on top of the swap. */
+  private async paperFeeSol(chain: ChainAdapter): Promise<number> {
+    if (chain.meta.id === 'solana') return PAPER_FEE_SOL + this.cfg.execution.jitoTipLamports / 1e9;
+    return chain.nativeToSol(PAPER_FEE_BASE_ETH).catch(() => 0);
+  }
+
   /** Coins with a sell that was sent but not confirmed yet: don't sell them again meanwhile. */
   private lateSells = new Set<string>();
 
@@ -61,7 +70,11 @@ export class Trader {
     // Amounts in the chain's own coin, converted to SOL (Copybot's books are in SOL).
     const native = Number(toToken ? q.inAmount : q.outAmount) / 10 ** chain.meta.native.decimals;
     const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: await chain.nativeToSol(native) };
-    if (!this.live) return { sig: 'PAPER', ...quoted };
+    if (!this.live) {
+      // Paper trades pay an estimated network fee too, so paper results aren't rosier than live ones.
+      const fee = await this.paperFeeSol(chain);
+      return { sig: 'PAPER', tokenRaw: quoted.tokenRaw, sol: toToken ? quoted.sol + fee : Math.max(0, quoted.sol - fee) };
+    }
     if (!chain.liveTrading) throw new Error(`Live trading on ${chain.meta.name} is off (paper mode only).`);
     const kp = this.kp!;
     const x = this.cfg.execution;
