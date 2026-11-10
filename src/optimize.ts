@@ -32,7 +32,7 @@ export function optimizeExits(swaps: Swap[], cfg: Config, opts: BacktestOpts, ma
     const c = structuredClone(cfg);
     c.risk.stopLossPct = setup.stopLossPct;
     c.risk.takeProfitPct = setup.takeProfitPct;
-    c.exits = { ...setup.exits };
+    c.exits = { lockAtPct: c.exits.lockAtPct, lockFloorPct: c.exits.lockFloorPct, ...setup.exits };
     // Per-wallet exit overrides would hide the difference between setups; test the global ones.
     c.wallets = c.wallets.map(({ exits: _x, strategy: _s, ...w }) => w);
     const r = runBacktest(swaps, c, opts, marks, prices);

@@ -1,3 +1,4 @@
+import { LOCK_DEFAULT } from './rules';
 /**
  * Market scanner: picks coins worth buying on their own, from GeckoTerminal's trending, new and
  * top-volume pools. Pure (no network, no clock reads), so the rules are unit-tested; the server
@@ -108,7 +109,7 @@ export const overHeld = (openedAt: number, now: number, maxHoldHours: number) =>
 
 import type { Candle } from './markets';
 
-export type ScanExits = { stopLossPct: number; takeProfitPct: number; trailingAfterPct: number; trailingStopPct: number; maxHoldHours: number };
+export type ScanExits = { stopLossPct: number; takeProfitPct: number; trailingAfterPct: number; trailingStopPct: number; maxHoldHours: number; lockAtPct?: number; lockFloorPct?: number };
 export type ExitReplay = { pnlPct: number; reason: string; exitAt: number; done: boolean; peakPct: number; troughPct: number };
 
 /**
@@ -137,9 +138,13 @@ export function replayExit(entryPrice: number, entryAt: number, candles: Candle[
     last = k;
     // Trailing stop: once up enough, sell on a drop from the highest point so far.
     const trailing = x.trailingStopPct > 0 && pct(peak) >= x.trailingAfterPct;
-    const floor = trailing ? Math.max(stop, peak * (1 - x.trailingStopPct / 100)) : stop;
+    const trail = trailing ? Math.max(stop, peak * (1 - x.trailingStopPct / 100)) : stop;
+    // Rule #1: once clearly up, a winner is never allowed to become a loss.
+    const lockAt = x.lockAtPct ?? LOCK_DEFAULT.atPct;
+    const lockPrice = lockAt > 0 && pct(peak) >= lockAt ? entryPrice * (1 + (x.lockFloorPct ?? LOCK_DEFAULT.floorPct) / 100) : 0;
+    const floor = Math.max(trail, lockPrice);
     trough = Math.min(trough, k.l);
-    if (k.l <= floor) return out(floor, trailing && floor > stop ? 'trailing stop' : 'stop-loss', k.t, true);
+    if (k.l <= floor) return out(floor, floor === lockPrice && lockPrice > trail ? 'profit lock' : trailing && floor > stop ? 'trailing stop' : 'stop-loss', k.t, true);
     if (k.h >= target) {
       peak = Math.max(peak, k.h);
       return out(target, 'take-profit', k.t, true);

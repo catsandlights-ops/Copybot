@@ -13,6 +13,11 @@ window.GUIDES = [
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
+<h3>New in 0.8.4</h3>
+<ul>
+<li><b>Rule #1: a profitable trade is a good trade.</b> Once a trade has been up 20%, it is never allowed to end as a loss: if it falls back to +5%, Copybot sells and keeps the win. On for every wallet, the scanner, backtests and the autopilot. <a href="#" data-guide="exits">How exits work →</a></li>
+<li><b>Always hunting:</b> one switch on the Scanner page keeps Copybot looking for coins (every minute) and traders (spotted every 15 minutes, a full backtested search every 2 hours, on Solana and, with an Alchemy key, Base) the whole time it runs.</li>
+</ul>
 <h3>New in 0.8.3</h3>
 <ul>
 <li><b>Calmer dump protection:</b> lots of small sells only trigger a sale if the price is really falling (5% or more in 5 minutes).</li>
@@ -304,6 +309,7 @@ window.GUIDES = [
     id: 'exits', cat: 'strategy', mins: 4, title: 'How exits work: take back cost, take-profits, trailing stop',
     teaser: 'Copybot sells in stages so you lock in wins without missing the big runs.',
     body: `
+<p><b>Rule #1: a profitable trade is a good trade.</b> Once a trade has been up 20%, Copybot never lets it end as a loss: if it falls back to +5% (enough to cover fees), it sells everything and keeps the win. Both numbers are in <b>Settings → Selling</b>; open positions show 🔒 once their profit is locked.</p>
 <p>Selling everything at one target means you either sell too early or give it all back. Copybot sells in steps instead. All percentages are gains over <b>your</b> entry price (+100% = 2x).</p>
 <ol class="big">
 <li><b>Take back my cost (+100%).</b> At 2x, Copybot sells just enough to get your original SOL back, which is half the position. The rest is "free".</li>

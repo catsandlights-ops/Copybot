@@ -166,3 +166,15 @@ test('signalStats and exitVariants', () => {
   assert.deepEqual(v[0].exits, X);
   assert.ok(v.length >= 4);
 });
+
+test('replayExit, Rule #1: once up 20%, a dump sells at the +5% floor instead of the stop-loss', () => {
+  const t0 = 1_000_000_000_000;
+  const noTrail = { ...X, trailingStopPct: 0 };
+  const r = replayExit(1, t0, path(t0, [[0.99, 1.25, 1.2], [0.7, 1.2, 0.75]]), noTrail, 3);
+  assert.equal(r.reason, 'profit lock');
+  assert.equal(r.pnlPct, 2); // +5% floor minus 3% costs: still a winner
+  // Lock off: the same path ends at the stop-loss.
+  assert.equal(replayExit(1, t0, path(t0, [[0.99, 1.25, 1.2], [0.7, 1.2, 0.75]]), { ...noTrail, lockAtPct: 0 }, 3).reason, 'stop-loss');
+  // Never up 20%: the lock isn't armed.
+  assert.equal(replayExit(1, t0, path(t0, [[0.99, 1.15, 1.1], [0.7, 1.1, 0.75]]), noTrail, 3).reason, 'stop-loss');
+});

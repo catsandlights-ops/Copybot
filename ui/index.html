@@ -1047,6 +1047,8 @@ async function openPositionChart(mint) {
     if (x.takeProfitPct > 0) refs.push({ v: x.takeProfitPct, label: `sell all +${x.takeProfitPct}%`, tone: 'pos' });
     const peakGain = (d.peakMultiple - 1) * 100;
     if (x.trailingStopPct > 0 && peakGain >= x.trailingAfterPct) refs.push({ v: (d.peakMultiple * (1 - x.trailingStopPct / 100) - 1) * 100, label: 'trailing stop', tone: 'warn' });
+    const lockAt = x.lockAtPct ?? 20, lockFloor = x.lockFloorPct ?? 5;
+    if (lockAt > 0 && peakGain >= lockAt) refs.push({ v: lockFloor, label: `profit lock +${lockFloor}%`, tone: 'pos' });
     // Keep far-off targets from squashing the line: show the ones within reach of what the price has done.
     const span = Math.max(30, ...pts.map((p) => Math.abs(p[1]))) * 2.2;
     const shown = refs.filter((r) => Math.abs(r.v) <= span);
@@ -1111,6 +1113,8 @@ function exitPlan(p) {
   step('tp1', x.tp1AtPct > 0, `TP1 +${x.tp1AtPct}%`);
   step('tp2', x.tp2AtPct > 0, `TP2 +${x.tp2AtPct}%`);
   const peakGain = ((p.peakMultiple || 1) - 1) * 100;
+  const lockAt = x.lockAtPct ?? 20, lockFloor = x.lockFloorPct ?? 5;
+  if (lockAt > 0 && peakGain >= lockAt) chips.push(`<span class="chip done" title="Rule #1: it has been up +${peakGain.toFixed(0)}%, so it won't be allowed to end as a loss.">🔒 profit locked: sells below +${lockFloor}%</span>`);
   if (x.trailingStopPct > 0 && peakGain >= x.trailingAfterPct) {
     const floor = ((p.peakMultiple || 1) * (1 - x.trailingStopPct / 100) - 1) * 100;
     chips.push(`<span class="chip trail" title="Peak +${peakGain.toFixed(0)}%. Sells everything if it falls to ${pct(floor)}.">trailing: sells below ${pct(floor)}</span>`);
@@ -1150,6 +1154,8 @@ const EXIT_FIELDS = [
   ['tp2SellPct', 'Take-profit 2 sells', '% of rest', 'exits.tp2SellPct'],
   ['trailingAfterPct', 'Start trailing stop after', '% up', 'exits.trailingAfterPct'],
   ['trailingStopPct', 'Trailing stop', '% drop', 'exits.trailingStopPct'],
+  ['lockAtPct', 'Rule #1: lock in profit once up', '% up', 'exits.lockAtPct'],
+  ['lockFloorPct', 'then sell if it falls back to', '% up', 'exits.lockFloorPct'],
 ];
 /** Edit one wallet's own exit settings. Blank = use the global setting. */
 /** The rules a wallet trades with in the UI: global, then its strategy, then its own exit overrides. */
@@ -1447,7 +1453,7 @@ function fieldInfo(k) {
   return f || { k, label: k, unit: '' };
 }
 // Settings where 0 means "off".
-const ZERO_OFF = /^(exits\.(recoverCostAtPct|tp1AtPct|tp2AtPct|trailingAfterPct|trailingStopPct)|risk\.(takeProfitPct|maxPriceDriftPct)|filters\.|protect\.(liquidityDropPct|crashPct|maxSellBuyRatio))/;
+const ZERO_OFF = /^(exits\.(lockAtPct|recoverCostAtPct|tp1AtPct|tp2AtPct|trailingAfterPct|trailingStopPct)|risk\.(takeProfitPct|maxPriceDriftPct)|filters\.|protect\.(liquidityDropPct|crashPct|maxSellBuyRatio))/;
 function fmtVal(f, v) {
   if (typeof v === 'boolean') return v ? 'on' : 'off';
   if (v === 0 && ZERO_OFF.test(f.k)) return 'off';
@@ -2333,7 +2339,9 @@ const FIELDS = [
     { k: 'buy.soloMinTheirSol', label: 'Skip lone small buys under', unit: 'SOL', help: 'When only one wallet bought a coin and spent less than this, skip it. 0 = off.' },
     { k: 'buy.sizeByRecord', label: 'Size wallets by their record', type: 'toggle', help: 'After 5+ closed trades: wallets that make you money get up to 1.5× size, losing ones 0.6×, and wallets you copy at much worse prices (big copy gap) get less.' },
   ]},
-  { title: 'Selling', desc: 'Take profits in steps, and protect gains with a trailing stop. Percentages are gains over your entry price (+100% = 2x).', fields: [
+  { title: 'Selling', desc: 'Rule #1: a profitable trade is a good trade. Take profits in steps, protect gains with a trailing stop, and never let a winner turn into a loss. Percentages are gains over your entry price (+100% = 2x).', fields: [
+    { k: 'exits.lockAtPct', label: 'Rule #1 — lock in profit once up', unit: '% up', help: 'Once a trade has been up this much, it is never allowed to end as a loss. 0 = off.' },
+    { k: 'exits.lockFloorPct', label: 'Then sell if it falls back to', unit: '% up', help: 'The floor that keeps it a winner. Leave room for fees and slippage (5% covers them on normal trade sizes).' },
     { k: 'sell.copySells', label: 'Copy their sells', type: 'toggle', help: 'If they sell half their tokens, you sell half of yours.' },
     { k: 'risk.stopLossPct', label: 'Stop-loss', unit: '% down', help: 'Sell everything if a position falls this much.' },
     { k: 'exits.recoverCostAtPct', label: 'Take back my cost at', unit: '% up', help: 'Sell just enough to get the SOL you put in back out (at 2x that is half). The rest rides for free. 0 = off.' },

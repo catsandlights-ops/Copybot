@@ -13,6 +13,8 @@ export type ExitOverrides = Partial<{
   tp2SellPct: number;
   trailingAfterPct: number;
   trailingStopPct: number;
+  lockAtPct: number;
+  lockFloorPct: number;
 }>;
 /** `exits` overrides the global exit settings for positions copied from this wallet. */
 /**
@@ -41,6 +43,8 @@ const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
   tp2SellPct: 'exits.tp2SellPct',
   trailingAfterPct: 'exits.trailingAfterPct',
   trailingStopPct: 'exits.trailingStopPct',
+  lockAtPct: 'exits.lockAtPct',
+  lockFloorPct: 'exits.lockFloorPct',
 };
 
 /**
@@ -57,7 +61,7 @@ export function scannerRules(cfg: Pick<Config, 'risk' | 'exits'> & { scanner?: C
   const s = cfg.scanner ?? DEFAULT_CONFIG.scanner;
   return {
     risk: { ...cfg.risk, stopLossPct: s.stopLossPct, takeProfitPct: s.takeProfitPct },
-    exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: s.trailingAfterPct, trailingStopPct: s.trailingStopPct },
+    exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: s.trailingAfterPct, trailingStopPct: s.trailingStopPct, lockAtPct: cfg.exits.lockAtPct, lockFloorPct: cfg.exits.lockFloorPct },
   };
 }
 
@@ -129,6 +133,9 @@ export type Config = {
     tp2SellPct: number;
     trailingAfterPct: number; // trailing stop arms once the position has been up this much
     trailingStopPct: number; // then sells everything if it falls this much from its peak
+    /** Rule #1, a winner never turns into a loss: once up lockAtPct, sell everything if it falls back to +lockFloorPct (0 = off; missing = 20 / 5). */
+    lockAtPct?: number;
+    lockFloorPct?: number;
   };
   /** Rug and dump protection for open positions. 0 turns a check off. */
   protect: {
@@ -239,7 +246,7 @@ export const DEFAULT_CONFIG: Config = {
     pauseAfterLosses: 4,
     pauseMinutes: 60,
   },
-  exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30 },
+  exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30, lockAtPct: 20, lockFloorPct: 5 },
   protect: { liquidityDropPct: 50, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 3 },
   filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false, maxTopHolderPct: 15, maxTop10HoldersPct: 50 },
   safety: {
@@ -285,6 +292,8 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'risk.pauseAfterLosses': [0, 50, 'Pause after losses in a row'],
   'risk.pauseMinutes': [1, 10_080, 'Pause length'],
   'exits.recoverCostAtPct': [0, 100_000, 'Take back my cost at'],
+  'exits.lockAtPct': [0, 1_000, 'Lock in profit once up'],
+  'exits.lockFloorPct': [0, 100, 'Profit lock: sell if it falls back to'],
   'exits.tp1AtPct': [0, 100_000, 'Take-profit 1 at'],
   'exits.tp1SellPct': [1, 100, 'Take-profit 1 sell amount'],
   'exits.tp2AtPct': [0, 100_000, 'Take-profit 2 at'],
@@ -396,6 +405,7 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
   if (f.maxMarketCapUsd > 0 && f.minMarketCapUsd > f.maxMarketCapUsd) fail('Minimum market cap cannot be above the maximum');
   const x = out.exits;
   if (x.tp1AtPct > 0 && x.tp2AtPct > 0 && x.tp2AtPct <= x.tp1AtPct) fail('Take-profit 2 must be higher than take-profit 1');
+  if ((x.lockAtPct ?? 0) > 0 && (x.lockFloorPct ?? 0) >= (x.lockAtPct ?? 0)) fail('The profit lock floor must be below the gain that turns it on');
 
   const wallets = Array.isArray(input?.wallets) ? input.wallets : [];
   if (wallets.length > 100) fail('At most 100 wallets');

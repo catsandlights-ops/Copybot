@@ -37,8 +37,27 @@ test('steps run in order and never repeat', () => {
 });
 
 test('trailing stop is not armed below +50%', () => {
-  // peaked at +40% then fell 30%: trailing not armed, no stop-loss yet
-  assert.equal(planExit(pos({ peakMultiple: 1.4 }), 0.98, cfg).action, null);
+  // peaked at +40% then fell 30%: trailing not armed, no stop-loss yet (with the profit lock off)
+  const noLock = { ...cfg, exits: { ...cfg.exits, lockAtPct: 0 } };
+  assert.equal(planExit(pos({ peakMultiple: 1.4 }), 0.98, noLock).action, null);
+});
+
+test('Rule #1, profit lock: once up 20%, a winner is sold before it can turn into a loss', () => {
+  // Up 40% at the peak, back to +4%: sold to keep it a winner.
+  const r = planExit(pos({ peakMultiple: 1.4 }), 1.04, cfg);
+  assert.equal(r.action!.fraction, 1);
+  assert.match(r.action!.reason, /profit lock: was up \+40%, sold at \+4% to keep it a winner/);
+  // Fell straight through the floor between two checks: still sold at once, before it gets worse.
+  assert.match(planExit(pos({ peakMultiple: 1.4 }), 0.98, cfg).action!.reason, /profit lock: .*sold before it got worse/);
+  // Never up 20%: no lock (the normal stop-loss applies); still above the floor: hold.
+  assert.equal(planExit(pos({ peakMultiple: 1.15 }), 1.0, cfg).action, null);
+  assert.equal(planExit(pos({ peakMultiple: 1.4 }), 1.2, cfg).action, null);
+  // Older setups without the setting get the defaults (20 / 5); custom values are respected.
+  const old = { ...cfg, exits: { ...cfg.exits, lockAtPct: undefined, lockFloorPct: undefined } };
+  assert.equal(planExit(pos({ peakMultiple: 1.25 }), 1.04, old).action!.fraction, 1);
+  const custom = { ...cfg, exits: { ...cfg.exits, lockAtPct: 50, lockFloorPct: 10 } };
+  assert.equal(planExit(pos({ peakMultiple: 1.4 }), 1.04, custom).action, null);
+  assert.match(planExit(pos({ peakMultiple: 1.6 }), 1.09, custom).action!.reason, /profit lock/);
 });
 
 test('trailing stop sells everything after falling 30% from the peak', () => {

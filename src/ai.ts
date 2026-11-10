@@ -163,6 +163,8 @@ const plain = (s: unknown, max: number) =>
 
 const SYSTEM = `You are the trading brain of Copybot, a Solana copy-trading bot. The bot watches wallets the user chose and, when one of them trades, asks you what to do.
 
+The owner's Rule #1: a profitable trade is a good trade. Prefer taking a sure profit over hoping for a bigger one, and never let a position that is clearly up turn into a loss (the bot also enforces this with a profit lock).
+
 How the bot protects the user (you cannot change any of this):
 - Hard rules run before and after you: safety checks on the token, liquidity/market-cap filters, max trade size, total exposure, per-wallet budgets, daily loss limit, stop-loss and staged take-profits.
 - Whatever you answer is clamped to those limits. If you are unsure, the cost of skipping is usually small; the cost of buying a rug is the whole position.
@@ -304,7 +306,7 @@ export type ReviewAction = { mint: string; fraction: number; reason: string };
 export async function reviewPositions(cfg: Config, positions: ReviewPosition[]): Promise<ReviewAction[] | null> {
   const exits = cfg.exits;
   const prompt = `Review our open positions. For each one decide hold or sell (and how much). The automatic exits below still run on their own, so only sell early when you see a real reason (momentum fading, liquidity draining, the copied wallet already left).
-Automatic exits: stop-loss at -${cfg.risk.stopLossPct}%, take back cost at +${exits.recoverCostAtPct}%, take-profit 1 at +${exits.tp1AtPct}%, take-profit 2 at +${exits.tp2AtPct}%, trailing stop ${exits.trailingStopPct}% after +${exits.trailingAfterPct}% (0 = off).
+Automatic exits: stop-loss at -${cfg.risk.stopLossPct}%, take back cost at +${exits.recoverCostAtPct}%, take-profit 1 at +${exits.tp1AtPct}%, take-profit 2 at +${exits.tp2AtPct}%, trailing stop ${exits.trailingStopPct}% after +${exits.trailingAfterPct}%, profit lock: once up +${exits.lockAtPct ?? 20}%, sells everything if it falls back to +${exits.lockFloorPct ?? 5}% (0 = off).
 <data>${json(positions.map((p) => ({ ...p, symbol: clean(p.symbol, 16), copiedFrom: p.copiedFrom.map((x) => clean(x)) })))}</data>`;
   const r = await ask({ kind: 'review', schema: ReviewSchema, prompt, effort: 'medium', maxTokens: 12000, timeoutMs: 90_000, cfg });
   if (!r) return null;

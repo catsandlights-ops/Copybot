@@ -25,6 +25,7 @@ test('taking profit early wins when tokens pump then dump before they sell', () 
   cfg.wallets = [{ address: A, label: 'a', enabled: true, sizeMultiplier: 1, maxExposureSol: 0, exits: { stopLossPct: 5 } }];
   cfg.buy = { ...cfg.buy, fixedSol: 0.1, minTargetBuySol: 0 };
   cfg.protect.crashPct = 0; // compare exits only
+  cfg.exits.lockAtPct = 0; // compare the exit styles themselves (the profit lock is tested below)
   cfg.risk.maxOpenPositions = 20;
   cfg.risk.maxTotalExposureSol = 10;
   const mints = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'M10', 'M11', 'M12'];
@@ -39,4 +40,18 @@ test('taking profit early wins when tokens pump then dump before they sell', () 
   assert.equal(o.verdict, 'better');
   // Per-wallet overrides are ignored while comparing (a −5% wallet stop-loss would hide the differences).
   assert.ok(o.results.every((r) => r.closed > 0));
+});
+
+test('Rule #1: with the profit lock on, pump-then-dump coins end in profit even when only following their sells', () => {
+  const cfg = structuredClone(DEFAULT_CONFIG);
+  cfg.wallets = [{ address: A, label: 'a', enabled: true, sizeMultiplier: 1, maxExposureSol: 0 }];
+  cfg.buy = { ...cfg.buy, fixedSol: 0.1, minTargetBuySol: 0 };
+  cfg.protect.crashPct = 0;
+  cfg.risk.maxOpenPositions = 20;
+  cfg.risk.maxTotalExposureSol = 10;
+  const mints = ['M1', 'M2', 'M3'];
+  const swaps = mints.flatMap((m) => [sw({ side: 'buy', mint: m }, 0), sw({ side: 'sell', mint: m, quoteAmount: 0.5, tokenPre: 1_000_000n }, 60)]);
+  const o = optimizeExits(swaps, cfg, { delayPct: 0, feeSol: 0 }, new Map(), new Map(mints.map((m) => [m, pumpThenDump])));
+  const follow = o.results.find((r) => r.setup.id === 'follow-60')!;
+  assert.ok(follow.totalSol > 0, `following their sells with the lock made ${follow.totalSol}`);
 });

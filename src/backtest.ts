@@ -15,7 +15,7 @@
 import { exitConfigFor, walletRules, type Config } from './config';
 import type { Swap } from './decode';
 import type { Candle } from './markets';
-import { buyBlockReason, ExitStep, freshGuard, GuardState, planExit, recordSell } from './rules';
+import { buyBlockReason, ExitStep, freshGuard, GuardState, LOCK_DEFAULT, planExit, recordSell } from './rules';
 
 /** endAt: value what's still held at this time (a past date range) instead of today. */
 export type BacktestOpts = { delayPct: number; feeSol: number; endAt?: number };
@@ -143,7 +143,15 @@ export function runBacktest(swaps: Swap[], cfg: Config, opts: BacktestOpts, mark
             p.peakMultiple = peakMultiple;
             if (!action) break;
             if (action.step) p.steps.push(action.step);
-            sell(p, action.fraction, v * action.fraction, c.t + series.step, [...p.wallets][0], action.reason);
+            // The profit lock is checked every few seconds live, so it sells as the price passes its floor,
+            // unless the price was already below the floor when this candle began (then: near the low).
+            let fill = v;
+            if (action.reason.startsWith('profit lock')) {
+              const floorValue = p.costSol * (1 + (exitCfg.exits.lockFloorPct ?? LOCK_DEFAULT.floorPct) / 100);
+              const prev = series.candles[i - 1];
+              if (prev && valueAt(prev.c) >= floorValue) fill = Math.max(v, floorValue);
+            }
+            sell(p, action.fraction, fill * action.fraction, c.t + series.step, [...p.wallets][0], action.reason);
             exitSells++;
           }
         }

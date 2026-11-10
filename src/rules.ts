@@ -17,6 +17,9 @@ export type ExitAction = { fraction: number; reason: string; step?: ExitStep };
  * `multiple` = value / cost basis (2 = doubled). Returns the new peak to remember.
  * Order of priority: stop-loss, trailing stop, sell-everything target, then the staged steps.
  */
+/** Rule #1's defaults when a setup doesn't say: lock in once up 20%, sell if it falls back to +5% (covers fees). */
+export const LOCK_DEFAULT = { atPct: 20, floorPct: 5 };
+
 export function planExit(p: ExitPosition, valueSol: number, cfg: Pick<Config, 'risk' | 'exits'>): { action: ExitAction | null; peakMultiple: number } {
   const multiple = p.costSol > 0 ? valueSol / p.costSol : 1;
   const peak = Math.max(p.peakMultiple ?? 1, multiple);
@@ -25,6 +28,13 @@ export function planExit(p: ExitPosition, valueSol: number, cfg: Pick<Config, 'r
   const done = new Set(p.steps ?? []);
   const { risk, exits } = cfg;
   const out = (action: ExitAction | null) => ({ action, peakMultiple: peak });
+
+  // Rule #1: a profitable trade is a good trade. Once clearly up, never let it turn into a loss.
+  const lockAt = exits.lockAtPct ?? LOCK_DEFAULT.atPct;
+  const lockFloor = exits.lockFloorPct ?? LOCK_DEFAULT.floorPct;
+  if (lockAt > 0 && peakGainPct >= lockAt && gainPct <= lockFloor) {
+    return out({ fraction: 1, reason: gainPct >= 0 ? `profit lock: was up +${peakGainPct.toFixed(0)}%, sold at +${gainPct.toFixed(0)}% to keep it a winner` : `profit lock: was up +${peakGainPct.toFixed(0)}%, fell fast to ${gainPct.toFixed(0)}%; sold before it got worse` });
+  }
 
   if (gainPct <= -risk.stopLossPct) return out({ fraction: 1, reason: `stop-loss ${gainPct.toFixed(0)}%` });
 

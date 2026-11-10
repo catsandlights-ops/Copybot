@@ -23,7 +23,7 @@ import { profitReport, taxCsv, taxRows, taxSummary, type Period } from './report
 import { describeOrder, makeOrder } from './orders';
 import { chainOf } from './chains';
 import { buildBackup, checkBackup, restoreBackup } from './backup';
-import { liveChecklist, overallVerdict, sourceReport } from './readiness';
+import { liveChecklist, overallVerdict, sourceReport, plainSkip } from './readiness';
 import { runChecks, summary as statusSummary, type Check, type CheckResult } from './status';
 import { baseRpc } from './chains/base';
 import { alchemyUrl, NEEDS_ALCHEMY } from './chains/base-history';
@@ -481,10 +481,12 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   const quiet = onBase ? [] : tokens.filter((t) => t.quiet).slice(0, 3);
   for (const [i, t] of quiet.entries()) {
     progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol})…`);
-    perMint.set(
-      t.mint,
-      await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol}: its "early buyers" are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol}): ${m}`)),
-    );
+    // A busy node shouldn't sink the whole search: skip this coin's early buyers and carry on.
+    const early = await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol}: its "early buyers" are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol}): ${m}`)).catch((e: Error) => {
+      notes.push(`${t.symbol}: couldn't read its early buyers (${plainSkip(e.message)}); a private RPC such as Helius makes searches more complete.`);
+      return null;
+    });
+    if (early) perMint.set(t.mint, early);
   }
   const top = new Map<string, string[]>();
   if (!onBase && hasSecret('DEXCHECK_API_KEY')) {
@@ -660,7 +662,7 @@ const saveSignals = () => {
 };
 const scanExits = (): ScanExits => {
   const { stopLossPct, takeProfitPct, trailingAfterPct, trailingStopPct, maxHoldHours } = engine.cfg.scanner;
-  return { stopLossPct, takeProfitPct, trailingAfterPct, trailingStopPct, maxHoldHours };
+  return { stopLossPct, takeProfitPct, trailingAfterPct, trailingStopPct, maxHoldHours, lockAtPct: engine.cfg.exits.lockAtPct, lockFloorPct: engine.cfg.exits.lockFloorPct };
 };
 function noteSignal(s: CoinSignal, now: number) {
   // One entry per coin per 6 hours, like the scanner's own cooldown.
@@ -1023,7 +1025,7 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   // "Follow their sells only" leaves the most positions open, so it shows every token that might need a price.
   // (and with no minimum buy size, so it also sees every token any strategy could buy).
   const probeCfg = widestOpen
-    ? { ...structuredClone(cfg), buy: { ...cfg.buy, minTargetBuySol: 0 }, exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0 }, risk: { ...cfg.risk, stopLossPct: 100, takeProfitPct: 0 } }
+    ? { ...structuredClone(cfg), buy: { ...cfg.buy, minTargetBuySol: 0 }, exits: { recoverCostAtPct: 0, tp1AtPct: 0, tp1SellPct: 50, tp2AtPct: 0, tp2SellPct: 50, trailingAfterPct: 0, trailingStopPct: 0, lockAtPct: 0 }, risk: { ...cfg.risk, stopLossPct: 100, takeProfitPct: 0 } }
     : cfg;
   const probe = runBacktest(swaps, probeCfg, opts);
   const stillOpen = new Set(probe.open.map((o) => o.mint));
@@ -2165,7 +2167,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const next = structuredClone(engine.cfg);
     next.risk.stopLossPct = best.stopLossPct;
     next.risk.takeProfitPct = best.takeProfitPct;
-    next.exits = { ...best.exits };
+    next.exits = { lockAtPct: next.exits.lockAtPct, lockFloorPct: next.exits.lockFloorPct, ...best.exits };
     const clean = sanitizeConfig(next, true);
     await applyChange(() => saveConfig(clean));
     engine.log(`Exit settings changed to "${best.name}" (weekly settings check).`, 'system');
@@ -2255,7 +2257,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const next = structuredClone(engine.cfg);
     next.risk.stopLossPct = pick.setup.stopLossPct;
     next.risk.takeProfitPct = pick.setup.takeProfitPct;
-    next.exits = { ...pick.setup.exits };
+    next.exits = { lockAtPct: next.exits.lockAtPct, lockFloorPct: next.exits.lockFloorPct, ...pick.setup.exits };
     const clean = sanitizeConfig(next, true);
     const restarted = await applyChange(() => saveConfig(clean));
     engine.log(`Exit settings changed to: ${pick.setup.name}`, 'system');
