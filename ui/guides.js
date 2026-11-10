@@ -13,6 +13,14 @@ window.GUIDES = [
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
+<h3>New in 0.8.6</h3>
+<ul>
+<li><b>Why so few trades?</b> The Dashboard shows what your wallets did in the last hour: how many buys you copied, why the others were skipped, and the setting behind each reason (one click opens it).</li>
+<li><b>Smarter minimum buy:</b> instead of skipping every buy under 0.2 SOL, Copybot learns what each wallet usually buys and skips only its small test buys. Traders who always buy small are copied.</li>
+<li><b>Sells go first:</b> when a trader sells, your sell jumps ahead of any buys waiting in line.</li>
+<li><b>Honest paper results:</b> paper trades now pay an estimated network fee, like live ones.</li>
+<li><b>Better wallet searches:</b> obvious bots and inactive wallets are set aside before downloading anything, wallets are judged on their latest trades first, histories download 10 transactions at a time, a wallet that couldn't be read is retried instead of rejected, and every search ends with a one-line summary.</li>
+</ul>
 <h3>New in 0.8.5</h3>
 <ul>
 <li><b>Simpler Settings:</b> tabs (Basics, Buying, Selling, Safety, Automation, Connections, App), a search box, and only the settings that apply right now. Rarely-changed ones wait behind "Show more".</li>
