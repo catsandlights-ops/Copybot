@@ -119,3 +119,17 @@ test('suggestStrategy matches the wallet style and never picks one that would sk
   assert.ok(strategyById(s.id)!.patch.buy!.minTargetBuySol! <= 0.3, s.id);
   assert.match(suggestStrategy({ medianHoldMin: 8, medianBuySol: 1, closedTokens: 20 }).why, /8 min/);
 });
+
+test('wallet search: never judges a half-read history, and explains every rejection', async () => {
+  const { readEnough, rejectReason, searchSummary } = await import('./scout');
+  assert.equal(readEnough({ read: 490, failed: 10 }), true);
+  assert.equal(readEnough({ read: 490, failed: 480 }), false); // the busy-node case: 10 of 490 read
+  assert.equal(readEnough({ read: 0, failed: 0 }), false);
+  const base = { wallet: 'W', closedTokens: 20, tradesPerDay: 10, medianHoldMin: 30, roiPct: 40, realizedPnlSol: 2, winRate: 0.6 } as any;
+  assert.equal(rejectReason({ ...base, closedTokens: 3 }), 'too few finished trades');
+  assert.equal(rejectReason({ ...base, tradesPerDay: 400 }), 'a bot');
+  assert.equal(rejectReason({ ...base, medianHoldMin: 1 }), 'sells within 2 minutes');
+  assert.equal(rejectReason({ ...base, roiPct: -5 }), 'losing money');
+  assert.equal(rejectReason({ ...base, bt: { closed: 12, totalSol: -0.4 } }), 'copying them would have lost money');
+  assert.equal(searchSummary(5, 1, 2, ['too few finished trades', 'losing money', 'too few finished trades', 'a bot']), "checked 7 wallets: 1 added, 2 too few finished trades, 1 losing money, 1 a bot, 2 couldn't be read (the network was busy; they're tried again next time)");
+});

@@ -50,6 +50,7 @@ import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
 import { bucketStats, LEARN, learnLessons, updateLessons, type Lesson, type Outcome, type Retired } from './learn';
 import { addSpotted, forgetSpotted, mergeCaught, spottedFor, type Spotted } from './spotter';
+import { readEnough, rejectReason, searchSummary } from './scout';
 import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
@@ -505,6 +506,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
 
   const reports: ScoutReport[] = [];
+  const unreadable: string[] = [];
   const history = new Map<string, import('./decode').Swap[]>();
   // A busy node can make this crawl: after 40 minutes, decide with the wallets checked so far.
   const deadline = at + 40 * 60_000;
@@ -513,6 +515,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
       notes.push(`Checked ${i} of ${cands.length} wallets in 40 minutes (the network was slow), so the rest wait for the next search. A private RPC such as Helius makes searches much faster.`);
       break;
     }
+    const stats = { read: 0, failed: 0 };
     const swaps = await fetchSwaps(
       conn,
       c.wallet,
@@ -520,8 +523,13 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
       (n, t) => {
         if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
       },
-      { deadline: reports.length ? deadline : undefined },
+      { deadline: reports.length ? deadline : undefined, tries: 4, stats },
     ).catch(() => null);
+    // Too much of the history failed to download: don't judge the wallet on scraps; try again next search.
+    if (swaps && !readEnough(stats)) {
+      unreadable.push(c.wallet);
+      continue;
+    }
     if (swaps) {
       history.set(c.wallet, swaps);
       reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
@@ -596,6 +604,12 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
       for (const a of added) engine.log(`${byAi ? 'Wallet scout' : 'Market scanner'}: now copying ${a.slice(0, 4)}…${a.slice(-4)} on a trial: ${picks.find((p) => p.address === a)!.reason}`, byAi ? 'ai' : 'system');
     }
   }
+  // What happened to every wallet checked, in one line (on the Scanner page and in the activity log).
+  const pickedSet = new Set(picks.map((p) => p.address));
+  const tally = searchSummary(reports.length, added.length, unreadable.length, reports.filter((r) => !added.includes(r.wallet) && !pickedSet.has(r.wallet)).map(rejectReason));
+  notes.unshift(`This search ${tally}.`);
+  if (unreadable.length && rpcUrl().includes('api.mainnet-beta.solana.com')) notes.push('A private Solana RPC (Settings → Connections) lets every wallet be read in full.');
+  if (auto) engine.log(`${byAi ? 'Wallet scout' : 'Market scanner'}: wallet search done, ${tally}.`, added.length ? 'system' : 'info');
   const result: ScoutResult = { at, tokens, reports, picks, pickedBy, summary, added, notes };
   rememberScoutMints(tokens.map((t) => t.mint));
   lastScout = result;

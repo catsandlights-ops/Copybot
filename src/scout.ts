@@ -32,6 +32,28 @@ export type ScoutReport = Report & { earlyOn: string[]; topTraderOn: string[]; p
 
 /** A wallet is only picked if copying it would have made money for the user, over a few trades at least. */
 export const passesBacktest = (r: ScoutReport) => !!r.bt && r.bt.closed >= 3 && r.bt.totalSol > 0;
+
+/** Why a checked wallet wasn't picked, in plain words (mirrors ruleScore and the backtest gate). */
+export function rejectReason(r: ScoutReport): string {
+  if (r.closedTokens < 10) return 'too few finished trades';
+  if (r.tradesPerDay > 150) return 'a bot';
+  if (r.closedTokens && r.medianHoldMin < 2) return 'sells within 2 minutes';
+  if (r.roiPct <= 0 || r.realizedPnlSol <= 0) return 'losing money';
+  if (!passesBacktest(r)) return 'copying them would have lost money';
+  return 'not among the best';
+}
+
+/** A history counts only if most of it could be read: judging a wallet on a few transactions would misjudge it. */
+export const readEnough = (s: { read: number; failed: number }) => s.read > 0 && s.failed / s.read <= 0.2;
+
+/** "checked 8: 1 added, 3 too few finished trades, 2 couldn't be read" */
+export function searchSummary(checked: number, added: number, unreadable: number, reasons: string[]): string {
+  const counts = new Map<string, number>();
+  for (const r of reasons) counts.set(r, (counts.get(r) ?? 0) + 1);
+  const parts = [`${added} added`, ...[...counts].sort((a, b) => b[1] - a[1]).map(([r, n]) => `${n} ${r}`)];
+  if (unreadable) parts.push(`${unreadable} couldn't be read (the network was busy; they're tried again next time)`);
+  return `checked ${checked + unreadable} wallet${checked + unreadable === 1 ? '' : 's'}: ${parts.join(', ')}`;
+}
 export type ScoutPick = { address: string; sizeMultiplier: number; budgetSol: number; reason: string; strategy?: string; strategyWhy?: string };
 export type ScoutResult = {
   at: number;
