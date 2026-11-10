@@ -199,3 +199,29 @@ export function suggestStrategy(r: Pick<Report, 'medianHoldMin' | 'medianBuySol'
   if (hold >= 30 && hold < 240 && buy >= 0.5) return { id: 'momentum', why: `rides moves for about ${holdTxt}` };
   return { id: 'balanced', why: `holds about ${holdTxt}, a mixed style` };
 }
+
+/** More than this many transactions a day (of any kind) is a bot, without reading what they are. */
+export const BOT_TX_PER_DAY = 1500;
+
+/**
+ * Before downloading a wallet's history: its latest signatures' times (newest first, seconds) are
+ * enough to skip an obvious bot or a wallet that stopped trading. Returns why to skip, or null.
+ */
+export function prescreen(times: (number | null)[], now: number): string | null {
+  const ts = times.filter((t): t is number => typeof t === 'number' && t > 0);
+  if (!ts.length) return 'no trades found';
+  const newest = Math.max(...ts) * 1000;
+  const oldest = Math.min(...ts) * 1000;
+  if (now - newest > 14 * 86_400_000) return 'not trading lately';
+  const days = Math.max((newest - oldest) / 86_400_000, 1 / 24);
+  if (ts.length >= 200 && ts.length / days > BOT_TX_PER_DAY) return 'a bot';
+  return null;
+}
+
+/** After reading a wallet's latest trades: is it already clearly out (no point reading more)? */
+export function earlyVerdict(r: Report): string | null {
+  if (r.tradesPerDay > 150) return 'a bot';
+  if (r.closedTokens >= 10 && r.medianHoldMin < 2) return 'sells within 2 minutes';
+  if (r.closedTokens >= 10 && (r.roiPct <= 0 || r.realizedPnlSol <= 0)) return 'losing money';
+  return null;
+}

@@ -134,3 +134,19 @@ test('wallet search: never judges a half-read history, and explains every reject
   assert.equal(searchSummary(5, 1, 2, ['too few finished trades', 'losing money', 'too few finished trades', 'a bot']), "looked at 7 wallets: 1 added, 2 too few finished trades, 1 losing money, 1 a bot, 2 couldn't be read (the network was busy; they're tried again next time)");
   assert.equal(searchSummary(0, 0, 2, []), "looked at 2 wallets: 2 couldn't be read (the network was busy; they're tried again next time)");
 });
+
+test('prescreen and early verdict: obvious misfits are set aside before a full download', async () => {
+  const { prescreen, earlyVerdict } = await import('./scout');
+  const now = 1_800_000_000_000, s = now / 1000;
+  assert.equal(prescreen([], now), 'no trades found');
+  assert.equal(prescreen([s - 20 * 86400, s - 21 * 86400], now), 'not trading lately');
+  // 1,000 transactions in 10 minutes: a bot.
+  assert.equal(prescreen(Array.from({ length: 1000 }, (_, i) => s - i * 0.6), now), 'a bot');
+  // 1,000 transactions over 5 days: a busy human, checked further.
+  assert.equal(prescreen(Array.from({ length: 1000 }, (_, i) => s - i * 432), now), null);
+  const r = { closedTokens: 12, tradesPerDay: 20, medianHoldMin: 30, roiPct: 25, realizedPnlSol: 1 } as any;
+  assert.equal(earlyVerdict(r), null); // promising: read the rest
+  assert.equal(earlyVerdict({ ...r, roiPct: -10, realizedPnlSol: -0.5 }), 'losing money');
+  assert.equal(earlyVerdict({ ...r, medianHoldMin: 1 }), 'sells within 2 minutes');
+  assert.equal(earlyVerdict({ ...r, closedTokens: 4, roiPct: -10, realizedPnlSol: -0.5 }), null); // too few yet to tell
+});

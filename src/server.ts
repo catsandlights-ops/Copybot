@@ -50,7 +50,7 @@ import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
 import { bucketStats, LEARN, learnLessons, updateLessons, type Lesson, type Outcome, type Retired } from './learn';
 import { addSpotted, forgetSpotted, mergeCaught, spottedFor, type Spotted } from './spotter';
-import { readEnough, rejectReason, searchSummary } from './scout';
+import { earlyVerdict, prescreen, readEnough, rejectReason, searchSummary } from './scout';
 import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
@@ -507,6 +507,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
 
   const reports: ScoutReport[] = [];
   const unreadable: string[] = [];
+  const quick: { wallet: string; why: string }[] = []; // set aside early: no need to read their whole history
   const history = new Map<string, import('./decode').Swap[]>();
   // A busy node can make this crawl: after 40 minutes, decide with the wallets checked so far.
   const deadline = at + 40 * 60_000;
@@ -515,28 +516,41 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
       notes.push(`Stopped after 40 minutes (the network was slow); the other ${cands.length - i} wallet${cands.length - i === 1 ? '' : 's'} wait for the next search. A private RPC such as Helius makes searches much faster.`);
       break;
     }
+    // 1. One cheap look at its latest transactions: skip obvious bots and wallets that stopped trading.
+    if (!onBase) {
+      const page = await conn.getSignaturesForAddress(new PublicKey(c.wallet), { limit: 1000 }).catch(() => null);
+      const why = page ? prescreen(page.map((x) => x.blockTime ?? null), Date.now()) : null;
+      if (why) {
+        quick.push({ wallet: c.wallet, why });
+        continue;
+      }
+    }
+    const progressFn = (n: number, t: number) => {
+      if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
+    };
+    // 2. Its latest 150 transactions first; a wallet that's clearly out isn't read further.
     const stats = { read: 0, failed: 0 };
-    const swaps = await fetchSwaps(
-      conn,
-      c.wallet,
-      500,
-      (n, t) => {
-        if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
-      },
-      { deadline: i > 0 ? deadline : undefined, tries: 4, stats },
-    ).catch(() => null);
+    let swaps = await fetchSwaps(conn, c.wallet, 150, progressFn, { deadline: i > 0 ? deadline : undefined, tries: 4, stats }).catch(() => null);
     // Too much of the history failed to download: don't judge the wallet on scraps; try again next search.
     if (swaps && !readEnough(stats)) {
       unreadable.push(c.wallet);
       continue;
     }
-    if (swaps) {
-      history.set(c.wallet, swaps);
-      reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
+    if (!swaps) continue;
+    const early = earlyVerdict(score(c.wallet, swaps));
+    if (early) {
+      quick.push({ wallet: c.wallet, why: early });
+      continue;
     }
+    // 3. Promising: read up to 500 (the first 150 come from the cache) and judge on all of it.
+    const stats2 = { read: 0, failed: 0 };
+    const more = await fetchSwaps(conn, c.wallet, 500, progressFn, { deadline: i > 0 ? deadline : undefined, tries: 4, stats: stats2 }).catch(() => null);
+    if (more && readEnough(stats2)) swaps = more;
+    history.set(c.wallet, swaps);
+    reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
   }
   // Spotted traders that were checked are done; ones not reached stay for the next search.
-  spotPool = forgetSpotted(spotPool, chain, reports.map((r) => r.wallet));
+  spotPool = forgetSpotted(spotPool, chain, [...reports.map((r) => r.wallet), ...quick.map((q) => q.wallet)]);
   saveSpot();
   // Backtest the promising ones with the user's own settings and copy delay: a wallet that made
   // money for itself can still lose money for someone copying it a few seconds later.
@@ -606,7 +620,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   }
   // What happened to every wallet checked, in one line (on the Scanner page and in the activity log).
   const pickedSet = new Set(picks.map((p) => p.address));
-  const tally = searchSummary(reports.length, added.length, unreadable.length, reports.filter((r) => !added.includes(r.wallet) && !pickedSet.has(r.wallet)).map(rejectReason));
+  const tally = searchSummary(reports.length + quick.length, added.length, unreadable.length, [...quick.map((q) => q.why), ...reports.filter((r) => !added.includes(r.wallet) && !pickedSet.has(r.wallet)).map(rejectReason)]);
   notes.unshift(`This search ${tally}.`);
   if (unreadable.length && rpcUrl().includes('api.mainnet-beta.solana.com')) notes.push('A private Solana RPC (Settings → Connections) lets every wallet be read in full.');
   if (auto) engine.log(`${byAi ? 'Wallet scout' : 'Market scanner'}: wallet search done, ${tally}.`, added.length ? 'system' : 'info');
