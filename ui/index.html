@@ -531,7 +531,15 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const short = (a) => (a ? esc(`${String(a).slice(0, 4)}…${String(a).slice(-4)}`) : '');
 const sol = (n, d = 4) => (n == null || isNaN(n) ? '—' : `${Number(n).toFixed(d)}`);
-const signed = (n, d = 4) => (n == null || isNaN(n) ? '—' : `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(d)}`);
+const signed = (n, d = 4) => {
+  if (n == null || isNaN(n)) return '—';
+  // Tiny amounts get more decimals instead of rounding to a meaningless "−0.000".
+  const a = Math.abs(n);
+  let dd = d;
+  while (dd < 6 && a > 0 && Number(a.toFixed(dd)) === 0) dd++;
+  const txt = a.toFixed(dd);
+  return Number(txt) === 0 ? txt : `${n >= 0 ? '+' : '−'}${txt}`;
+};
 const cls = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
 const pct = (n) => (n == null || isNaN(n) ? '—' : `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`);
 const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -940,6 +948,12 @@ function renderDashboard(el) {
 // Lines are drawn in a stretched SVG; dots, labels and the tooltip are HTML on top, so they stay round and crisp.
 const CH = {}; let chSeq = 0;
 function lineChart(pts, o = {}) {
+  // Only the chosen time range: a point from before it starts the line at the left edge (never outside the chart).
+  if (pts && o.from != null) {
+    const before = pts.filter((p) => p[0] < o.from).pop();
+    pts = [...(before ? [[o.from, before[1]]] : []), ...pts.filter((p) => p[0] >= o.from)];
+  }
+  if (pts && o.to != null) pts = pts.filter((p) => p[0] <= o.to);
   if (!pts || pts.length < 2) return `<div class="lc-empty muted">${o.empty || 'Collecting data… the line appears after a minute or two.'}</div>`;
   const id = 'lc' + ++chSeq, H = o.h || 180;
   const t0 = o.from ?? pts[0][0], t1 = Math.max(o.to ?? pts[pts.length - 1][0], t0 + 1);
@@ -1574,7 +1588,13 @@ function curveSvg(curve, from, to) {
   if (curve.length < 2) return '<div class="muted" style="padding:20px 0;text-align:center">Not enough closed trades to draw a chart.</div>';
   const W = 1000, H = 220, pad = 8;
   const t0 = from ?? curve[0][0], t1 = Math.max((to ?? curve[curve.length - 1][0]), t0 + 1);
-  const pts = [[t0, 0], ...curve];
+  // Profit only changes when a sale happens: flat until each sale, then a step, then flat to the end.
+  const pts = [[t0, 0]];
+  for (const p of curve) {
+    if (p[0] < t0) { pts[0] = [t0, p[1]]; continue; }
+    pts.push([p[0], pts[pts.length - 1][1]], p);
+  }
+  if (t1 > pts[pts.length - 1][0]) pts.push([t1, pts[pts.length - 1][1]]);
   const vals = pts.map((p) => p[1]);
   const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), span = hi - lo || 1;
   const x = (t) => ((t - t0) / (t1 - t0)) * W, y = (v) => pad + (1 - (v - lo) / span) * (H - 2 * pad);
