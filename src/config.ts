@@ -231,18 +231,18 @@ export type Config = {
 export const DEFAULT_CONFIG: Config = {
   mode: 'paper',
   wallets: [],
-  buy: { sizing: 'fixed', fixedSol: 0.05, percentOfTarget: 5, minSol: 0.01, maxSol: 0.2, minTargetBuySol: 0.2, consensusBoost: 1.5, consensusWindowMin: 10, consensusAddOn: true, soloMinTheirSol: 0, sizeByRecord: true },
+  buy: { sizing: 'fixed', fixedSol: 0.25, percentOfTarget: 5, minSol: 0.05, maxSol: 0.5, minTargetBuySol: 0.2, consensusBoost: 1.5, consensusWindowMin: 10, consensusAddOn: true, soloMinTheirSol: 0, sizeByRecord: true },
   sell: { copySells: true },
   risk: {
     maxOpenPositions: 5,
-    maxTotalExposureSol: 1,
+    maxTotalExposureSol: 2,
     stopLossPct: 40,
     takeProfitPct: 0,
     skipIfAlreadyHolding: true,
     maxSignalAgeSec: 30,
     solReserve: 0.05,
     maxPriceDriftPct: 15,
-    dailyLossLimitSol: 0.3,
+    dailyLossLimitSol: 0.75,
     panicLossSol: 0,
     moodFilter: true,
     pauseAfterLosses: 4,
@@ -268,7 +268,7 @@ export const DEFAULT_CONFIG: Config = {
   strategy: '',
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
-  scanner: { findTraders: false, traderEveryHours: 2, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, baseCoins: false, buySol: 0.05, budgetSol: 0.3, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
+  scanner: { findTraders: false, traderEveryHours: 2, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, baseCoins: false, buySol: 0.1, budgetSol: 0.5, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
   ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
 };
 

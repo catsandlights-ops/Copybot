@@ -130,14 +130,15 @@ test('pump.fun bonding-curve tokens: unknown liquidity is not treated as $0', ()
 // ---------------- circuit breaker ----------------
 test('daily loss limit blocks buys until tomorrow, unless resumed', () => {
   const t = Date.UTC(2026, 10, 8, 12);
+  const risk = { ...cfg.risk, dailyLossLimitSol: 0.3 };
   let g = freshGuard(t);
-  let r = recordSell(g, -0.2, cfg.risk, t);
+  let r = recordSell(g, -0.2, risk, t);
   assert.equal(r.event, null);
-  r = recordSell(r.guard, -0.15, cfg.risk, t);
+  r = recordSell(r.guard, -0.15, risk, t);
   assert.match(r.event!, /Daily loss limit/);
-  assert.match(buyBlockReason(r.guard, cfg.risk, t)!, /daily loss limit/);
-  assert.equal(buyBlockReason({ ...r.guard, resumedDay: r.guard.day }, cfg.risk, t), null);
-  assert.equal(buyBlockReason(r.guard, cfg.risk, t + 36 * 3600_000), null); // next day
+  assert.match(buyBlockReason(r.guard, risk, t)!, /daily loss limit/);
+  assert.equal(buyBlockReason({ ...r.guard, resumedDay: r.guard.day }, risk, t), null);
+  assert.equal(buyBlockReason(r.guard, risk, t + 36 * 3600_000), null); // next day
 });
 
 test('4 losses in a row pause buys for 60 minutes; a win resets the streak', () => {
