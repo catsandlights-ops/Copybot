@@ -511,7 +511,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   // A busy node can make this crawl: after 40 minutes, decide with the wallets checked so far.
   const deadline = at + 40 * 60_000;
   for (const [i, c] of cands.entries()) {
-    if (Date.now() > deadline && reports.length) {
+    if (Date.now() > deadline && i > 0) {
       notes.push(`Checked ${i} of ${cands.length} wallets in 40 minutes (the network was slow), so the rest wait for the next search. A private RPC such as Helius makes searches much faster.`);
       break;
     }
@@ -523,7 +523,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
       (n, t) => {
         if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
       },
-      { deadline: reports.length ? deadline : undefined, tries: 4, stats },
+      { deadline: i > 0 ? deadline : undefined, tries: 4, stats },
     ).catch(() => null);
     // Too much of the history failed to download: don't judge the wallet on scraps; try again next search.
     if (swaps && !readEnough(stats)) {
