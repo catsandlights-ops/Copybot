@@ -64,17 +64,49 @@ export async function getTx(sig: string, tries = 8): Promise<RawTx | null> {
       if (j.error) throw new PermanentError(j.error.message);
       return j.result;
     }, 5);
-    if (res) {
-      return {
-        signature: res.transaction.signatures[0],
-        blockTime: res.blockTime ?? null,
-        accountKeys: res.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey)),
-        meta: res.meta,
-      };
-    }
+    if (res) return toRawTx(res);
     await sleep(400);
   }
   return null;
+}
+
+const toRawTx = (res: any): RawTx => ({
+  signature: res.transaction.signatures[0],
+  blockTime: res.blockTime ?? null,
+  accountKeys: res.transaction.message.accountKeys.map((k: any) => (typeof k === 'string' ? k : k.pubkey)),
+  meta: res.meta,
+});
+
+/** The node refused a batched request: Copybot goes back to one transaction per request. */
+export class BatchUnsupported extends PermanentError {} // no point retrying: fall back at once
+let batching = true;
+export const batchingOn = () => batching;
+export const setBatching = (on: boolean) => {
+  batching = on;
+};
+
+/**
+ * Several transactions in one request (most nodes, Helius included, accept JSON-RPC batches).
+ * For each: the transaction, null if the node doesn't know it, or undefined if it failed.
+ */
+export async function getTxBatch(sigs: string[]): Promise<(RawTx | null | undefined)[]> {
+  const reply = await withRetry(async () => {
+    const r = await rpcFetch(rpcUrl(), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(sigs.map((sig, id) => ({ jsonrpc: '2.0', id, method: 'getTransaction', params: [sig, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 255 }] }))),
+    });
+    if (r.status === 429 || r.status >= 500) throw new Error(`RPC ${r.status}`);
+    const j = await r.json().catch(() => null);
+    if (!Array.isArray(j)) throw new BatchUnsupported(`batch requests not accepted (HTTP ${r.status})`);
+    return j as { id: number; result?: any; error?: { message: string } }[];
+  }, 5);
+  const byId = new Map(reply.map((x) => [x.id, x]));
+  return sigs.map((_, i) => {
+    const x = byId.get(i);
+    if (!x || x.error) return undefined;
+    return x.result ? toRawTx(x.result) : null;
+  });
 }
 
 /** Run async jobs with a concurrency cap. */

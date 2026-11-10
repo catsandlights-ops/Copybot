@@ -5,7 +5,7 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import { makeConnection } from './env';
 import { decodeSwap, Swap } from './decode';
-import { getTx, mapLimit, short, withRetry } from './util';
+import { getTx, mapLimit, short, withRetry, getTxBatch, BatchUnsupported, batchingOn, setBatching, type RawTx } from './util';
 import { historyCache } from './history';
 
 
@@ -86,32 +86,55 @@ export async function fetchSwaps(
   // Transactions read before come from the on-disk cache; only new ones are downloaded.
   let done = 0;
   let fresh = 0;
-  const swaps = await mapLimit(sigs, 4, async (sig) => {
+  const found = new Map<string, Swap | null>();
+  for (const sig of sigs) {
     const cached = historyCache.get(wallet, sig);
-    if (cached) {
-      if (opts.stats) {
-        opts.stats.read++;
-        opts.stats.cached = (opts.stats.cached ?? 0) + 1;
-      }
-      onProgress?.(++done, sigs.length);
-      return cached.swap;
+    if (!cached) continue;
+    found.set(sig, cached.swap);
+    if (opts.stats) {
+      opts.stats.read++;
+      opts.stats.cached = (opts.stats.cached ?? 0) + 1;
     }
-    // Out of time: give up on this wallet (a half-read history would misjudge it).
-    if (opts.deadline && Date.now() > opts.deadline) throw new Error('out of time');
-    const tx = await getTx(sig, opts.tries ?? 2).catch(() => {
-      if (opts.stats) opts.stats.failed++;
-      return undefined;
-    });
-    if (opts.stats) opts.stats.read++;
     onProgress?.(++done, sigs.length);
-    if (tx === undefined || tx === null) return null; // errors and not-found aren't cached, so they're retried next time
+  }
+  // One downloaded transaction: decoded, cached (errors and not-found aren't, so they're retried next time).
+  const settle = (sig: string, tx: RawTx | null | undefined) => {
+    if (opts.stats) {
+      opts.stats.read++;
+      if (tx === undefined) opts.stats.failed++;
+    }
+    onProgress?.(++done, sigs.length);
+    if (!tx) return;
     const swap = decodeSwap(tx, wallet);
     historyCache.set(wallet, sig, swap);
+    found.set(sig, swap);
     fresh++;
-    return swap;
-  });
+  };
+  // Out of time: give up on this wallet (a half-read history would misjudge it).
+  const inTime = () => {
+    if (opts.deadline && Date.now() > opts.deadline) throw new Error('out of time');
+  };
+  const one = async (sig: string) => {
+    inTime();
+    settle(sig, await getTx(sig, opts.tries ?? 2).catch(() => undefined));
+  };
+  const todo = sigs.filter((sig) => !found.has(sig));
+  if (batchingOn() && todo.length > 1) {
+    const chunks: string[][] = [];
+    for (let i = 0; i < todo.length; i += 10) chunks.push(todo.slice(i, i + 10));
+    await mapLimit(chunks, 2, async (chunk) => {
+      inTime();
+      try {
+        const txs = await getTxBatch(chunk);
+        chunk.forEach((sig, i) => settle(sig, txs[i]));
+      } catch (e) {
+        if (e instanceof BatchUnsupported) setBatching(false); // this node takes one at a time
+        for (const sig of chunk) await one(sig);
+      }
+    });
+  } else await mapLimit(todo, 4, one);
   if (fresh) historyCache.save(wallet);
-  return swaps.filter((s): s is Swap => !!s && s.quote === 'SOL');
+  return sigs.map((sig) => found.get(sig)).filter((s): s is Swap => !!s && s.quote === 'SOL');
 }
 
 export function score(wallet: string, swaps: Swap[]): Report {
