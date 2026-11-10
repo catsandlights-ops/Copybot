@@ -23,6 +23,7 @@ export type Trade = {
   sig: string;
   gapPct?: number; // copy gap vs the copied wallet's own fill (positive = we did worse)
   lagSec?: number; // seconds between their trade and ours
+  entry?: import('./learn').Entry; // sells: the conditions the position was bought in (for learning)
 };
 
 /** The copied wallet's own fill, to measure how much copying late cost us. */
@@ -159,7 +160,7 @@ export class Trader {
         pos.costSol -= costPortion;
         if ((all && !late) || BigInt(pos.amountRaw) === 0n) delete this.state.positions[mint];
       }
-      this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sources: [...p.sources], sig: r.sig, ...(late ? {} : this.gap('sell', ref, r.sol, r.tokenRaw)) });
+      this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sources: [...p.sources], ...(p.entry ? { entry: p.entry } : {}), sig: r.sig, ...(late ? {} : this.gap('sell', ref, r.sol, r.tokenRaw)) });
       this.hooks.log(`SELL ${short(mint)} ${(soldFrac * 100).toFixed(0)}% for ${r.sol.toFixed(4)} SOL, PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} (${reason})${late ? ' — confirmed late' : ''}`, 'sell');
       return pnl;
     };

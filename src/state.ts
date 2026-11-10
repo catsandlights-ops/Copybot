@@ -13,6 +13,7 @@ export type Position = {
   peakMultiple?: number; // highest value / cost seen (for the trailing stop)
   peakLiquidityUsd?: number; // highest pool liquidity seen while held (for rug protection)
   addedOn?: boolean; // already bought more when a second wallet confirmed it
+  entry?: import('./learn').Entry; // the conditions it was bought in (for learning)
   trail?: [number, number][]; // [time, value / cost] while held, for the live chart (thinned as it grows)
 };
 

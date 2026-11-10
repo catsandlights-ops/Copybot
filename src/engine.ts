@@ -10,6 +10,7 @@ import type { Swap } from './decode';
 import type { CheckResult } from './safety';
 import { chainOf, getChain, type ChainAdapter, type ChainId } from './chains';
 import { setBaseLive } from './chains/base';
+import { lessonFor, type Entry, type Lesson } from './learn';
 import { skipCategory, type SignalStats, plainSkip } from './readiness';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
 import { exposure, loadState, saveState, State } from './state';
@@ -347,7 +348,9 @@ export class BotEngine extends EventEmitter {
     const checked = await this.tokenChecks(mint, sol, false);
     if (typeof checked === 'string') return checked;
     if (!this.running) return 'the bot stopped';
+    const entry = await this.entryFor(mint, this.chain, checked.info, 'order'); // your own orders are never blocked by lessons
     await this.trader.buy(mint, checked.check.decimals, checked.check.buyQuote, ORDER_SOURCE);
+    this.noteEntry(mint, entry);
     return null;
   }
 
@@ -659,6 +662,43 @@ export class BotEngine extends EventEmitter {
       .catch(() => this.log(`Rug memory: won't buy ${short(mint)} again (${why}).`, 'system'));
   }
 
+  // ---------- learning ----------
+  /** What recent results taught (set by the server's learning rounds). */
+  lessons: Lesson[] = [];
+  /** The conditions a buy is made in, remembered on the position so results can be learned from. */
+  private async entryFor(mint: string, chain: ChainAdapter, info: MarketInfo | null | undefined, kind: Entry['kind'], lookUp = true): Promise<Entry> {
+    const i = info ?? (lookUp ? await getMarketInfo(mint, chain.meta.dexscreenerId).catch(() => null) : null);
+    return { liqUsd: i?.liquidityUsd ?? null, ageH: i?.createdAt ? (Date.now() - i.createdAt) / 3_600_000 : null, mcapUsd: i?.marketCapUsd ?? null, mood: this.mood.level, hour: new Date().getHours(), chain: chain.meta.id, kind };
+  }
+  /** Why a lesson says not to make this buy, or null. */
+  private learnedBlock(e: Entry): string | null {
+    if (!this.cfg.learn.enabled) return null;
+    const l = lessonFor(this.lessons, e, Date.now());
+    return l ? `learned: ${l.label} lost you ${Math.abs(l.avgPct).toFixed(0)}% on average over your last ${l.n} trades like it (tries again ${new Date(l.expiresAt).toLocaleDateString([], { weekday: 'short' })})` : null;
+  }
+  /** Only look market data up before a copy when an active lesson needs it (speed matters). */
+  private lessonsNeedMarket(): boolean {
+    const now = Date.now();
+    return this.cfg.learn.enabled && this.lessons.some((l) => l.expiresAt > now && ['age', 'liquidity', 'mcap'].includes(l.feature));
+  }
+  private noteEntry(mint: string, e: Entry, chain?: ChainAdapter) {
+    const p = this.state.positions[mint];
+    if (!p || p.entry) return;
+    p.entry = e;
+    saveState(this.state, this.cfg.mode);
+    // Market data skipped for speed: fill it in now that the buy is done.
+    if (chain && e.liqUsd == null && e.ageH == null)
+      void this.entryFor(mint, chain, null, e.kind)
+        .then((full) => {
+          const q = this.state.positions[mint];
+          if (q?.entry === e) {
+            q.entry = { ...full, mood: e.mood, hour: e.hour };
+            saveState(this.state, this.cfg.mode);
+          }
+        })
+        .catch(() => {});
+  }
+
   // ---------- market mood ----------
   mood: Mood = { level: 'unknown', factor: 1, why: 'not checked yet' };
   private async moodLoop(gen: number) {
@@ -780,6 +820,10 @@ export class BotEngine extends EventEmitter {
     let drift = driftOf(check.buyQuote, lamports);
     const chasing = chased(drift);
     if (chasing) return skip(chasing);
+    // Learning: skip the kinds of trades that have been losing money lately.
+    const entry = await this.entryFor(s.mint, chain, info, 'wallet', this.lessonsNeedMarket());
+    const learned = this.learnedBlock(entry);
+    if (learned) return skip(learned);
 
     // Autopilot: Claude decides buy/skip and the size, inside every limit checked above.
     if (useAi) {
@@ -823,6 +867,7 @@ export class BotEngine extends EventEmitter {
     }
     await this.trader.buy(s.mint, s.decimals, check.buyQuote, s.wallet, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined, chain);
     st.copied++;
+    this.noteEntry(s.mint, entry, chain);
     if (addOn && state.positions[s.mint]) {
       state.positions[s.mint].addedOn = true;
       saveState(state, cfg.mode);
@@ -867,7 +912,11 @@ export class BotEngine extends EventEmitter {
     const checked = await this.tokenChecks(sig.mint, sol, false, false, chain);
     if (typeof checked === 'string') return checked;
     if (!this.running || !this.cfg.scanner.tradeCoins) return 'the scanner was turned off';
+    const entry = await this.entryFor(sig.mint, chain, checked.info, 'scanner');
+    const learned = this.learnedBlock(entry);
+    if (learned) return learned;
     await this.trader.buy(sig.mint, checked.check.decimals, checked.check.buyQuote, SCANNER_SOURCE, undefined, chain);
+    this.noteEntry(sig.mint, entry);
     return null;
   }
 

@@ -2136,6 +2136,34 @@ function aiItem(d) {
     <div class="meta">${usd(d.costUsd)}${outcome}</div>
     <div class="why">${esc(d.reason)}${applied}</div></li>`;
 }
+// ----- learning: lessons from your own results -----
+function learningCard() {
+  const L = S.learning, cfg = S.config;
+  if (!L) return '';
+  const on = cfg.learn.enabled;
+  const autoTxt = { paper: 'used automatically in paper mode and suggested to you in live mode', always: 'used automatically, also in live mode', off: 'only suggested to you' }[cfg.learn.autoTuneExits];
+  const lessons = L.lessons.length
+    ? `<ul class="stack" style="margin:0;padding-left:18px">${L.lessons.map((l) => `<li><b>Avoiding ${esc(l.label)}</b>: lost ${Math.abs(l.avgPct).toFixed(0)}% on average over your last ${l.n} (${l.pnlSol.toFixed(3)} SOL). Tries again ${new Date(l.expiresAt).toLocaleDateString([], { weekday: 'long' })}. <a href="#" data-forget="${esc(l.feature)}|${esc(l.bucket)}">Forget</a></li>`).join('')}</ul>`
+    : `<div class="muted">${L.tradesLearnedFrom < L.needed ? `Learning from your results: ${L.tradesLearnedFrom} finished trade${L.tradesLearnedFrom === 1 ? '' : 's'} so far, lessons start after ${L.needed} of a kind.` : 'Nothing is clearly losing right now, so nothing is being avoided.'}</div>`;
+  const row = (b) => `<span class="chip">${esc(b.label)}: <b class="${b.avgPct >= 0 ? 'pos' : 'neg'}">${b.avgPct >= 0 ? '+' : ''}${b.avgPct.toFixed(0)}%</b> avg over ${b.n}</span>`;
+  const journal = L.journal.length ? `<div class="stack" style="font-size:12.5px">${L.journal.slice(0, 6).map((j) => `<div><span class="muted">${ago(j.at)} ago</span> · ${esc(j.text)}${j.undo ? ` <a href="#" data-undo="${j.at}">Undo</a>` : ''}</div>`).join('')}</div>` : '';
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Learning</h2><div class="muted" style="font-size:12.5px">Copybot keeps score of the conditions each trade was bought in (coin age, liquidity, size, market mood, time of day, chain) and avoids the kinds that have been losing <i>you</i> money over the last 2 weeks. Each lesson lasts a week, then gets a fresh test. Exits are re-checked every day; better ones are ${autoTxt}. Works without Claude.</div></div><span class="spacer"></span>
+      <label class="switch" title="Learning on/off"><input type="checkbox" id="learn-on" ${on ? 'checked' : ''}><i></i></label></div>
+    <div class="card-b stack" style="font-size:13px">${on ? lessons : '<div class="muted">Off: every trade is judged by your settings only.</div>'}
+      ${on && (L.best.length || L.worst.length) ? `<div class="row" style="flex-wrap:wrap;gap:6px">${L.best.filter((b) => b.avgPct > 0).map(row).join('')}${L.worst.filter((b) => b.avgPct < 0).map(row).join('')}</div>` : ''}
+      ${journal}
+      <div class="row"><button class="btn sm" id="learn-now" ${on ? '' : 'disabled'}>Learn now</button><label class="row muted" style="gap:6px">Better exits: <select class="input" id="learn-auto" style="width:auto"><option value="paper" ${cfg.learn.autoTuneExits === 'paper' ? 'selected' : ''}>switch in paper, ask in live</option><option value="always" ${cfg.learn.autoTuneExits === 'always' ? 'selected' : ''}>always switch</option><option value="off" ${cfg.learn.autoTuneExits === 'off' ? 'selected' : ''}>only suggest</option></select></label>${L.lastAt ? `<span class="muted">Last learned ${ago(L.lastAt)} ago</span>` : ''}</div>
+    </div></div>`;
+}
+function wireLearning(el) {
+  const save = async (patch, msg) => { if (S.dirty) return toast('Save or discard your settings changes first', true); const r = await act(() => api('PUT', '/api/config', { ...S.config, learn: { ...S.config.learn, ...patch } }), msg); if (r) { S.config = r.config; if (S.learning) Object.assign(S.learning, { enabled: r.config.learn.enabled, autoTuneExits: r.config.learn.autoTuneExits }); render(); } };
+  const on = $('#learn-on'); if (on) on.onchange = (e) => save({ enabled: e.target.checked }, e.target.checked ? 'Learning is on' : 'Learning is off');
+  const au = $('#learn-auto'); if (au) au.onchange = (e) => save({ autoTuneExits: e.target.value }, 'Saved');
+  const now = $('#learn-now'); if (now) now.onclick = async () => { const r = await act(() => api('POST', '/api/learning/now'), 'Learned from your latest results'); if (r) { S.learning = r; render(); } };
+  el.querySelectorAll('[data-forget]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); const [feature, bucket] = a.dataset.forget.split('|'); const r = await act(() => api('POST', '/api/learning/forget', { feature, bucket }), 'Forgotten: new results will decide'); if (r) { S.learning = r; render(); } }));
+  el.querySelectorAll('[data-undo]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); const r = await act(() => api('POST', '/api/learning/undo', { at: Number(a.dataset.undo) }), 'Previous exit settings restored'); if (r) { S.config = r.config; S.learning = r.learning; render(); } }));
+}
+
 function renderAutopilot(el, fresh) {
   if (!fresh) { loadAi(); if (!S.ai) { el.innerHTML = '<div class="card"><div class="empty"><span class="spinner"></span></div></div>'; return; } }
   const a = S.ai, cfg = S.config, on = cfg.ai.enabled;
@@ -2149,7 +2177,7 @@ function renderAutopilot(el, fresh) {
       <div class="card-b stack">${a.keyError ? `<div class="banner danger" style="margin:0"><div>${esc(a.keyError)}</div></div>` : ''}
         <div class="row"><input class="input mono" id="ai-key" type="password" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:220px"><button class="btn primary" id="ai-key-save">Save key</button></div>
         <div class="muted" style="font-size:12.5px">${S.connection.canEncrypt ? 'Stored encrypted by your operating system.' : 'Stored in the .env file on this computer.'}</div></div></div>`;
-  el.innerHTML = `
+  el.innerHTML = learningCard() + `
     <div class="card ai-hero"><div class="orb">${ICON_SPARK}</div>
       <div style="flex:1;min-width:240px"><h2>Claude ${on ? 'is trading for you' : 'autopilot is off'}</h2>
         <div class="muted">${on ? `Using Claude Opus 5.5. It ${[cfg.ai.decideBuys && 'decides buys', cfg.ai.reviewPositions && `reviews positions every ${cfg.ai.reviewEveryMin} min`, cfg.ai.manageWallets && `manages wallets every ${cfg.ai.walletReviewHours} h`].filter(Boolean).join(', ') || 'has nothing switched on in its settings'}. Your limits always apply.` : 'Turn it on to let Claude decide buys, review positions and manage wallets, always inside your limits.'}
@@ -2174,6 +2202,7 @@ function renderAutopilot(el, fresh) {
       ${a.decisions.length ? `<ul class="ai-list">${a.decisions.map(aiItem).join('')}</ul>` : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No decisions yet</h3>${on ? 'Claude will decide on the next copy signal.' : 'Turn the autopilot on, then start the bot.'}</div>`}
     </div>`;
   $('#ai-settings').onclick = () => { go('settings').then(() => $('#ai-settings')?.scrollIntoView({ block: 'start' })); };
+  wireLearning(el);
   $('#ai-on').onchange = async (e) => {
     if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
     const enabled = e.target.checked;
@@ -2848,6 +2877,7 @@ function connectEvents() {
     const c = $('#pf-chart'); if (c && S.page === 'dashboard') { c.outerHTML = portfolioCard(); bindPortfolio(); }
   });
   es.addEventListener('netstatus', (e) => { S.netstatus = JSON.parse(e.data); paintNetStatus(); if (S.page === 'dashboard') render(); });
+  es.addEventListener('learning', (e) => { S.learning = JSON.parse(e.data); if (S.page === 'autopilot' && !S.dirty) render(); });
   es.addEventListener('autotune', (e) => { S.tune = JSON.parse(e.data); if (S.page === 'dashboard' || S.page === 'settings') render(); });
   es.addEventListener('scanner', (e) => { S.scanner = JSON.parse(e.data); renderChrome(); if (S.page === 'scanner' && !S.dirty) render(); });
   es.addEventListener('trades-reset', () => load());
@@ -2877,7 +2907,7 @@ async function load() {
     const d = await api('GET', '/api/state');
     if (d.ui) { S.ui = d.ui; applyMode(d.ui.mode); }
     const firstLoad = !S.loadedOnce; S.loadedOnce = true;
-    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, tune: d.tune || null, chain: d.chain || null, netstatus: d.netstatus || null, strategies: d.strategies || [], health: d.health || null });
+    Object.assign(S, { app: d.app, status: d.status, config: S.dirty ? S.config : d.config, logs: d.logs, trades: d.trades, connection: d.connection, jobs: d.jobs, scout: d.scout, scanner: d.scanner || null, tune: d.tune || null, learning: d.learning || null, chain: d.chain || null, netstatus: d.netstatus || null, strategies: d.strategies || [], health: d.health || null });
     render();
     if (firstLoad && d.ui && !d.ui.setupDone) wizard(0);
   } catch (e) { toast('Could not reach the bot. Is it still running?', true); }

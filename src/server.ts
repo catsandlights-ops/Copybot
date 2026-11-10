@@ -48,6 +48,7 @@ import { applyStrategy, compareStrategies, STRATEGIES, strategyById } from './st
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
+import { bucketStats, LEARN, learnLessons, updateLessons, type Lesson, type Outcome, type Retired } from './learn';
 import { addSpotted, forgetSpotted, mergeCaught, spottedFor, type Spotted } from './spotter';
 import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
 
@@ -1053,6 +1054,98 @@ async function loadBacktestData(spec: BacktestSpec, progress: (p: string) => voi
   return { swaps, cfg, opts, prices, marks, stats, truncated, bought: bought.length };
 }
 
+// ---------- learning: lessons from your own results, and exits re-tuned as markets change ----------
+type JournalEntry = { at: number; kind: 'lesson' | 'retired' | 'exits' | 'undo'; text: string; setup?: string; undo?: { stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits'] } };
+type Learning = { lessons: Lesson[]; retired: Retired[]; journal: JournalEntry[]; lastAt: number; vetoed?: { setup: string; until: number }[] };
+const learnFile = (mode: string) => `data/learning-${mode}.json`;
+function loadLearning(mode: string): Learning {
+  try {
+    const j = JSON.parse(fs.readFileSync(learnFile(mode), 'utf8'));
+    return { lessons: j.lessons ?? [], retired: j.retired ?? [], journal: j.journal ?? [], lastAt: j.lastAt ?? 0, vetoed: j.vetoed ?? [] };
+  } catch {
+    return { lessons: [], retired: [], journal: [], lastAt: 0 };
+  }
+}
+let learning = loadLearning(engine.cfg.mode);
+let learningMode = engine.cfg.mode;
+const currentLearning = () => {
+  if (learningMode !== engine.cfg.mode) {
+    learning = loadLearning(engine.cfg.mode);
+    learningMode = engine.cfg.mode;
+  }
+  engine.lessons = learning.lessons;
+  return learning;
+};
+function saveLearning() {
+  learning.journal = learning.journal.slice(-200);
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(learnFile(learningMode) + '.tmp', JSON.stringify(learning));
+  fs.renameSync(learnFile(learningMode) + '.tmp', learnFile(learningMode));
+  engine.lessons = learning.lessons;
+  broadcast('learning', learningView());
+}
+const journal = (e: JournalEntry) => {
+  learning.journal.push(e);
+  engine.log(`Learning: ${e.text}`, 'ai');
+};
+/** Results of finished sales, with the conditions each position was bought in. */
+function outcomesNow(): Outcome[] {
+  return (engine.readTrades() as any[])
+    .filter((t) => t.mode === engine.cfg.mode && t.side === 'sell' && typeof t.pnl === 'number' && t.entry && t.sol - t.pnl > 0)
+    .map((t) => ({ at: t.t, entry: t.entry, pnl: t.pnl, cost: t.sol - t.pnl }));
+}
+function learnRound() {
+  const L = currentLearning();
+  const now = Date.now();
+  const upd = updateLessons(L.lessons, L.retired, learnLessons(outcomesNow(), now, L.retired), now);
+  L.lessons = upd.lessons;
+  L.retired = upd.retired;
+  L.lastAt = now;
+  for (const l of upd.expired) journal({ at: now, kind: 'retired', text: `giving ${l.label} another chance after a week; new results will decide.` });
+  for (const l of upd.added) journal({ at: now, kind: 'lesson', text: `${l.label} lost you ${Math.abs(l.avgPct).toFixed(0)}% on average over your last ${l.n} trades like it (${l.pnlSol.toFixed(3)} SOL), so Copybot avoids them for a week.` });
+  saveLearning();
+}
+function learningView() {
+  const L = currentLearning();
+  const outs = outcomesNow().filter((o) => Date.now() - o.at <= LEARN.windowDays * 86_400_000);
+  const stats = bucketStats(outs).filter((b) => b.n >= 3);
+  return {
+    enabled: engine.cfg.learn.enabled,
+    autoTuneExits: engine.cfg.learn.autoTuneExits,
+    lessons: L.lessons.filter((l) => l.expiresAt > Date.now()),
+    journal: L.journal.slice(-30).reverse(),
+    lastAt: L.lastAt || null,
+    tradesLearnedFrom: outs.length,
+    needed: LEARN.minTrades,
+    best: [...stats].sort((a, b) => b.avgPct - a.avgPct).slice(0, 3),
+    worst: [...stats].sort((a, b) => a.avgPct - b.avgPct).slice(0, 3),
+  };
+}
+currentLearning();
+setInterval(() => {
+  if (!engine.cfg.learn.enabled || !engine.running) return;
+  if (Date.now() - currentLearning().lastAt < 6 * 3_600_000) return;
+  try {
+    learnRound();
+  } catch (e) {
+    engine.log(`Learning round failed: ${(e as Error).message}`, 'warn');
+  }
+}, 10 * 60_000).unref();
+
+/** Switch exits to a better setup, remembering the old ones so it can be undone. */
+async function applyExits(best: NonNullable<Tune['best']>, why: string) {
+  const next = structuredClone(engine.cfg);
+  const undo = { stopLossPct: next.risk.stopLossPct, takeProfitPct: next.risk.takeProfitPct, exits: structuredClone(next.exits) };
+  next.risk.stopLossPct = best.stopLossPct;
+  next.risk.takeProfitPct = best.takeProfitPct;
+  next.exits = { lockAtPct: next.exits.lockAtPct, lockFloorPct: next.exits.lockFloorPct, ...best.exits };
+  const clean = sanitizeConfig(next, true);
+  await applyChange(() => saveConfig(clean));
+  currentLearning();
+  journal({ at: Date.now(), kind: 'exits', text: `exit settings changed to "${best.name}" (${why}).`, setup: best.name, undo });
+  saveLearning();
+}
+
 // ---------- weekly auto-tune: your exits vs other setups on the last 7 days ----------
 type Tune = { at: number; status: 'better' | 'fine' | 'error'; message: string; best?: { name: string; stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits']; totalSol: number }; currentSol?: number; dismissed?: boolean };
 const TUNE_FILE = 'data/autotune.json';
@@ -1080,7 +1173,19 @@ function runAutoTune(manual = false) {
       const d = await loadBacktestData(spec, progress, true, true);
       progress('Comparing exit settings…');
       const o = optimizeExits(d.swaps, d.cfg, d.opts, d.marks, d.prices);
-      const better = o.verdict === 'better';
+      let better = o.verdict === 'better';
+      // Learning: only trust a winner that also wins on the most recent 2 days alone (not one lucky stretch).
+      let recentNote = '';
+      if (better && engine.cfg.learn.enabled) {
+        const since = (Date.now() - 2 * 86_400_000) / 1000;
+        const recent = optimizeExits(d.swaps.filter((x: any) => (x.blockTime ?? 0) >= since), d.cfg, d.opts, d.marks, d.prices);
+        const rb = recent.results.find((r) => r.setup.id === o.best.setup.id);
+        const rc = recent.results.find((r) => r.setup.id === 'current');
+        if (!rb || !rc || rb.closed < 3 || rb.totalSol <= rc.totalSol) {
+          better = false;
+          recentNote = ` "${o.best.setup.name}" did better over the week but not over the last 2 days, so nothing changes yet.`;
+        }
+      }
       lastTune = {
         at: Date.now(),
         status: better ? 'better' : 'fine',
@@ -1090,12 +1195,18 @@ function runAutoTune(manual = false) {
             ? 'On the last 7 days every exit setup lost money with these wallets: the wallets are the problem, not the exits. Check them on the Wallets page.'
             : o.verdict === 'few-trades'
               ? 'Too few trades in the last 7 days to compare exit settings fairly. Checking again next week.'
-              : 'Your exit settings are as good as any on the last 7 days. Nothing to change.',
+              : 'Your exit settings are as good as any on the last 7 days. Nothing to change.' + recentNote,
         ...(better ? { best: { name: o.best.setup.name, stopLossPct: o.best.setup.stopLossPct, takeProfitPct: o.best.setup.takeProfitPct, exits: o.best.setup.exits, totalSol: o.best.totalSol }, currentSol: o.current.totalSol } : {}),
       };
       saveTune();
-      engine.log(`Weekly settings check: ${lastTune.message}`, better ? 'ai' : 'system');
-      if (better) alert('autopilot', `🔧 ${lastTune.message} Open Copybot to use them.`);
+      engine.log(`Settings check: ${lastTune.message}`, better ? 'ai' : 'system');
+      const auto = engine.cfg.learn.enabled && (engine.cfg.learn.autoTuneExits === 'always' || (engine.cfg.learn.autoTuneExits === 'paper' && engine.cfg.mode === 'paper'));
+      const vetoed = (currentLearning().vetoed ?? []).some((v) => v.setup === lastTune!.best?.name && v.until > Date.now());
+      if (better && auto && lastTune.best && !vetoed) {
+        await applyExits(lastTune.best, `it beat your exits over the last week and the last 2 days: ${o.best.totalSol >= 0 ? '+' : ''}${o.best.totalSol.toFixed(3)} vs ${o.current.totalSol >= 0 ? '+' : ''}${o.current.totalSol.toFixed(3)} SOL`);
+        lastTune = { ...lastTune, status: 'fine', message: `Learning switched your exits to "${lastTune.best.name}". You can undo it on the Autopilot page.`, dismissed: true };
+        saveTune();
+      } else if (better) alert('autopilot', `🔧 ${lastTune.message} Open Copybot to use them.`);
       return o;
     } catch (e) {
       lastTune = { at: Date.now(), status: 'error', message: `The weekly settings check couldn't run: ${(e as Error).message}` };
@@ -1105,8 +1216,9 @@ function runAutoTune(manual = false) {
   });
 }
 setInterval(() => {
-  if (!engine.cfg.tune.weekly || !engine.running || !engine.cfg.wallets.some((w) => w.enabled)) return;
-  if (Date.now() - (lastTune?.at ?? 0) < 7 * 86_400_000) return;
+  if (!(engine.cfg.tune.weekly || engine.cfg.learn.enabled) || !engine.running || !engine.cfg.wallets.some((w) => w.enabled)) return;
+  // Learning re-checks exits every day so they follow the market; otherwise once a week.
+  if (Date.now() - (lastTune?.at ?? 0) < (engine.cfg.learn.enabled ? 1 : 7) * 86_400_000) return;
   try {
     runAutoTune();
     engine.log('Weekly settings check: comparing your exits with other setups on the last 7 days…', 'system');
@@ -1640,6 +1752,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       scout: lastScout,
       scanner: scannerView(),
       tune: lastTune,
+      learning: learningView(),
       netstatus: lastStatus,
       strategies: STRATEGIES,
       health: lastHealth,
@@ -2161,16 +2274,42 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   if (route === 'POST /api/autotune/run') return send(res, 200, runAutoTune(true));
+  if (route === 'POST /api/learning/now') {
+    learnRound();
+    return send(res, 200, learningView());
+  }
+  if (route === 'POST /api/learning/forget') {
+    const b = await readBody(req);
+    const L = currentLearning();
+    const l = L.lessons.find((x) => x.feature === b.feature && x.bucket === b.bucket);
+    if (!l) throw new HttpError(404, 'That lesson is gone already.');
+    L.lessons = L.lessons.filter((x) => x !== l);
+    L.retired.push({ feature: l.feature, bucket: l.bucket, label: l.label, retiredAt: Date.now() });
+    journal({ at: Date.now(), kind: 'retired', text: `you asked to forget "${l.label}"; new results will decide.` });
+    saveLearning();
+    return send(res, 200, learningView());
+  }
+  if (route === 'POST /api/learning/undo') {
+    const b = await readBody(req);
+    const L = currentLearning();
+    const e = L.journal.find((x) => x.at === b.at && x.kind === 'exits' && x.undo);
+    if (!e?.undo) throw new HttpError(404, 'Nothing to undo there.');
+    const next = structuredClone(engine.cfg);
+    next.risk.stopLossPct = e.undo.stopLossPct;
+    next.risk.takeProfitPct = e.undo.takeProfitPct;
+    next.exits = e.undo.exits;
+    const clean = sanitizeConfig(next, true);
+    await applyChange(() => saveConfig(clean));
+    delete e.undo;
+    if (e.setup) L.vetoed = [...(L.vetoed ?? []).filter((v) => v.until > Date.now()), { setup: e.setup, until: Date.now() + 7 * 86_400_000 }]; // don't switch right back
+    journal({ at: Date.now(), kind: 'undo', text: 'you undid an exit change; your previous exit settings are back.' });
+    saveLearning();
+    return send(res, 200, { config: engine.cfg, learning: learningView() });
+  }
   if (route === 'POST /api/autotune/apply') {
     const best = lastTune?.best;
     if (!best || lastTune?.status !== 'better') throw new HttpError(400, 'There is no suggestion to apply.');
-    const next = structuredClone(engine.cfg);
-    next.risk.stopLossPct = best.stopLossPct;
-    next.risk.takeProfitPct = best.takeProfitPct;
-    next.exits = { lockAtPct: next.exits.lockAtPct, lockFloorPct: next.exits.lockFloorPct, ...best.exits };
-    const clean = sanitizeConfig(next, true);
-    await applyChange(() => saveConfig(clean));
-    engine.log(`Exit settings changed to "${best.name}" (weekly settings check).`, 'system');
+    await applyExits(best, 'you chose the settings check\'s suggestion');
     lastTune = { ...lastTune!, status: 'fine', message: `You switched to "${best.name}". The next check is in a week.`, dismissed: true };
     saveTune();
     return send(res, 200, { config: engine.cfg, tune: lastTune });

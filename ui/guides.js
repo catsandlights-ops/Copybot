@@ -16,6 +16,7 @@ window.GUIDES = [
 <h3>New in 0.8.4</h3>
 <ul>
 <li><b>Rule #1: a profitable trade is a good trade.</b> Once a trade has been up 20%, it is never allowed to end as a loss: if it falls back to +5%, Copybot sells and keeps the win. On for every wallet, the scanner, backtests and the autopilot. <a href="#" data-guide="exits">How exits work →</a></li>
+<li><b>Learning:</b> Copybot keeps score of the conditions each trade was bought in (coin age, liquidity, size, market mood, time of day, chain) and avoids the kinds that have been losing you money over the last 2 weeks. Lessons last a week, then get a fresh test, so it keeps up as the market changes. Exits are re-checked daily and only switched when they win on the past week <i>and</i> the last 2 days. Everything it learns and changes is on the Autopilot page, with Undo.</li>
 <li><b>Always hunting:</b> one switch on the Scanner page keeps Copybot looking for coins (every minute) and traders (spotted every 15 minutes, a full backtested search every 2 hours, on Solana and, with an Alchemy key, Base) the whole time it runs.</li>
 </ul>
 <h3>New in 0.8.3</h3>

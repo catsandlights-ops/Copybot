@@ -18,7 +18,7 @@ export function plainSkip(why: string): string {
 export function skipCategory(why: string): SkipCategory {
   if (/busy|rate|429|limit(ing|s)? exceeded|no answer|timed out|timeout|fetch failed|unavailable|couldn't (check|get)/i.test(why)) return 'busy';
   if (/honeypot|route|freeze|mint authority|token-2022|tax|round-trip|blacklist|rug|pausable|owner|holder|largest|top 10/i.test(why)) return 'safety';
-  if (/liquidity|market cap|token age|pool|chase|above their entry|below .* sol|too old|lone|only one wallet|mood/i.test(why)) return 'filters';
+  if (/learned:|liquidity|market cap|token age|pool|chase|above their entry|below .* sol|too old|lone|only one wallet|mood/i.test(why)) return 'filters';
   if (/max |budget|exposure|paper wallet|balance|paused|loss limit|losing streak|already holding|positions/i.test(why)) return 'limits';
   return 'other';
 }

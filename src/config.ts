@@ -176,6 +176,8 @@ export type Config = {
   };
   /** Weekly check of your exit settings against the last 7 days; suggests better ones. */
   tune: { weekly: boolean };
+  /** Learning: avoid the kinds of trades that have been losing you money lately, and re-tune exits daily. */
+  learn: { enabled: boolean; autoTuneExits: 'paper' | 'always' | 'off' };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
   /** New wallets start small and grow as they prove themselves; any wallet pauses after a losing streak. */
   trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number };
@@ -260,6 +262,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   execution: { priorityLevel: 'veryHigh', priorityFeeMaxLamports: 1_000_000, jitoTipLamports: 0, fastStream: true, dynamicSlippage: true, mevProtect: false, baseLive: false, baseMaxFeeEth: 0.002 },
   tune: { weekly: true },
+  learn: { enabled: true, autoTuneExits: 'paper' },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
   trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
   strategy: '',
@@ -338,12 +341,14 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'ai.scoutMaxPicks': [1, 5, 'New wallets per search'],
   'ai.dailyBudgetUsd': [0.1, 1_000, 'Daily AI budget', (v) => `$${v}`],
 };
-const BOOLEANS = ['sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'execution.baseLive', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'scanner.baseCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+const BOOLEANS = [
+  'learn.enabled','sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'execution.baseLive', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'scanner.baseCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
   'execution.priorityLevel': ['medium', 'high', 'veryHigh'],
   'scanner.rules': ['normal', 'strict', 'loose'],
+  'learn.autoTuneExits': ['paper', 'always', 'off'],
 };
 
 const get = (o: any, path: string) => path.split('.').reduce((a, k) => a?.[k], o);
