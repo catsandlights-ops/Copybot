@@ -2208,7 +2208,16 @@ function renderScanner(el) {
     <td class="r num pos">${pct(s.change1hPct)}</td><td class="r num">${s.buySellRatio.toFixed(1)}×</td><td class="r num">${s.volumeSurge.toFixed(1)}×</td>
     <td class="r num">$${Math.round(s.liquidityUsd).toLocaleString()}</td><td class="r muted">${s.ageHours < 48 ? `${s.ageHours} h` : `${Math.round(s.ageHours / 24)} d`}</td><td>${spark(x.sparks?.[s.mint], null, 'Price over the last 6 hours')}</td></tr>`;
   const scoutJ = scoutJob();
+  const hunting = sc.findTraders && sc.tradeCoins;
+  const sp = x.spotter || { solana: 0, base: 0, lastAt: null, nextAt: null, alternatesBase: false };
+  const when = (t) => (!t ? '' : t <= Date.now() ? 'any moment now' : `in ${ago(Date.now() - (t - Date.now()))}`);
+  const huntLine = !hunting ? 'Off. Turn it on to have Copybot keep looking for coins and traders the whole time it runs.'
+    : !running ? 'On. Starts when the bot starts.'
+    : `Coins checked ${x.at ? `${ago(x.at)} ago` : 'every minute'} · <b>${sp.solana + sp.base}</b> trader${sp.solana + sp.base === 1 ? '' : 's'} spotted catching moves${sp.base ? ` (${sp.base} on Base)` : ''}${sp.nextAt ? `, next look ${when(sp.nextAt)}` : ''} · next full wallet search ${when(x.nextTraderSearch) || 'soon'}${sp.alternatesBase ? ', alternating Solana and Base' : ''}.`;
   el.innerHTML = `
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Always hunting</h2><div class="muted" style="font-size:12.5px">While the bot runs: checks coins every minute and buys strong ones, spots traders who just caught a move every 15 minutes, and runs a full wallet search every ${sc.traderEveryHours} h that backtests those traders before copying any.</div></div><span class="spacer"></span>
+      <label class="switch" title="Find traders + Trade coins"><input type="checkbox" id="sc-hunt" ${hunting ? 'checked' : ''}><i></i></label></div>
+      <div class="card-b muted" style="font-size:13px">${huntLine}</div></div>
     <div class="grid two" style="margin-bottom:16px">
       <div class="card"><div class="card-h"><div><h2>Find traders</h2><div class="muted" style="font-size:12.5px">Looks at new <i>and</i> older coins that are moving, finds traders who caught the move, backtests them with your settings, and adds the best on a trial (¼ size first).</div></div><span class="spacer"></span><label class="switch" title="Find traders on/off"><input type="checkbox" id="sc-traders" ${sc.findTraders ? 'checked' : ''}><i></i></label></div>
         <div class="card-b stack muted" style="font-size:13px">
@@ -2244,6 +2253,15 @@ function renderScanner(el) {
     if (v && key === 'tradeCoins' && !(await confirmModal({ title: 'Let the scanner trade coins?', confirm: 'Turn on',
       body: `<p>Copybot will buy coins that are rising on strong buying, on its own: <b>${sol(sc.buySol, 3)} SOL</b> each, up to <b>${sc.maxPositions}</b> at once and <b>${sol(sc.budgetSol, 2)} SOL</b> in total. Each coin has its own stop-loss (−${sc.stopLossPct}%) and goes through every safety check.</p><p>Momentum trading is risky: many coins that are rising fall back. It stops by itself after ${cfg.trial.pauseAfterLosses || 'several'} losing trades in a row.${cfg.mode === 'live' ? ' <b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : ' You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
     const res = await act(() => api('PUT', '/api/config', { ...cfg, scanner: { ...cfg.scanner, [key]: v } }), v ? on : off);
+    if (res) { S.config = res.config; renderChrome(); renderScanner(el); } else e.target.checked = !v;
+  };
+  $('#sc-hunt').onchange = async (e) => {
+    if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
+    const v = e.target.checked;
+    if (v && !(await confirmModal({ title: 'Always hunt for opportunities?', confirm: 'Start hunting',
+      body: `<p>While the bot runs, Copybot will:</p><ul><li>check coins every minute and <b>buy strong ones on its own</b>: ${sol(sc.buySol, 3)} SOL each, up to ${sc.maxPositions} at once and ${sol(sc.budgetSol, 2)} SOL in total, with a −${sc.stopLossPct}% stop-loss;</li><li>spot traders who just caught a move every 15 minutes;</li><li>search for wallets to copy every ${Math.min(sc.traderEveryHours, 2)} h, backtest them with your settings, and add the best on a trial (¼ size first), up to ${sc.maxWallets} wallets. Losing ones are paused automatically.</li></ul><p>${cfg.mode === 'live' ? '<b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : 'You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
+    const scanner = { ...cfg.scanner, findTraders: v, tradeCoins: v, ...(v ? { trackSignals: true, traderEveryHours: Math.min(cfg.scanner.traderEveryHours, 2) } : {}) };
+    const res = await act(() => api('PUT', '/api/config', { ...cfg, scanner }), v ? 'Hunting for opportunities' : 'Stopped hunting');
     if (res) { S.config = res.config; renderChrome(); renderScanner(el); } else e.target.checked = !v;
   };
   const tb = $('#sc-test'); if (tb) tb.onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scannertest', { days: Number($('#sc-days').value) })); if (j) { upsertJob(j); renderScanner(el); } };
@@ -2386,7 +2404,7 @@ const FIELDS = [
     { k: 'scanner.trackSignals', label: 'Track every signal', type: 'toggle', help: 'While the bot runs, note every coin the scanner would flag (even with Trade coins off) and check later how it did. This builds the track record on the Scanner page.' },
     { k: 'scanner.rules', label: 'Buying rules', type: 'select', options: [['normal', 'Normal'], ['strict', 'Pickier (bigger move, more volume)'], ['loose', 'Looser (smaller moves)']], help: 'Use "Test on the past" on the Scanner page to see which works best right now.' },
     { k: 'scanner.newCoins', label: 'New coins', type: 'toggle', help: '1 hour to 7 days old. Bigger moves, more risk.' },
-    { k: 'scanner.baseCoins', label: 'Base coins too', type: 'toggle', help: 'Also scan trending coins on Base (paper mode only for now). Same rules and safety checks, plus GoPlus honeypot and tax checks.' },
+    { k: 'scanner.baseCoins', label: 'Base coins too', type: 'toggle', help: 'Also scan trending coins on Base (in live mode, only bought when Live trading on Base is on). Same rules and safety checks, plus GoPlus honeypot and tax checks.' },
     { k: 'scanner.oldCoins', label: 'Older coins', type: 'toggle', help: 'Over 7 days old, with deep liquidity. Smaller moves, steadier.' },
     { k: 'scanner.buySol', label: 'Amount per coin', unit: 'SOL' },
     { k: 'scanner.budgetSol', label: 'Scanner budget', unit: 'SOL', help: 'Most SOL in scanner coins at once. Also counts toward "Max SOL in open positions".' },
@@ -2502,7 +2520,7 @@ function renderSettings(el) {
             <div class="row"><input class="input mono" id="k-input" type="password" placeholder="Private key (base58)" autocomplete="off" style="flex:1;min-width:220px"><button class="btn primary" id="k-save">Save key</button></div>`}
           <div style="border-top:1px solid var(--border);padding-top:12px"><div style="font-weight:600">Base trading wallet <span class="muted" style="font-weight:400;font-size:12.5px">(optional, for live trading on Base)</span></div>
             ${c.hasBaseKey ? `<dl class="kv" style="margin-top:6px"><dt>Address</dt><dd>${c.baseAddress ? walletLink(c.baseAddress) : '<span class="neg">key saved but unreadable</span>'}</dd><dt>Key storage</dt><dd>${c.baseKeyEncrypted ? '<span class="pos">Encrypted</span>' : '<span class="muted">Plain text in the .env file</span>'}</dd></dl>
-              <div class="row"><label class="row" style="gap:8px"><label class="switch"><input type="checkbox" id="bl-on" ${S.config.execution.baseLive ? 'checked' : ''}><i></i></label><span><b>Live trading on Base</b> <span class="muted" style="font-size:12.5px">off = Base wallets stay in paper mode even in live mode</span></span></label><span class="spacer"></span><button class="btn danger sm" id="bk-remove">Remove Base key</button></div>`
+              <div class="row"><label class="row" style="gap:8px"><label class="switch"><input type="checkbox" id="bl-on" ${S.config.execution.baseLive ? 'checked' : ''}><i></i></label><span><b>Live trading on Base</b> <span class="muted" style="font-size:12.5px">off = in live mode, Base wallets are skipped (paper mode copies them as usual)</span></span></label><span class="spacer"></span><button class="btn danger sm" id="bk-remove">Remove Base key</button></div>`
             : `<div class="muted" style="font-size:12.5px;margin:4px 0 8px">Base uses its own wallet (an Ethereum-style key). Use a <b>new</b> wallet with only the ETH on Base you can afford to lose. Every Base trade is checked before signing: it can only go to KyberSwap's router with exactly the intended amount, approvals are for the exact amount sold, and it's rehearsed on the network first.</div>
               <div class="row"><input class="input mono" id="bk-input" type="password" placeholder="Base private key (0x… 64 hex characters)" autocomplete="off" style="flex:1;min-width:220px"><button class="btn" id="bk-keysave">Save Base key</button></div>`}
           </div>

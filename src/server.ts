@@ -48,6 +48,7 @@ import { applyStrategy, compareStrategies, STRATEGIES, strategyById } from './st
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
+import { addSpotted, forgetSpotted, mergeCaught, spottedFor, type Spotted } from './spotter';
 import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
 
 const PORT = Number(process.env.PORT || 4777);
@@ -393,6 +394,42 @@ async function quickBacktest(wallet: string, swaps: import('./decode').Swap[], d
 
 // Tokens scanned by recent searches go to the back of the line next time, so searches vary.
 const SCOUT_HISTORY = 'data/scout-history.json';
+
+// ---------- the spotter: traders who just caught a move, noted between full wallet searches ----------
+const SPOT_FILE = 'data/spotted.json';
+let spotPool: Spotted[] = (() => {
+  try {
+    const j = JSON.parse(fs.readFileSync(SPOT_FILE, 'utf8'));
+    return Array.isArray(j) ? j : [];
+  } catch {
+    return [];
+  }
+})();
+const saveSpot = () => {
+  fs.mkdirSync('data', { recursive: true });
+  fs.writeFileSync(SPOT_FILE + '.tmp', JSON.stringify(spotPool));
+  fs.renameSync(SPOT_FILE + '.tmp', SPOT_FILE);
+};
+let lastSpotAt = 0;
+let spotBusy = false;
+const spotRecent = new Map<string, number>(); // pool -> when last spotted (rotate through coins)
+/** One spotting round on a chain: what's moving now, and who bought it well (market data only, a few requests). */
+async function spotOnce(chain: import('./chains').ChainId): Promise<number> {
+  const now = Date.now();
+  const rows = await markets.scoutPools(chain);
+  const recent = new Set([...spotRecent].filter(([, t]) => now - t < 2 * 3_600_000).map(([m]) => m));
+  const tokens = pickTokens(rows, now, 4, recent, 1);
+  const found = new Map<string, string[]>();
+  for (const t of tokens) {
+    spotRecent.set(t.mint, now);
+    const trades = await markets.poolTrades(t.pool, 300, chain).catch(() => []);
+    for (const w of pumpBuyers(trades, t.priceUsd, 25).keys()) found.set(w, [...(found.get(w) ?? []), t.symbol]);
+  }
+  spotPool = addSpotted(spotPool, chain, found, now);
+  saveSpot();
+  return found.size;
+}
+const spottedCount = (chain?: import('./chains').ChainId) => spotPool.filter((s) => !chain || s.chain === chain).length;
 function recentScoutMints(): Set<string> {
   try {
     const l = JSON.parse(fs.readFileSync(SCOUT_HISTORY, 'utf8'));
@@ -426,7 +463,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   const onBase = chain === 'base';
   progress(`Looking for coins that are moving${onBase ? ' on Base' : ''}: trending, new launches, top volume and older coins…`);
   const rows = await markets.scoutPools(chain);
-  if (onBase) notes.push('Base search: traders who caught recent moves (early-buyer and DexCheck searches are Solana-only). Base wallets are copied in paper mode for now.');
+  if (onBase) notes.push(`Base search: traders who caught recent moves (early-buyer and DexCheck searches are Solana-only).${engine.cfg.mode === 'live' && !engine.cfg.execution.baseLive ? ' In live mode, Base wallets are only copied once Live trading on Base is on (Settings → Trading wallet).' : ''}`);
   const tokens = pickTokens(rows, at, 7, recentScoutMints(), 2);
   if (!tokens.length) throw new Error('No suitable coins right now (none up 30%+ in 6 or 24 hours with real liquidity, or older coins up 15%+). Try again later.');
   const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
@@ -458,7 +495,12 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
     }
   }
   const mine = new Set(engine.cfg.wallets.map((w) => w.address));
-  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 15, pump);
+  // Traders the spotter noted since the last search join in (those seen on several coins rank higher).
+  const spotted = spottedFor(spotPool, chain, mine);
+  if (spotted.size) notes.push(`${spotted.size} trader${spotted.size > 1 ? 's' : ''} spotted catching moves since the last search ${spotted.size > 1 ? 'were' : 'was'} considered too.`);
+  const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 15, mergeCaught(pump, spotted));
+  spotPool = forgetSpotted(spotPool, chain, cands.map((c) => c.wallet));
+  saveSpot();
   if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
 
   const reports: ScoutReport[] = [];
@@ -549,6 +591,30 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
 
 // Automatic scouting while the bot is running: by the autopilot, or the scanner's trader finder.
 let lastAutoScoutTry = 0;
+let lastAutoChain: import('./chains').ChainId = 'base'; // so the first search is on Solana
+
+// The spotter runs every 15 minutes while the bot runs and traders are being looked for.
+const SPOT_EVERY_MS = 15 * 60_000;
+const nextWalletSearchAt = () => {
+  const sc = engine.cfg.scanner;
+  return sc.findTraders ? Math.max((lastScout?.at ?? 0) + sc.traderEveryHours * 3_600_000, lastAutoScoutTry + 30 * 60_000) : null;
+};
+setInterval(() => {
+  const sc = engine.cfg.scanner;
+  if (!engine.running || !sc.findTraders || spotBusy || scoutRunning || Date.now() - lastSpotAt < SPOT_EVERY_MS) return;
+  spotBusy = true;
+  lastSpotAt = Date.now();
+  const chains: import('./chains').ChainId[] = ['solana', ...(sc.baseCoins || engine.cfg.wallets.some((w) => chainOf(w) === 'base') ? (['base'] as const) : [])];
+  (async () => {
+    for (const c of chains) {
+      const n = await spotOnce(c).catch(() => 0);
+      if (n) engine.log(`Spotter: ${n} trader${n > 1 ? 's' : ''} just caught a move${c === 'base' ? ' on Base' : ''}; the next wallet search checks them (${spottedCount()} noted).`, 'system');
+    }
+  })().finally(() => {
+    spotBusy = false;
+    broadcast('scanner', scannerView());
+  });
+}, 60_000).unref();
 setInterval(() => {
   const a = engine.cfg.ai;
   const sc = engine.cfg.scanner;
@@ -558,9 +624,12 @@ setInterval(() => {
   if (!aiDue && !scanDue) return;
   if (Date.now() - lastAutoScoutTry < 30 * 60_000) return; // a failed search waits half an hour
   lastAutoScoutTry = Date.now();
+  // Alternate Solana and Base when Base history can be read (a free Alchemy key).
+  const chain: import('./chains').ChainId = alchemyUrl() && lastAutoChain === 'solana' ? 'base' : 'solana';
   try {
-    startScout(true);
-    engine.log(aiDue ? 'Wallet scout: searching for new wallets to copy…' : 'Market scanner: looking at new and older coins for traders worth copying…', aiDue ? 'ai' : 'system');
+    startScout(true, chain);
+    lastAutoChain = chain;
+    engine.log(aiDue ? `Wallet scout: searching for new wallets to copy${chain === 'base' ? ' on Base' : ''}…` : `Market scanner: looking for traders worth copying${chain === 'base' ? ' on Base' : ''} (${spottedCount(chain)} spotted since the last search)…`, aiDue ? 'ai' : 'system');
   } catch {
     /* already running */
   }
@@ -667,7 +736,7 @@ async function scanCoins() {
     const skip = new Set([...Object.keys(engine.state.positions), ...scanTried.keys(), ...engine.cfg.safety.blacklist]);
     const opts = { rules: sc.rules, newCoins: sc.newCoins, oldCoins: sc.oldCoins, minLiquidityUsd: engine.cfg.filters.minLiquidityUsd, skip };
     const signals: (CoinSignal & { chain: 'solana' | 'base' })[] = coinSignals(rows, now, opts).map((x) => ({ ...x, chain: 'solana' as const }));
-    // Base coins too, when turned on (paper mode only for now).
+    // Base coins too, when turned on.
     if (sc.baseCoins && (engine.cfg.mode === 'paper' || getChainAdapter('base').liveTrading)) {
       const baseRows = await markets.scoutPools('base').catch(() => []);
       signals.push(...coinSignals(baseRows, now, opts).map((x) => ({ ...x, chain: 'base' as const })));
@@ -791,7 +860,7 @@ async function runScannerTest(days: number, progress: (p: string) => void): Prom
 
 function scannerView() {
   const rec = walletRecords(engine.readTrades(), engine.cfg.mode)[SCANNER_SOURCE] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 };
-  return { ...lastScan, sparks: Object.fromEntries(lastScan.signals.map((s) => [s.mint, downsample(sparkCache.get(s.mint)?.pts ?? [], 48)])), record: rec, proof: signalProof(), test: lastScannerTest ? scannerTestSummary(lastScannerTest) : null, nextTraderSearch: engine.cfg.scanner.findTraders ? (lastScout?.at ?? 0) + engine.cfg.scanner.traderEveryHours * 3_600_000 : null };
+  return { ...lastScan, sparks: Object.fromEntries(lastScan.signals.map((s) => [s.mint, downsample(sparkCache.get(s.mint)?.pts ?? [], 48)])), record: rec, proof: signalProof(), test: lastScannerTest ? scannerTestSummary(lastScannerTest) : null, nextTraderSearch: nextWalletSearchAt(), spotter: { solana: spottedCount('solana'), base: spottedCount('base'), lastAt: lastSpotAt || null, nextAt: engine.cfg.scanner.findTraders ? Math.max(lastSpotAt + SPOT_EVERY_MS, Date.now()) : null, alternatesBase: !!alchemyUrl() } };
 }
 
 setInterval(() => scanCoins().catch((e) => engine.log(`Market scanner: ${(e as Error).message}`, 'warn')), 60_000).unref();

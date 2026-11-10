@@ -180,7 +180,7 @@ export class BotEngine extends EventEmitter {
     for (const [id, ws] of byChain) {
       const c = getChain(id as ChainId);
       if (this.cfg.mode === 'live' && !c.liveTrading) {
-        this.log(`${ws.length} ${c.meta.name} wallet(s) not watched: ${c.meta.name} runs in paper mode only for now.`, 'warn');
+        this.log(`${ws.length} ${c.meta.name} wallet(s) not watched: live trading on ${c.meta.name} is off (Settings → Trading wallet), so they are skipped in live mode.`, 'warn');
         continue;
       }
       if (!c.watch) continue;
@@ -710,7 +710,7 @@ export class BotEngine extends EventEmitter {
     const now = Date.now();
     const b = cfg.buy;
     const chain = getChain(s);
-    if (cfg.mode === 'live' && !chain.liveTrading) return skip(`${chain.meta.name} runs in paper mode only for now`);
+    if (cfg.mode === 'live' && !chain.liveTrading) return skip(`live trading on ${chain.meta.name} is off (Settings → Trading wallet)`);
     // Remember every buy we see (even ones we skip), to spot several wallets agreeing.
     this.recentBuys = [...this.recentBuys.filter((x) => now - x.t < 4 * 3_600_000), { mint: s.mint, wallet: s.wallet, t: now }].slice(-500);
     const agree = consensusWallets(this.recentBuys, s.mint, now, b.consensusWindowMin);
@@ -849,7 +849,7 @@ export class BotEngine extends EventEmitter {
     const chain = getChain(sig.chain ?? 'solana');
     if (!this.running || !sc.tradeCoins) return 'the scanner is off';
     this.log(`Market scanner: ${sig.symbol || short(sig.mint)}${chain.meta.id === 'solana' ? '' : ` (${chain.meta.name})`} is ${sig.why}`, 'signal');
-    if (this.cfg.mode === 'live' && !chain.liveTrading) return `${chain.meta.name} runs in paper mode only for now`;
+    if (this.cfg.mode === 'live' && !chain.liveTrading) return `live trading on ${chain.meta.name} is off (Settings → Trading wallet)`;
     if (this.state.positions[sig.mint]) return 'already holding';
     if (this.cfg.risk.moodFilter && this.mood.level === 'bad') return `market mood is bad (${this.mood.why})`;
     const positions = Object.values(this.state.positions);
