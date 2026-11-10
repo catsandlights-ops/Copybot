@@ -52,7 +52,8 @@ export function searchSummary(checked: number, added: number, unreadable: number
   for (const r of reasons) counts.set(r, (counts.get(r) ?? 0) + 1);
   const parts = [`${added} added`, ...[...counts].sort((a, b) => b[1] - a[1]).map(([r, n]) => `${n} ${r}`)];
   if (unreadable) parts.push(`${unreadable} couldn't be read (the network was busy; they're tried again next time)`);
-  return `checked ${checked + unreadable} wallet${checked + unreadable === 1 ? '' : 's'}: ${parts.join(', ')}`;
+  if (!checked) parts.shift(); // nothing could be judged, so "0 added" says nothing
+  return `looked at ${checked + unreadable} wallet${checked + unreadable === 1 ? '' : 's'}: ${parts.join(', ')}`;
 }
 export type ScoutPick = { address: string; sizeMultiplier: number; budgetSol: number; reason: string; strategy?: string; strategyWhy?: string };
 export type ScoutResult = {

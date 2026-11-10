@@ -131,5 +131,6 @@ test('wallet search: never judges a half-read history, and explains every reject
   assert.equal(rejectReason({ ...base, medianHoldMin: 1 }), 'sells within 2 minutes');
   assert.equal(rejectReason({ ...base, roiPct: -5 }), 'losing money');
   assert.equal(rejectReason({ ...base, bt: { closed: 12, totalSol: -0.4 } }), 'copying them would have lost money');
-  assert.equal(searchSummary(5, 1, 2, ['too few finished trades', 'losing money', 'too few finished trades', 'a bot']), "checked 7 wallets: 1 added, 2 too few finished trades, 1 losing money, 1 a bot, 2 couldn't be read (the network was busy; they're tried again next time)");
+  assert.equal(searchSummary(5, 1, 2, ['too few finished trades', 'losing money', 'too few finished trades', 'a bot']), "looked at 7 wallets: 1 added, 2 too few finished trades, 1 losing money, 1 a bot, 2 couldn't be read (the network was busy; they're tried again next time)");
+  assert.equal(searchSummary(0, 0, 2, []), "looked at 2 wallets: 2 couldn't be read (the network was busy; they're tried again next time)");
 });

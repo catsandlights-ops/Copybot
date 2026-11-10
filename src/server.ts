@@ -512,7 +512,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   const deadline = at + 40 * 60_000;
   for (const [i, c] of cands.entries()) {
     if (Date.now() > deadline && i > 0) {
-      notes.push(`Checked ${i} of ${cands.length} wallets in 40 minutes (the network was slow), so the rest wait for the next search. A private RPC such as Helius makes searches much faster.`);
+      notes.push(`Stopped after 40 minutes (the network was slow); the other ${cands.length - i} wallet${cands.length - i === 1 ? '' : 's'} wait for the next search. A private RPC such as Helius makes searches much faster.`);
       break;
     }
     const stats = { read: 0, failed: 0 };
