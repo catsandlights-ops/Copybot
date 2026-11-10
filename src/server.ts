@@ -502,13 +502,17 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   const spotted = spottedFor(spotPool, chain, mine);
   if (spotted.size) notes.push(`${spotted.size} trader${spotted.size > 1 ? 's' : ''} spotted catching moves since the last search ${spotted.size > 1 ? 'were' : 'was'} considered too.`);
   const cands = pickCandidates(rankCandidates(perMint), top, symbols, mine, 15, mergeCaught(pump, spotted));
-  spotPool = forgetSpotted(spotPool, chain, cands.map((c) => c.wallet));
-  saveSpot();
   if (!cands.length) throw new Error('Found no wallets worth analyzing this time. Try again later.');
 
   const reports: ScoutReport[] = [];
   const history = new Map<string, import('./decode').Swap[]>();
+  // A busy node can make this crawl: after 40 minutes, decide with the wallets checked so far.
+  const deadline = at + 40 * 60_000;
   for (const [i, c] of cands.entries()) {
+    if (Date.now() > deadline && reports.length) {
+      notes.push(`Checked ${i} of ${cands.length} wallets in 40 minutes (the network was slow), so the rest wait for the next search. A private RPC such as Helius makes searches much faster.`);
+      break;
+    }
     const swaps = await fetchSwaps(conn, c.wallet, 500, (n, t) => {
       if (n % 25 === 0 || n === t) progress(`Checking wallet ${i + 1}/${cands.length}: transaction ${n} of ${t}`);
     }).catch(() => null);
@@ -517,6 +521,9 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
       reports.push({ ...score(c.wallet, swaps), earlyOn: c.earlyOn, topTraderOn: c.topTraderOn, pumpOn: c.pumpOn });
     }
   }
+  // Spotted traders that were checked are done; ones not reached stay for the next search.
+  spotPool = forgetSpotted(spotPool, chain, reports.map((r) => r.wallet));
+  saveSpot();
   // Backtest the promising ones with the user's own settings and copy delay: a wallet that made
   // money for itself can still lose money for someone copying it a few seconds later.
   const delayPct = measuredCopyGap() ?? 5;
@@ -604,7 +611,8 @@ const nextWalletSearchAt = () => {
 };
 setInterval(() => {
   const sc = engine.cfg.scanner;
-  if (!engine.running || !sc.findTraders || spotBusy || scoutRunning || Date.now() - lastSpotAt < SPOT_EVERY_MS) return;
+  // Market data only, so it keeps going even while a slow wallet search runs.
+  if (!engine.running || !sc.findTraders || spotBusy || Date.now() - lastSpotAt < SPOT_EVERY_MS) return;
   spotBusy = true;
   lastSpotAt = Date.now();
   const chains: import('./chains').ChainId[] = ['solana', ...(sc.baseCoins || engine.cfg.wallets.some((w) => chainOf(w) === 'base') ? (['base'] as const) : [])];
