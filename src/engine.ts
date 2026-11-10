@@ -662,6 +662,9 @@ export class BotEngine extends EventEmitter {
       .catch(() => this.log(`Rug memory: won't buy ${short(mint)} again (${why}).`, 'system'));
   }
 
+  /** Copied sells too small to follow on their own, added up per coin until they're worth a trade. */
+  private smallSells = new Map<string, number>();
+
   // ---------- learning ----------
   /** What recent results taught (set by the server's learning rounds). */
   lessons: Lesson[] = [];
@@ -1013,8 +1016,15 @@ export class BotEngine extends EventEmitter {
     if (!this.cfg.sell.copySells) return;
     const p = this.state.positions[s.mint];
     if (!p || !p.sources.includes(s.wallet)) return;
-    const fraction = s.tokenPost === 0n || s.tokenPre === 0n ? 1 : Number(s.tokenAmount) / Number(s.tokenPre);
-    await this.trader.sell(s.mint, fraction, `copied ${this.labels.get(s.wallet)} selling ${(fraction * 100).toFixed(0)}%`, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
+    const theirs = s.tokenPost === 0n || s.tokenPre === 0n ? 1 : Number(s.tokenAmount) / Number(s.tokenPre);
+    // Tiny sells add up: follow them once together they reach 2% (no dust trades worth nothing).
+    const fraction = 1 - (1 - (this.smallSells.get(s.mint) ?? 0)) * (1 - theirs);
+    if (fraction < 0.02) {
+      this.smallSells.set(s.mint, fraction);
+      return;
+    }
+    this.smallSells.delete(s.mint);
+    await this.trader.sell(s.mint, fraction, `copied ${this.labels.get(s.wallet)} selling ${fraction < 0.995 && fraction * 100 < 1.5 ? (fraction * 100).toFixed(1) : (fraction * 100).toFixed(0)}%`, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
   }
 
   private async pollLoop(wallet: string, gen: number) {
