@@ -218,6 +218,8 @@ export class BotEngine extends EventEmitter {
         if (!(await this.watchSolana(w.address, gen))) void this.retryWatch(w.address, gen);
       }
     })();
+    this.pollSlow = 1;
+    this.pollerLoop(gen);
     this.exitLoop(gen);
     this.orderLoop(gen);
     this.moodLoop(gen);
@@ -248,7 +250,7 @@ export class BotEngine extends EventEmitter {
           if (!l.err && gen === this.gen) this.onSignature(l.signature, address).catch((e) => this.logError(e));
         }, 'confirmed'),
       );
-      this.pollLoop(address, gen);
+      this.polled.add(address);
       this.log(`Watching ${this.labels.get(address) ?? short(address)}`, 'system');
       return true;
     } catch (e) {
@@ -280,6 +282,7 @@ export class BotEngine extends EventEmitter {
     for (const w of this.watchers) w.stop();
     this.watchers = [];
     this.saveSigStats();
+    this.polled.clear();
     for (const id of this.subs) await this.conn.removeOnLogsListener(id).catch(() => {});
     this.subs = [];
     this.log('Bot stopped', 'system');
@@ -1139,16 +1142,51 @@ export class BotEngine extends EventEmitter {
     await this.trader.sell(s.mint, fraction, `copied ${this.labels.get(s.wallet)} selling ${fraction < 0.995 && fraction * 100 < 1.5 ? (fraction * 100).toFixed(1) : (fraction * 100).toFixed(0)}%`, s.quote === 'SOL' ? { theirSol: s.quoteAmount, theirRaw: s.tokenAmount, at: s.blockTime } : undefined);
   }
 
-  private async pollLoop(wallet: string, gen: number) {
-    const pk = new PublicKey(wallet);
+  /**
+   * Backup check for new trades (in case the live feed drops one): ONE poller taking turns across
+   * the wallets, instead of one loop each. It slows down when the node says it's busy and speeds
+   * up again as it recovers, and checks lightly while the fast Helius stream is connected.
+   */
+  private polled = new Set<string>();
+  pollSlow = 1; // 1 = normal pace; up to 8× slower while the node is refusing requests
+  private pollOkStreak = 0;
+  private pollWarnedAt = 0;
+  /** Seconds between two checks of the same wallet right now. */
+  pollEverySec(): number {
+    const n = Math.max(1, this.polled.size);
+    const base = this.stream?.status === 'connected' ? Math.max(this.cfg.monitor.pollIntervalSec, 20) : this.cfg.monitor.pollIntervalSec;
+    // Never more than 2 checks a second on a private node, or one every 1.5 s on the free public one.
+    const minGapSec = rpcUrl().includes('api.mainnet-beta.solana.com') ? 1.5 : 0.5;
+    return Math.max(base, n * minGapSec) * this.pollSlow;
+  }
+  private async pollerLoop(gen: number) {
+    let turn = 0;
     while (gen === this.gen) {
-      try {
-        const sigs = await withRetry(() => this.conn.getSignaturesForAddress(pk, { limit: 15 }), 3);
-        for (const s of sigs.reverse()) if (!s.err && gen === this.gen) this.onSignature(s.signature, wallet).catch((e) => this.logError(e));
-      } catch {
-        /* rate limited; try again next round */
+      const wallets = [...this.polled];
+      if (!wallets.length) {
+        await sleep(1000);
+        continue;
       }
-      await sleep(this.cfg.monitor.pollIntervalSec * 1000);
+      const wallet = wallets[turn++ % wallets.length];
+      try {
+        const sigs = await this.conn.getSignaturesForAddress(new PublicKey(wallet), { limit: 15 });
+        for (const x of sigs.reverse()) if (!x.err && gen === this.gen) this.onSignature(x.signature, wallet).catch((e) => this.logError(e));
+        // Recover quickly once the node answers again: twice as fast after every 3 good answers.
+        if (++this.pollOkStreak >= 3 && this.pollSlow > 1) {
+          this.pollSlow = Math.max(1, this.pollSlow / 2);
+          this.pollOkStreak = 0;
+        }
+      } catch (e) {
+        this.pollOkStreak = 0;
+        if (/429|Too Many|rate/i.test((e as Error).message)) {
+          this.pollSlow = Math.min(8, this.pollSlow * 2);
+          if (Date.now() - this.pollWarnedAt > 10 * 60_000) {
+            this.pollWarnedAt = Date.now();
+            this.log(`The Solana node is busy, so the backup check slows down for a while (each wallet every ${Math.round(this.pollEverySec())} s). The live feed still reports trades as they happen.`, 'warn');
+          }
+        }
+      }
+      await sleep((this.pollEverySec() * 1000) / wallets.length);
     }
   }
 
