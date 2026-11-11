@@ -1,6 +1,6 @@
-// Stress test: the real app (dist/server.mjs) against a made-up market, with chaos, killed and
+// Stress test: the real app, on Solana and Base, (dist/server.mjs) against a made-up market, with chaos, killed and
 // restarted at random, its books checked every 30 s. Not part of the app.
-//   node scripts/stress/run.mjs [minutes=20] [--kill-every=6] [--chaos=0.05] [--wallets=8]
+//   node scripts/stress/run.mjs [minutes=20] [--kill-every=6] [--chaos=0.05] [--wallets=8] [--base-wallets=4]
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -16,12 +16,15 @@ const killEveryMin = Number(args['kill-every'] ?? 6);
 const dir = args.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'copybot-stress-'));
 const port = 4900 + Math.floor(Math.random() * 90);
 
-const world = createWorld({ chaos: Number(args.chaos ?? 0.05), wallets: Number(args.wallets ?? 8), coins: Number(args.coins ?? 40) });
+const world = createWorld({ chaos: Number(args.chaos ?? 0.05), wallets: Number(args.wallets ?? 8), coins: Number(args.coins ?? 40), baseWallets: Number(args['base-wallets'] ?? 4) });
 const worldPort = await world.listen();
 fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
 const cfg = {
   mode: 'paper',
-  wallets: world.wallets.map((w, i) => ({ address: w.address, label: `fake-${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })),
+  wallets: [
+    ...world.wallets.map((w, i) => ({ address: w.address, label: `fake-${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })),
+    ...world.baseWallets.map((w, i) => ({ chain: 'base', address: w.address, label: `base-${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })),
+  ],
   scanner: { findTraders: false, tradeCoins: false, trackSignals: false },
   execution: { fastStream: false },
   // The fake traders are random, so the money-safety pauses would soon (correctly) stop buying for
@@ -47,7 +50,7 @@ function startApp() {
     token = null;
     const child = spawn(process.execPath, [path.join(root, 'dist/server.mjs')], {
       cwd: dir,
-      env: { ...process.env, NO_OPEN: '1', PORT: String(port), RPC_URL: `http://127.0.0.1:${worldPort}/rpc`, STRESS_WORLD_PORT: String(worldPort), NODE_OPTIONS: `--import ${path.join(here, 'intercept.mjs')}` },
+      env: { ...process.env, NO_OPEN: '1', PORT: String(port), RPC_URL: `http://127.0.0.1:${worldPort}/rpc`, BASE_RPC_URL: `http://127.0.0.1:${worldPort}/evm`, STRESS_WORLD_PORT: String(worldPort), NODE_OPTIONS: `--import ${path.join(here, 'intercept.mjs')}` },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const out = fs.createWriteStream(logFile, { flags: 'a' });
@@ -125,7 +128,7 @@ async function check(label) {
   if (mem > 700) problem(`memory use is ${mem.toFixed(0)} MB`);
   const log = read('app.log') ?? '';
   const errs = log.split('\n').filter((l) => /\bError\b|TypeError|ReferenceError|Unhandled|uncaught/i.test(l) && !/ws error|DeprecationWarning/.test(l));
-  console.log(`${label}: ${trades.filter((t) => t.side === 'buy').length} buys, ${sells.length} sells, ${Object.keys(state.positions).length} open, profit ${state.realizedPnlSol.toFixed(4)} SOL, free ${Number(free).toFixed(3)} SOL, ${mem.toFixed(0)} MB, ${errs.length} error lines | market: ${world.stats.txs} trades, ${world.stats.rugs} rugs, ${world.stats.chaos429} 429s`);
+  console.log(`${label}: ${trades.filter((t) => t.side === 'buy').length} buys, ${sells.length} sells, ${Object.keys(state.positions).length} open (${Object.values(state.positions).filter((p) => p.chain === 'base').length} Base), profit ${state.realizedPnlSol.toFixed(4)} SOL, free ${Number(free).toFixed(3)} SOL, ${mem.toFixed(0)} MB, ${errs.length} error lines | market: ${world.stats.txs} trades (${world.stats.baseTxs} Base), ${world.stats.rugs} rugs, ${world.stats.chaos429} 429s`);
   return errs;
 }
 

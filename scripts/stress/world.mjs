@@ -1,4 +1,4 @@
-// A made-up Solana market for stress-testing Copybot offline: coins with moving prices (pumps,
+// A made-up Solana (and Base) market for stress-testing Copybot offline: coins with moving prices (pumps,
 // dumps, rugs, coins nobody will buy), traders buying and selling every few seconds, and answers
 // in the exact formats of a Solana node, Jupiter and Dexscreener. Optional chaos: "429 Too Many
 // Requests", slow answers and broken replies. Not part of the app.
@@ -11,17 +11,25 @@ const WSOL = 'So11111111111111111111111111111111111111112';
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const TOKENKEG = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const SOL_USD = 150;
+const ETH_USD = 3000;
+const SOL_PER_ETH = ETH_USD / SOL_USD;
+const WETH = '0x4200000000000000000000000000000000000006';
+const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const hex = (n) => '0x' + BigInt(n).toString(16);
+const word = (n) => '0x' + BigInt(n).toString(16).padStart(64, '0');
+const topicOf = (a) => '0x' + a.slice(2).toLowerCase().padStart(64, '0');
 const RENT = 2_039_280;
 
 export function createWorld(o = {}) {
-  const opt = { port: 0, wallets: 8, coins: 40, tradeEveryMs: 1200, chaos: 0.05, slow: 0.02, broken: 0.005, rugChance: 0.0005, ...o };
+  const opt = { port: 0, wallets: 8, coins: 40, baseWallets: 0, baseCoins: 20, tradeEveryMs: 1200, chaos: 0.05, slow: 0.02, broken: 0.005, rugChance: 0.0005, ...o };
   let rand = crypto.randomBytes(4).readUInt32LE(0);
   const rnd = () => ((rand = (rand * 1664525 + 1013904223) >>> 0) / 2 ** 32);
   const key = () => bs58.encode(crypto.randomBytes(32));
+  const evmAddr = () => '0x' + crypto.randomBytes(20).toString('hex');
   const sigOf = () => bs58.encode(crypto.randomBytes(64));
   const now = () => Date.now();
   let slot = 300_000_000;
-  const stats = { txs: 0, rugs: 0, pumps: 0, dumps: 0, requests: 0, chaos429: 0, slow: 0, broken: 0, quotes: 0 };
+  const stats = { baseTxs: 0, txs: 0, rugs: 0, pumps: 0, dumps: 0, requests: 0, chaos429: 0, slow: 0, broken: 0, quotes: 0 };
 
   // ---------- coins ----------
   const coins = Array.from({ length: opt.coins }, (_, i) => ({
@@ -36,6 +44,11 @@ export function createWorld(o = {}) {
     events: [], // [time, 'buy'|'sell'] for 5-minute counts
     hist: [], // [time, price] for 5-minute change
   }));
+  // Base coins: same moving prices (still SOL per whole token), 18 decimals, each with a pool.
+  for (let i = 0; i < (opt.baseWallets ? opt.baseCoins : 0); i++)
+    coins.push({ mint: evmAddr(), pool: evmAddr(), chain: 'base', symbol: `B${i}`, decimals: 18, price: 1e-7 * Math.exp(rnd() * 6), liquidityUsd: 5_000 + rnd() * 200_000, createdAt: now() - rnd() * 7 * 86_400_000, rugged: false, noRoute: false, events: [], hist: [] });
+  const solCoins = coins.filter((c) => c.chain !== 'base');
+  const baseCoins = coins.filter((c) => c.chain === 'base');
   const coinBy = new Map(coins.map((c) => [c.mint, c]));
   const tick = () => {
     const t = now();
@@ -106,7 +119,7 @@ export function createWorld(o = {}) {
         record(w, c, 'sell', BigInt(Math.floor(sol * 1e9)), amount, amount - sell);
         w.holdings.set(mint, amount - sell);
       } else {
-        const live = coins.filter((c) => !c.rugged && !c.noRoute);
+        const live = solCoins.filter((c) => !c.rugged && !c.noRoute);
         const c = rnd() < 0.3 && held.length ? coinBy.get(held[0][0]) : live[Math.floor(rnd() * live.length)];
         if (!c) continue;
         // Styles: small buyers, mixed, whales (some buys are tiny "test" buys).
@@ -119,6 +132,126 @@ export function createWorld(o = {}) {
     }
   };
   const traderTimer = setInterval(traderTick, opt.tradeEveryMs);
+
+  // ---------- Base: blocks every 2 s, traders paying ETH and paid out in WETH ----------
+  let block = 20_000_000;
+  const blockTime = new Map([[block, Math.floor(now() / 1000)]]);
+  const blockTimer = setInterval(() => { block++; blockTime.set(block, Math.floor(now() / 1000)); if (blockTime.size > 5000) blockTime.delete(blockTime.keys().next().value); }, 2000);
+  const baseWallets = Array.from({ length: opt.baseWallets }, (_, i) => ({ address: evmAddr(), holdings: new Map(), style: i % 3 }));
+  const evmTxs = new Map(); // hash -> { from, value, block, logs }
+  const evmLogs = []; // recent logs, for eth_getLogs
+  const balHist = new Map(); // `${token}:${owner}` -> [[block, balance]]
+  const setBal = (token, owner, v) => {
+    const k = `${token}:${owner}`;
+    const h = balHist.get(k) ?? [];
+    h.push([block, v]);
+    if (h.length > 200) h.shift();
+    balHist.set(k, h);
+  };
+  const balAt = (token, owner, at) => {
+    const h = balHist.get(`${token}:${owner}`) ?? [];
+    let v = 0n;
+    for (const [b, x] of h) if (b <= at) v = x;
+    return v;
+  };
+  const transferLog = (token, from, to, amount, hash) => ({ address: token, topics: [TRANSFER, topicOf(from), topicOf(to)], data: word(amount), blockNumber: hex(block), transactionHash: hash, logIndex: '0x0', removed: false });
+  const evmRecord = (w, c, side, wei, tokens) => {
+    const hash = '0x' + crypto.randomBytes(32).toString('hex');
+    const logs = side === 'buy' ? [transferLog(c.mint, c.pool, w.address, tokens, hash)] : [transferLog(c.mint, w.address, c.pool, tokens, hash), transferLog(WETH, c.pool, w.address, wei, hash)];
+    evmTxs.set(hash, { from: w.address, value: side === 'buy' ? wei : 0n, block, logs });
+    evmLogs.push(...logs);
+    if (evmLogs.length > 20_000) evmLogs.splice(0, 5000);
+    if (evmTxs.size > 50_000) evmTxs.delete(evmTxs.keys().next().value);
+    c.events.push([now(), side]);
+    stats.txs++;
+    stats.baseTxs++;
+  };
+  const baseTick = () => {
+    for (const w of baseWallets) {
+      if (rnd() > 0.3) continue;
+      const held = [...w.holdings.entries()].filter(([, a]) => a > 0n);
+      if (held.length && rnd() < 0.45) {
+        const [mint, amount] = held[Math.floor(rnd() * held.length)];
+        const c = coinBy.get(mint);
+        if (c.noRoute && rnd() < 0.9) continue;
+        const frac = rnd() < 0.5 ? 1 : 0.1 + rnd() * 0.8;
+        const sell = frac >= 1 ? amount : (amount * BigInt(Math.floor(frac * 1e6))) / 1_000_000n;
+        if (sell <= 0n) continue;
+        const sol = (Number(sell) / 1e18) * c.price;
+        evmRecord(w, c, 'sell', BigInt(Math.floor((sol / SOL_PER_ETH) * 1e18)), sell);
+        w.holdings.set(mint, amount - sell);
+        setBal(mint, w.address, amount - sell);
+      } else {
+        const live = baseCoins.filter((c) => !c.rugged && !c.noRoute);
+        const c = live[Math.floor(rnd() * live.length)];
+        if (!c) continue;
+        const sol = w.style === 0 ? 0.05 + rnd() * 0.2 : w.style === 1 ? 0.3 + rnd() * 1.5 : 2 + rnd() * 6;
+        const tokens = BigInt(Math.floor((sol / c.price) * 1e6)) * 10n ** 12n;
+        const before = w.holdings.get(c.mint) ?? 0n;
+        evmRecord(w, c, 'buy', BigInt(Math.floor((sol / SOL_PER_ETH) * 1e18)), tokens);
+        w.holdings.set(c.mint, before + tokens);
+        setBal(c.mint, w.address, before + tokens);
+      }
+    }
+  };
+  const baseTimer = opt.baseWallets ? setInterval(baseTick, opt.tradeEveryMs * 1.5) : null;
+  const evm = (m, p) => {
+    switch (m) {
+      case 'eth_chainId': return '0x2105';
+      case 'eth_blockNumber': return hex(block);
+      case 'eth_getLogs': {
+        const f = p[0] ?? {};
+        const from = Number(f.fromBlock ?? 0), to = f.toBlock === 'latest' ? block : Number(f.toBlock ?? block);
+        const match = (want, have) => want == null || (Array.isArray(want) ? want.includes(have) : want === have);
+        return evmLogs.filter((l) => Number(l.blockNumber) >= from && Number(l.blockNumber) <= to && (f.topics ?? []).every((t, i) => match(t, l.topics[i])));
+      }
+      case 'eth_getTransactionByHash': {
+        const t = evmTxs.get(p[0]);
+        return t ? { hash: p[0], from: t.from, value: hex(t.value), blockNumber: hex(t.block) } : null;
+      }
+      case 'eth_getTransactionReceipt': {
+        const t = evmTxs.get(p[0]);
+        return t ? { transactionHash: p[0], from: t.from, blockNumber: hex(t.block), status: '0x1', logs: t.logs, gasUsed: '0x30d40', effectiveGasPrice: '0x3b9aca0' } : null;
+      }
+      case 'eth_getBlockByNumber': {
+        const b = p[0] === 'latest' ? block : Number(p[0]);
+        return { number: hex(b), timestamp: hex(blockTime.get(b) ?? Math.floor(now() / 1000)) };
+      }
+      case 'eth_call': {
+        const { to, data = '' } = p[0] ?? {};
+        if (data.startsWith('0x313ce567')) return word(coinBy.get(String(to).toLowerCase())?.decimals ?? 18);
+        if (data.startsWith('0x70a08231')) {
+          const owner = '0x' + data.slice(-40);
+          const at = p[1] === 'latest' || p[1] == null ? block : Number(p[1]);
+          return word(balAt(String(to).toLowerCase(), owner, at));
+        }
+        return '0x';
+      }
+      case 'eth_getBalance': return hex(10_000n * 10n ** 18n);
+      case 'eth_getCode': return '0x';
+      case 'eth_getTransactionCount': return '0x10';
+      case 'eth_gasPrice': return '0x3b9aca0';
+      default: return null;
+    }
+  };
+  const NATIVE = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  const USDC_BASE = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const kyber = (tokenIn, tokenOut, amountIn) => {
+    stats.quotes++;
+    const tin = tokenIn.toLowerCase(), tout = tokenOut.toLowerCase(), amt = BigInt(amountIn);
+    if (tin === NATIVE && tout === USDC_BASE) return (amt * BigInt(ETH_USD * 1e6)) / 10n ** 18n;
+    const buying = tin === NATIVE;
+    const c = coinBy.get(buying ? tout : tin);
+    if (!c || c.rugged || c.noRoute) return null;
+    if (buying) {
+      const sol = (Number(amt) / 1e18) * SOL_PER_ETH;
+      const impact = Math.min(0.5, (sol * SOL_USD) / Math.max(1, c.liquidityUsd));
+      return BigInt(Math.floor((sol / c.price) * (1 - impact) * 1e6)) * 10n ** 12n;
+    }
+    const sol = (Number(amt) / 1e18) * c.price;
+    const impact = Math.min(0.5, (sol * SOL_USD) / Math.max(1, c.liquidityUsd));
+    return BigInt(Math.floor((sol * (1 - impact)) / SOL_PER_ETH * 1e18));
+  };
 
   // ---------- answers ----------
   const change5m = (c) => {
@@ -195,6 +328,23 @@ export function createWorld(o = {}) {
         const one = (q) => ({ jsonrpc: '2.0', id: q.id, result: rpc(q.method, q.params ?? []) });
         return json(res, 200, Array.isArray(body) ? body.map(one) : one(body));
       }
+      if (url.pathname === '/evm') {
+        if (chaos(res)) return;
+        const body = JSON.parse(raw || '{}');
+        const one = (q) => ({ jsonrpc: '2.0', id: q.id, result: evm(q.method, q.params ?? []) });
+        return json(res, 200, Array.isArray(body) ? body.map(one) : one(body));
+      }
+      if (url.pathname.startsWith('/kyber/')) {
+        if (chaos(res)) return;
+        const tin = url.searchParams.get('tokenIn'), tout = url.searchParams.get('tokenOut'), amountIn = url.searchParams.get('amountIn');
+        const out = kyber(tin, tout, amountIn);
+        if (out == null) return json(res, 400, { code: 4008, message: 'route not found' });
+        return json(res, 200, { code: 0, data: { routeSummary: { tokenIn: tin, tokenOut: tout, amountIn, amountOut: out.toString(), route: [] }, routerAddress: '0x6131b5fae19ea4f9d964eac0408e4408b66337b5' } });
+      }
+      if (url.pathname.startsWith('/goplus/')) {
+        const a = (url.searchParams.get('contract_addresses') ?? '').toLowerCase();
+        return json(res, 200, { code: 1, result: { [a]: { is_honeypot: '0', buy_tax: '0', sell_tax: '0', is_mintable: '0', creator_address: '0x' + 'cc'.repeat(20) } } });
+      }
       if (url.pathname.startsWith('/jup/')) {
         if (chaos(res)) return;
         if (url.pathname.endsWith('/quote')) {
@@ -215,7 +365,12 @@ export function createWorld(o = {}) {
       }
       if (url.pathname.startsWith('/dex/')) {
         const mints = decodeURIComponent(url.pathname.split('/tokens/')[1] ?? '').split(',');
-        const pairs = mints.map((m) => coinBy.get(m)).filter(Boolean).map((c) => {
+        const pairs = mints.map((m) => coinBy.get(m) ?? coinBy.get(m.toLowerCase())).filter(Boolean).map((c) => {
+          if (c.chain === 'base') {
+            const ev = c.events;
+            const buys = ev.filter(([, s]) => s === 'buy').length, sells = ev.length - buys;
+            return { chainId: 'base', dexId: 'uniswap', pairAddress: c.pool, baseToken: { address: c.mint, name: `Coin ${c.symbol}`, symbol: c.symbol }, quoteToken: { address: WETH, name: 'Wrapped Ether', symbol: 'WETH' }, priceUsd: String(c.price * SOL_USD), liquidity: { usd: c.liquidityUsd }, marketCap: c.price * SOL_USD * 1e9, fdv: c.price * SOL_USD * 1e9, pairCreatedAt: c.createdAt, priceChange: { m5: change5m(c), h1: 0, h24: 0 }, txns: { m5: { buys, sells }, h1: { buys, sells } }, volume: { h24: 10_000 } };
+          }
           const ev = c.events;
           const buys = ev.filter(([, s]) => s === 'buy').length, sells = ev.length - buys;
           return { chainId: 'solana', dexId: 'raydium', pairAddress: key(), baseToken: { address: c.mint, name: `Coin ${c.symbol}`, symbol: c.symbol }, quoteToken: { address: WSOL, name: 'Wrapped SOL', symbol: 'SOL' }, priceUsd: String(c.price * SOL_USD), liquidity: { usd: c.liquidityUsd }, marketCap: c.price * SOL_USD * 1e9, fdv: c.price * SOL_USD * 1e9, pairCreatedAt: c.createdAt, priceChange: { m5: change5m(c), h1: 0, h24: 0 }, txns: { m5: { buys, sells }, h1: { buys, sells } }, volume: { h24: 10_000 } };
@@ -231,7 +386,8 @@ export function createWorld(o = {}) {
     stats,
     coins,
     wallets,
+    baseWallets,
     listen: () => new Promise((r) => server.listen(opt.port, '127.0.0.1', () => r(server.address().port))),
-    close: () => { clearInterval(marketTimer); clearInterval(traderTimer); server.close(); },
+    close: () => { clearInterval(marketTimer); clearInterval(traderTimer); clearInterval(blockTimer); if (baseTimer) clearInterval(baseTimer); server.close(); },
   };
 }

@@ -14,5 +14,9 @@ globalThis.fetch = (input, init) => {
   if (u.hostname === '127.0.0.1' || u.hostname === 'localhost') return real(input, init);
   if (u.hostname === 'lite-api.jup.ag' || u.hostname === 'api.jup.ag') return real(`${world}/jup${u.pathname}${u.search}`, init);
   if (u.hostname === 'api.dexscreener.com') return real(`${world}/dex${u.pathname}${u.search}`, init);
+  // Base: the node (any of them), KyberSwap quotes and GoPlus safety checks.
+  if (u.hostname === 'base.drpc.org' || u.hostname === 'mainnet.base.org') return real(`${world}/evm`, init);
+  if (u.hostname === 'aggregator-api.kyberswap.com') return real(`${world}/kyber${u.pathname}${u.search}`, init);
+  if (u.hostname === 'api.gopluslabs.io') return real(`${world}/goplus${u.pathname}${u.search}`, init);
   return Promise.resolve(new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } }));
 };
