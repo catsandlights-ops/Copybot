@@ -180,3 +180,40 @@ export async function walletTransfers(wallet: string, sinceBlock: number, maxTra
   }
   return all;
 }
+
+// ---------------- early buyers of a coin (for the wallet finder) ----------------
+
+/**
+ * The first wallets to buy a coin, from its earliest transfers: tokens leaving the pool are buys.
+ * A router that receives them and passes them on in the same transaction is followed to the real buyer.
+ * The value is how many early buys each wallet made. Pure.
+ */
+export function earlyBuyersFromTransfers(transfers: AlchemyTransfer[], pool: string, early: number): Map<string, number> {
+  const p = pool.toLowerCase();
+  const byHash = new Map<string, AlchemyTransfer[]>();
+  for (const t of transfers) if (t.category === 'erc20') byHash.set(t.hash, [...(byHash.get(t.hash) ?? []), t]);
+  const buyers = new Map<string, number>();
+  const ZERO = '0x0000000000000000000000000000000000000000';
+  for (const [, ts] of byHash) {
+    for (const t of ts.filter((x) => x.from.toLowerCase() === p && x.to)) {
+      let to = t.to!.toLowerCase();
+      for (let hop = 0; hop < 3; hop++) {
+        const next = ts.find((x) => x.from.toLowerCase() === to && x.to && x.to.toLowerCase() !== p);
+        if (!next) break;
+        to = next.to!.toLowerCase();
+      }
+      if (to === p || to === ZERO) continue;
+      buyers.set(to, (buyers.get(to) ?? 0) + 1);
+    }
+    if (buyers.size >= early) break;
+  }
+  return buyers;
+}
+
+/** The first `early` buyers of a Base coin from its pool (reads its first 1,000 transfers). */
+export async function baseEarlyBuyers(token: string, pool: string, early: number): Promise<Map<string, number>> {
+  const url = alchemyUrl();
+  if (!url) throw new Error(NEEDS_ALCHEMY);
+  const r = await alchemy(url, { fromBlock: '0x0', toBlock: 'latest', contractAddresses: [token], category: ['erc20'], excludeZeroValue: true, maxCount: '0x3e8', order: 'asc' });
+  return earlyBuyersFromTransfers(r.transfers, pool, early);
+}

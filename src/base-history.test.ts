@@ -47,3 +47,23 @@ test('toSwaps: Copybot swap shape, ETH converted to SOL, unknown proceeds droppe
   assert.equal(sw.length, 1);
   assert.deepEqual([sw[0].chain, sw[0].side, sw[0].quote, sw[0].quoteAmount, sw[0].nativeAmount, sw[0].decimals, sw[0].mint], ['base', 'buy', 'SOL', 2.5, 0.1, 9, TOKEN]);
 });
+
+test('earlyBuyersFromTransfers: tokens leaving the pool are buys; a router is followed to the buyer', async () => {
+  const { earlyBuyersFromTransfers } = await import('./chains/base-history');
+  const POOL = '0x' + '11'.repeat(20), ROUTER = '0x' + '22'.repeat(20), A = '0x' + 'aa'.repeat(20), B = '0x' + 'bb'.repeat(20), DEPLOYER = '0x' + 'dd'.repeat(20);
+  const tr = (hash: string, from: string, to: string): AlchemyTransfer => ({ hash, blockNum: '0x1', from, to, category: 'erc20', rawContract: { address: '0xtoken', value: '0x1', decimal: '0x12' } });
+  const m = earlyBuyersFromTransfers(
+    [
+      tr('h0', '0x0000000000000000000000000000000000000000', DEPLOYER), // minted
+      tr('h1', DEPLOYER, POOL.toUpperCase().replace('0X', '0x')), // liquidity added: not a buy
+      tr('h2', POOL, A), // A buys directly
+      tr('h3', POOL, ROUTER), // B buys through a router
+      tr('h3', ROUTER, B),
+      tr('h4', A, POOL), // A sells: not a buy
+      tr('h5', POOL, A), // A buys again
+    ],
+    POOL,
+    10,
+  );
+  assert.deepEqual([...m.entries()].sort(), [[A, 2], [B, 1]].sort());
+});

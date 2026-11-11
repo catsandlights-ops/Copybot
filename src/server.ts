@@ -457,7 +457,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   const onBase = chain === 'base';
   progress(`Looking for coins that are moving${onBase ? ' on Base' : ''}: trending, new launches, top volume and older coins…`);
   const rows = await markets.scoutPools(chain);
-  if (onBase) notes.push(`Base search: traders who caught recent moves (early-buyer and DexCheck searches are Solana-only).${engine.cfg.mode === 'live' && !engine.cfg.execution.baseLive ? ' In live mode, Base wallets are only copied once Live trading on Base is on (Settings → Trading wallet).' : ''}`);
+  if (onBase) notes.push(`Base search: traders who caught recent moves and early buyers (DexCheck top traders are Solana-only).${engine.cfg.mode === 'live' && !engine.cfg.execution.baseLive ? ' In live mode, Base wallets are only copied once Live trading on Base is on (Settings → Trading wallet).' : ''}`);
   const tokens = pickTokens(rows, at, 7, recentScoutMints(), 2);
   if (!tokens.length) throw new Error('No suitable coins right now (none up 30%+ in 6 or 24 hours with real liquidity, or older coins up 15%+). Try again later.');
   const symbols = new Map(tokens.map((t) => [t.mint, t.symbol]));
@@ -472,9 +472,18 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   // 2. True early buyers, for tokens quiet enough to read back to their launch.
   const conn = makeConnection();
   const perMint = new Map<string, Map<string, number>>();
-  const quiet = onBase ? [] : tokens.filter((t) => t.quiet).slice(0, 3);
+  // On Base, a coin's first transfers are read directly (oldest first), so any coin will do.
+  const quiet = onBase ? [...tokens.filter((t) => t.quiet), ...tokens.filter((t) => !t.quiet)].slice(0, 3) : tokens.filter((t) => t.quiet).slice(0, 3);
   for (const [i, t] of quiet.entries()) {
     progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol})…`);
+    if (onBase) {
+      const early = await import('./chains/base-history').then((m) => m.baseEarlyBuyers(t.mint, t.pool, 120)).catch((e: Error) => {
+        notes.push(`${t.symbol}: couldn't read its early buyers (${plainSkip(e.message)}).`);
+        return null;
+      });
+      if (early?.size) perMint.set(t.mint, early);
+      continue;
+    }
     // A busy node shouldn't sink the whole search: skip this coin's early buyers and carry on.
     const early = await earlyBuyers(conn, t.mint, 120, 30, () => notes.push(`${t.symbol}: its "early buyers" are the earliest within its last 30,000 transactions, not its very first.`), (m) => progress(`Early buyers ${i + 1}/${quiet.length} (${t.symbol}): ${m}`)).catch((e: Error) => {
       notes.push(`${t.symbol}: couldn't read its early buyers (${plainSkip(e.message)}); a private RPC such as Helius makes searches more complete.`);
