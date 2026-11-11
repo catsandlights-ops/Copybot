@@ -24,7 +24,10 @@ const cfg = {
   wallets: world.wallets.map((w, i) => ({ address: w.address, label: `fake-${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })),
   scanner: { findTraders: false, tradeCoins: false, trackSignals: false },
   execution: { fastStream: false },
-  risk: { moodFilter: false },
+  // The fake traders are random, so the money-safety pauses would soon (correctly) stop buying for
+  // hours. They're off here so the test keeps trading; the pause itself is covered by unit tests.
+  risk: { moodFilter: false, pauseAfterLosses: 0, dailyLossLimitSol: 0, panicLossSol: 0 },
+  trial: { enabled: false },
   monitor: { pollIntervalSec: 2, exitCheckIntervalSec: 5 },
   paper: { startSol: 10 },
 };
