@@ -49,6 +49,7 @@ import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
 import { bucketStats, LEARN, learnLessons, updateLessons, type Lesson, type Outcome, type Retired } from './learn';
+import { readTradeLog } from './tradelog';
 import { addSpotted, forgetSpotted, mergeCaught, spottedFor, type Spotted } from './spotter';
 import { earlyVerdict, prescreen, readEnough, rejectReason, searchSummary } from './scout';
 import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
@@ -230,18 +231,7 @@ class HttpError extends Error {
 }
 
 function readTrades(limit = 500) {
-  try {
-    const lines = fs.readFileSync('data/trades.jsonl', 'utf8').trim().split('\n');
-    return lines.slice(-limit).flatMap((l) => {
-      try {
-        return [JSON.parse(l)];
-      } catch {
-        return [];
-      }
-    }).reverse();
-  } catch {
-    return [];
-  }
+  return readTradeLog().slice(-limit).reverse();
 }
 
 function connectionInfo() {

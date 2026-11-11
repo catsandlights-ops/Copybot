@@ -28,6 +28,7 @@ import * as ai from './ai';
 import fs from 'node:fs';
 import { Trade, Trader } from './trader';
 import { getTx, short, sleep, withRetry } from './util';
+import { readTradeLog } from './tradelog';
 
 export type LogEntry = { t: number; level: string; msg: string };
 export type PositionValue = { valueSol: number; pnlPct: number; at: number };
@@ -1040,17 +1041,7 @@ export class BotEngine extends EventEmitter {
 
   /** Our trade history (for per-wallet results). */
   readTrades(): ai.TradeRow[] {
-    try {
-      return fs.readFileSync('data/trades.jsonl', 'utf8').trim().split('\n').flatMap((l) => {
-        try {
-          return [JSON.parse(l)];
-        } catch {
-          return [];
-        }
-      });
-    } catch {
-      return [];
-    }
+    return readTradeLog();
   }
 
   // ---------- autopilot: position reviews + checking skipped buys ----------
