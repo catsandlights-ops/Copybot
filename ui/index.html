@@ -932,7 +932,13 @@ function banners() {
   if (ns && ns.summary.level === 'bad' && Date.now() - ns.at < 30 * 60_000) out.push(`<div class="banner danger"><div><b>Connection problem:</b> ${esc(ns.summary.text)}. Some trades may be missed.</div><button class="btn sm" onclick="openSettings('#netstatus-card')">See details</button></div>`);
   const t = S.tune;
   if (t && t.status === 'better' && !t.dismissed) out.push(`<div class="banner info"><div><b>Weekly settings check: better exit settings found.</b> ${esc(t.message)} Past results can be luck; you can always switch back in Settings.</div><button class="btn sm primary" onclick="applyTune()">Use these</button><button class="btn sm" onclick="dismissTune()">Dismiss</button></div>`);
-  if (c.usingPublicRpc) out.push(`<div class="banner warn"><div><b>You're on the free public RPC.</b> It's rate-limited and will miss trades. Add a free Helius key for reliable copying.</div><button class="btn sm" onclick="openSettings('#conn')">Add RPC</button></div>`);
+  if (c.usingPublicRpc) {
+    // The free public node refuses requests quickly: the more wallets, the more trades it misses.
+    const nSol = S.config.wallets.filter((w) => w.enabled !== false && !/^0x/i.test(w.address)).length;
+    out.push(nSol > 2
+      ? `<div class="banner danger"><div><b>You copy ${nSol} wallets on the free public Solana node.</b> It refuses requests when asked too often ("429 Too Many Requests"), so wallets are checked less often and trades will be missed. A free Helius key (2 minutes to set up) fixes this.</div><button class="btn sm" onclick="openSettings('#conn')">Add RPC</button></div>`
+      : `<div class="banner warn"><div><b>You're on the free public RPC.</b> It's rate-limited and will miss trades. Add a free Helius key for reliable copying.</div><button class="btn sm" onclick="openSettings('#conn')">Add RPC</button></div>`);
+  }
   return out.join('');
 }
 
@@ -1264,6 +1270,14 @@ const EXIT_FIELDS = [
   ['lockFloorPct', 'then sell if it falls back to', '% up', 'exits.lockFloorPct'],
 ];
 /** Edit one wallet's own exit settings. Blank = use the global setting. */
+/** "Sniper · picked by Learning 2h ago": which strategy a wallet uses and who chose it. */
+function strategyNote(w) {
+  const name = w.strategy ? (S.strategies || []).find((x) => x.id === w.strategy)?.name : null;
+  if (!w.strategyBy && !name) return '';
+  const who = { learning: 'picked by Learning', search: 'picked by the wallet search', you: 'picked by you' }[w.strategyBy] || '';
+  const when = w.strategyAt ? ` ${ago(w.strategyAt)} ago` : '';
+  return `<div class="muted" style="font-size:11.5px;margin-top:2px" title="Learning re-checks every day which strategy fits this wallet best">Strategy: <b>${esc(name || 'your settings')}</b>${who ? ` · ${who}${when}` : ''}</div>`;
+}
 /** The rules a wallet trades with in the UI: global, then its strategy, then its own exit overrides. */
 function walletBase(w, strategyId) {
   const st = (S.strategies || []).find((x) => x.id === strategyId);
@@ -1289,7 +1303,8 @@ function walletExitsModal(i) {
     <div class="row" style="margin-top:16px"><button class="btn ghost" data-a="reset">Use normal settings</button><span class="spacer" style="flex:1"></span><button class="btn" data-a="no">Cancel</button><button class="btn primary" data-a="yes">Save</button></div></div></div>`;
   const close = () => { $('#modal-root').innerHTML = ''; };
   const save = async (exits, strategy) => {
-    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits, strategy: strategy || undefined } : x));
+    const by = (strategy || undefined) !== (w.strategy || undefined) ? { strategyBy: 'you', strategyAt: Date.now() } : {};
+    const wallets = S.config.wallets.map((x, j) => (j === i ? { ...x, exits, strategy: strategy || undefined, ...by } : x));
     if (await saveWallets(wallets, 'Saved')) close();
   };
   $('#ws-strat').onchange = (e) => {
@@ -1376,7 +1391,7 @@ function renderWallets(el) {
           return `<tr class="wallet-row">
             <td><label class="switch"><input type="checkbox" data-toggle="${i}" ${w.enabled !== false ? 'checked' : ''} aria-label="Copy this wallet"><i></i></label></td>
             <td><input class="label-input" data-label="${i}" value="${esc(w.label || '')}" placeholder="Add a nickname"></td>
-            <td>${walletLink(w.address)}${healthChip(w.address)}${w.trialStage !== undefined ? `<div class="notes"><span class="note" title="New wallets start small. After ${S.config.trial.winsToStepUp} profitable copies it moves up to ${w.trialStage === 0 ? 'half' : 'full'} size.">On trial · ${w.trialStage === 0 ? '¼' : '½'} size</span></div>` : ''}${!w.enabled && w.pausedReason ? `<div class="notes"><span class="note bad" title="Turn it back on to resume; its count starts again.">Auto-paused: ${esc(w.pausedReason)}</span></div>` : ''}</td>
+            <td>${walletLink(w.address)}${healthChip(w.address)}${strategyNote(w)}${w.trialStage !== undefined ? `<div class="notes"><span class="note" title="New wallets start small. After ${S.config.trial.winsToStepUp} profitable copies it moves up to ${w.trialStage === 0 ? 'half' : 'full'} size.">On trial · ${w.trialStage === 0 ? '¼' : '½'} size</span></div>` : ''}${!w.enabled && w.pausedReason ? `<div class="notes"><span class="note bad" title="Turn it back on to resume; its count starts again.">Auto-paused: ${esc(w.pausedReason)}</span></div>` : ''}</td>
             <td class="r num ${cls(st.pnl)}" title="Last 7 days: ${signed(st.week, 4)} SOL">${st.curve?.length > 1 ? `<div>${spark([[st.curve[0][0] - 1, 0], ...st.curve], 0, 'Your profit from this wallet over time')}</div>` : ''}${st.sells ? signed(st.pnl, 4) : '—'}${losing ? '<div class="notes" style="justify-content:flex-end"><span class="note bad" title="Over 5+ sells, copying this wallet has lost you money. Consider pausing it.">losing money</span></div>' : ''}</td>
             <td class="r num">${st.sells ? `${Math.round((st.wins / st.sells) * 100)}%<div class="muted" style="font-size:11px">${st.wins} of ${st.sells}</div>` : '—'}</td>
             <td class="r num ${gap == null ? 'muted' : gap > 10 ? 'neg' : ''}" title="${gap == null ? 'Measured on your next copied trades' : `Median of ${st.gaps.length} trades${lag != null ? `, ${lag.toFixed(1)} s behind them` : ''}`}">${gap == null ? '—' : `${gap > 0 ? '−' : '+'}${Math.abs(gap).toFixed(1)}%`}</td>

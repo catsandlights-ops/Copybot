@@ -16,6 +16,8 @@ window.GUIDES = [
 <h3>New in 0.8.7</h3>
 <ul>
 <li><b>A strategy for each wallet, re-checked daily:</b> with Learning on, Copybot replays each wallet's last week with your settings and with every strategy, and gives it the one that clearly fits it best: only with 5+ finished trades, a real profit, a clear margin, and not worse over the last 2 days. Switched by itself in paper mode, suggested in live; every switch is in the Learning journal with Undo.</li>
+<li><b>See who chose each strategy:</b> the Wallets page shows each wallet's strategy and whether Learning, the wallet search or you picked it, and when.</li>
+<li><b>Gentler on your Solana node:</b> the backup check for missed trades now takes turns across your wallets, slows down when the node says it's busy, and speeds up again as it recovers. With the fast Helius stream on it only checks lightly. The Dashboard warns plainly when you copy more wallets than the free public node can handle.</li>
 <li><b>No more lost wallets:</b> if the Solana node is too busy when the bot starts, it keeps retrying in the background instead of skipping that wallet for the whole session.</li>
 </ul>
 <h3>New in 0.8.6</h3>

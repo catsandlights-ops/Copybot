@@ -30,6 +30,8 @@ export type WalletCfg = {
   maxExposureSol: number;
   exits?: ExitOverrides;
   strategy?: string; // a ready-made strategy just for this wallet (its exit overrides still win)
+  strategyBy?: 'learning' | 'search' | 'you'; // who picked it
+  strategyAt?: number; // when
   trialStage?: 0 | 1;
   since?: number;
   pausedReason?: string;
@@ -461,6 +463,8 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       maxExposureSol: num(w.maxExposureSol, 0, 10_000, 0, 'Wallet budget'),
       ...(Object.keys(exits).length ? { exits } : {}),
       ...(typeof w.strategy === 'string' && strategyById(w.strategy) ? { strategy: w.strategy } : {}),
+      ...(['learning', 'search', 'you'].includes(w.strategyBy) ? { strategyBy: w.strategyBy } : {}),
+      ...(typeof w.strategyAt === 'number' && Number.isFinite(w.strategyAt) && w.strategyAt > 0 ? { strategyAt: w.strategyAt } : {}),
       ...(w.trialStage === 0 || w.trialStage === 1 ? { trialStage: w.trialStage } : {}),
       ...(typeof w.since === 'number' && Number.isFinite(w.since) && w.since > 0 ? { since: w.since } : {}),
       ...(typeof w.pausedReason === 'string' && w.pausedReason && w.enabled === false ? { pausedReason: w.pausedReason.replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, 120) } : {}),

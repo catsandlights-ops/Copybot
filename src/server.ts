@@ -608,7 +608,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
     const next = structuredClone(engine.cfg);
     for (const p of picks) {
       if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= maxWallets) continue;
-      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy } : {}) });
+      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy, strategyBy: 'search' as const, strategyAt: Date.now() } : {}) });
       added.push(p.address);
     }
     if (added.length) {
@@ -1246,6 +1246,8 @@ async function tuneWalletStrategies(d: Awaited<ReturnType<typeof loadBacktestDat
     if (!w) continue;
     if (c.to) w.strategy = c.to;
     else delete w.strategy;
+    w.strategyBy = 'learning';
+    w.strategyAt = Date.now();
   }
   await applyChange(() => saveConfig(sanitizeConfig(next, false)));
   currentLearning();
@@ -2401,6 +2403,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       if (!w) throw new HttpError(404, "That wallet isn't in your list anymore.");
       if (st.undoStrategy.strategy) w.strategy = st.undoStrategy.strategy;
       else delete w.strategy;
+      w.strategyBy = 'you';
+      w.strategyAt = Date.now();
       await applyChange(() => saveConfig(sanitizeConfig(next, true)));
       if (st.setup) L.vetoed = [...(L.vetoed ?? []).filter((v) => v.until > Date.now()), { setup: st.setup, until: Date.now() + 7 * 86_400_000 }]; // don't switch right back
       delete st.undoStrategy;
