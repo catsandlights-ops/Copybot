@@ -2528,6 +2528,7 @@ const FIELDS = [
     { k: 'filters.maxTradePctOfLiquidity', adv: true, label: 'Max buy size vs pool', unit: '% of pool', help: 'Skip if your buy would be this big a share of the pool. It would move the price against you.' },
     { k: 'filters.minMarketCapUsd', label: 'Minimum market cap', unit: 'USD', step: 1000 },
     { k: 'filters.maxMarketCapUsd', adv: true, label: 'Maximum market cap', unit: 'USD', step: 1000 },
+    { k: 'filters.maxDrop5mPct', label: 'Skip coins falling fast', unit: '% in 5 min', help: "Don't copy a buy into a coin that fell this much in the last 5 minutes, or is being dumped (3+ sells per buy while it drops). Catches wallets buying the top just before a crash. 0 = off." },
     { k: 'filters.minTokenAgeMin', label: 'Minimum token age', unit: 'min', step: 1, help: 'Skip tokens whose first pool is newer than this.' },
     { k: 'filters.maxTopHolderPct', label: 'Largest holder limit', unit: '% of supply', help: () => `Skip if one wallet owns more than this. Liquidity pools don't count. ${S.connection?.hasSolscanKey ? '' : '<b>Needs a Solscan API key (Settings → Connection).</b> '}0 = off.` },
     { k: 'filters.maxTop10HoldersPct', adv: true, label: 'Top 10 holders limit', unit: '% of supply', help: 'Skip if the 10 largest wallets together own more than this. 0 = off.' },

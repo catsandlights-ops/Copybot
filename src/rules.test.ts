@@ -348,3 +348,26 @@ test('smallVsUsual: skips a test buy far below what that wallet usually buys, on
   assert.equal(smallVsUsual(0.01, usual.slice(0, 4), 25), null); // only 4 seen: doesn't know "usual" yet
   assert.equal(smallVsUsual(0.01, usual, 0), null); // off
 });
+
+test('needsFullQuote: a real quote when stale, when there is none, or when anything would sell soon', async () => {
+  const { needsFullQuote, FULL_QUOTE_EVERY_MS } = await import('./rules');
+  const p = pos({ peakMultiple: 1.1 }); // cost 1 SOL, peaked at +10%
+  const now = 1_000_000;
+  assert.equal(needsFullQuote(p, 1.02, cfg, now - 10_000, now), false); // calm, recent quote: the estimate is enough
+  assert.equal(needsFullQuote(p, null, cfg, now - 10_000, now), true); // no price: quote
+  assert.equal(needsFullQuote(p, 1.02, cfg, undefined, now), true); // never quoted
+  assert.equal(needsFullQuote(p, 1.02, cfg, now - FULL_QUOTE_EVERY_MS, now), true); // stale
+  assert.equal(needsFullQuote(p, 0.62, cfg, now - 10_000, now), true); // within 5% of the −40% stop-loss
+  assert.equal(needsFullQuote(pos({ peakMultiple: 1.3 }), 1.08, cfg, now - 10_000, now), true); // near Rule #1's +5% floor
+});
+
+test("don't buy into a crash: falling hard, or being dumped, in the last 5 minutes", async () => {
+  const { marketSkipReason } = await import('./rules');
+  const f = { ...cfg.filters, minLiquidityUsd: 0, maxTradePctOfLiquidity: 0, maxDrop5mPct: 15 };
+  const info = (x: object) => ({ liquidityUsd: 50_000, marketCapUsd: 500_000, createdAt: 0, change5mPct: 0, buys5m: 30, sells5m: 30, ...x }) as any;
+  assert.equal(marketSkipReason(info({ change5mPct: -3 }), f, null, 1), null); // a normal wobble
+  assert.match(marketSkipReason(info({ change5mPct: -22 }), f, null, 1)!, /crashing: down 22% in the last 5 minutes/);
+  assert.match(marketSkipReason(info({ change5mPct: -7, sells5m: 60, buys5m: 10 }), f, null, 1)!, /being dumped: 60 sells vs 10 buys/);
+  assert.equal(marketSkipReason(info({ change5mPct: 2, sells5m: 60, buys5m: 10 }), f, null, 1), null); // many sells, price holding: not a dump
+  assert.equal(marketSkipReason(info({ change5mPct: -40 }), { ...f, maxDrop5mPct: 0 }, null, 1), null); // off
+});

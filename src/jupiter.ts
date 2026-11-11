@@ -22,6 +22,20 @@ const headers = (): Record<string, string> => ({
   ...(jupKey() ? { 'x-api-key': jupKey() } : {}),
 });
 
+/** USD prices for many Solana tokens in one request (Jupiter's price service). Missing ones are left out. */
+export async function getPrices(mints: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const base = jupUrl().replace(/\/swap\/v\d+$/, '/price/v3');
+  for (let i = 0; i < mints.length; i += 50) {
+    const ids = [...new Set(mints.slice(i, i + 50))].join(',');
+    const res = await fetch(`${base}?ids=${ids}`, { headers: headers(), signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) throw new Error(res.status === 429 ? 'Jupiter is busy (HTTP 429); try again in a moment' : `Jupiter prices: HTTP ${res.status}`);
+    const j = (await res.json()) as Record<string, { usdPrice?: number } | null>;
+    for (const [m, v] of Object.entries(j)) if (v && typeof v.usdPrice === 'number' && v.usdPrice > 0) out.set(m, v.usdPrice);
+  }
+  return out;
+}
+
 export async function getQuote(inputMint: string, outputMint: string, amount: bigint, slippageBps: number): Promise<Quote | null> {
   const url = new URL(`${jupUrl()}/quote`);
   url.searchParams.set('inputMint', inputMint);

@@ -97,7 +97,7 @@ const usd = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? 
 
 /** Returns a reason to skip the token, or null if it passes. */
 export function marketSkipReason(info: MarketInfo | null, f: Config['filters'], tradeUsd: number | null, now: number): string | null {
-  const anyFilter = f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0;
+  const anyFilter = f.minLiquidityUsd > 0 || f.maxTradePctOfLiquidity > 0 || f.minMarketCapUsd > 0 || f.maxMarketCapUsd > 0 || f.minTokenAgeMin > 0 || (f.maxDrop5mPct ?? 0) > 0;
   if (!anyFilter) return null;
   if (!info) return f.skipIfNoMarketData ? 'no market data for this token yet' : null;
   // Unknown liquidity (bonding curve): skip the liquidity checks; the buy-then-sell quote check still measures real exit cost.
@@ -113,6 +113,13 @@ export function marketSkipReason(info: MarketInfo | null, f: Config['filters'], 
   if (f.minTokenAgeMin > 0 && info.createdAt != null) {
     const ageMin = (now - info.createdAt) / 60_000;
     if (ageMin < f.minTokenAgeMin) return `token is only ${Math.max(0, ageMin).toFixed(0)} min old (min ${f.minTokenAgeMin})`;
+  }
+  // Don't buy into a crash: falling hard right now, or being dumped (many more sells than buys while it drops).
+  const drop = f.maxDrop5mPct ?? 0;
+  if (drop > 0 && info.change5mPct != null) {
+    if (info.change5mPct <= -drop) return `the price is crashing: down ${Math.abs(info.change5mPct).toFixed(0)}% in the last 5 minutes`;
+    const sells = info.sells5m ?? 0, buys = Math.max(1, info.buys5m ?? 0);
+    if (sells >= 20 && sells / buys >= 3 && info.change5mPct <= -5) return `the coin is being dumped: ${sells} sells vs ${info.buys5m ?? 0} buys in 5 minutes, price down ${Math.abs(info.change5mPct).toFixed(0)}%`;
   }
   return null;
 }
@@ -384,4 +391,21 @@ export function smallVsUsual(theirSol: number, earlier: number[], pct: number): 
   if (usual <= 0 || theirSol >= (usual * pct) / 100) return null;
   const f = (n: number) => (n >= 1 ? n.toFixed(2) : n.toPrecision(2));
   return `their buy (${f(theirSol)} SOL) is much smaller than they usually buy (${f(usual)} SOL)`;
+}
+
+// ---------------------------------------------------------------------------
+// Valuing open positions cheaply: a batch price for all, a full sell quote only when it matters
+// ---------------------------------------------------------------------------
+
+/** Every this often each position gets a full sell quote anyway (keeps the estimate honest). */
+export const FULL_QUOTE_EVERY_MS = 120_000;
+
+/**
+ * Does a position need a full sell quote now? Yes when it has none yet, the last one is stale, or
+ * the price estimate is within 5% of anything that would sell (stop-loss, a target, the trailing
+ * stop, the profit lock): exits act on a real quote, never on an estimate.
+ */
+export function needsFullQuote(p: ExitPosition, estValueSol: number | null, cfg: Pick<Config, 'risk' | 'exits'>, lastFullAt: number | undefined, now: number): boolean {
+  if (estValueSol == null || !lastFullAt || now - lastFullAt >= FULL_QUOTE_EVERY_MS) return true;
+  return [0.95, 1, 1.05].some((f) => planExit(p, estValueSol * f, cfg).action !== null);
 }

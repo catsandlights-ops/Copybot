@@ -154,6 +154,7 @@ export type Config = {
     minMarketCapUsd: number;
     maxMarketCapUsd: number;
     minTokenAgeMin: number;
+    maxDrop5mPct: number; // don't buy a coin that fell this much in the last 5 minutes, or is being dumped (0 = off)
     skipIfNoMarketData: boolean;
     maxTopHolderPct: number; // Solscan holder check: skip if one wallet owns more than this % (0 = off)
     maxTop10HoldersPct: number; // ...or the 10 largest wallets together own more than this %
@@ -255,7 +256,7 @@ export const DEFAULT_CONFIG: Config = {
   },
   exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30, lockAtPct: 20, lockFloorPct: 5 },
   protect: { liquidityDropPct: 50, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 3 },
-  filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false, maxTopHolderPct: 15, maxTop10HoldersPct: 50 },
+  filters: { minLiquidityUsd: 10_000, maxTradePctOfLiquidity: 2, minMarketCapUsd: 0, maxMarketCapUsd: 0, minTokenAgeMin: 0, skipIfNoMarketData: false, maxTopHolderPct: 15, maxTop10HoldersPct: 50, maxDrop5mPct: 15 },
   safety: {
     slippageBps: 300,
     maxRoundTripLossPct: 12,
@@ -313,6 +314,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'protect.crashPct': [0, 99, 'Crash limit'],
   'protect.crashWindowMin': [1, 60, 'Crash window'],
   'protect.maxSellBuyRatio': [0, 100, 'Sell pressure limit'],
+  'filters.maxDrop5mPct': [0, 90, 'Skip coins falling fast'],
   'filters.minLiquidityUsd': [0, 1e10, 'Minimum liquidity'],
   'filters.maxTradePctOfLiquidity': [0, 100, 'Max trade size vs liquidity'],
   'filters.minMarketCapUsd': [0, 1e13, 'Minimum market cap'],

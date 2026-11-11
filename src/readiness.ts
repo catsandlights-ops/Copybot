@@ -131,6 +131,7 @@ const SKIP_GROUPS: [RegExp, string, string | null][] = [
   [/only one wallet bought/, 'only one wallet bought it, small', 'Buying → Skip lone small buys under'],
   [/price is already|above their entry/, 'the price had already run up past their entry', "Buying → Don't chase"],
   [/signal too old|older than/, 'the trade was seen too late', 'Safety → Ignore trades older than (or a private RPC)'],
+  [/crashing|being dumped/, 'the coin was crashing as they bought', 'Safety → Skip coins falling fast'],
   [/liquidity/, 'the coin had too little liquidity', 'Safety → Minimum liquidity'],
   [/market cap/, "the coin's market cap was outside your range", 'Safety → Token filters'],
   [/token age|too new|minutes old/, 'the coin was too new', 'Safety → Minimum token age'],

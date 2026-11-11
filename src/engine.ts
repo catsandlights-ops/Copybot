@@ -21,7 +21,9 @@ import type { RawTx } from './util';
 import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
 import { panicReason } from './rules';
-import { perTokenValue } from './rules';
+import { perTokenValue, needsFullQuote } from './rules';
+import { getPrices } from './jupiter';
+import { WSOL } from './decode';
 import { buyBlockReason, dangerReason, isBreakEvenLoss, smallVsUsual, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
 import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
@@ -1264,14 +1266,46 @@ export class BotEngine extends EventEmitter {
     return dangerReason({ now, valueSol: unit, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null, change5mPct: info?.change5mPct ?? null }, pr);
   }
 
+  /** When each position last had a full sell quote, and how its quote compared with the listed price. */
+  private quotedAt: Record<string, number> = {};
+  private impact: Record<string, number> = {}; // real sell value ÷ value at the listed price (thin coins sell below it)
+  quotesSaved = 0; // full quotes skipped thanks to the batch price (shown nowhere; for tests and curiosity)
+
+  /**
+   * Values every open position. Solana positions get one batch price request for all of them; a
+   * full sell quote is fetched only when a position has none yet, every 2 minutes, or when the
+   * estimate is near anything that would sell (exits always act on a real quote).
+   */
   async valuePositions() {
-    for (const p of Object.values(this.state.positions)) {
+    const positions = Object.values(this.state.positions);
+    const sol = positions.filter((p) => chainOf(p) === 'solana');
+    const prices = sol.length ? await getPrices([WSOL, ...sol.map((p) => p.mint)]).catch(() => null) : null;
+    const solUsd = prices?.get(WSOL) ?? null;
+    for (const p of positions) {
       try {
-        const q = await getChain(p).quoteSell(p.mint, BigInt(p.amountRaw), this.cfg.safety.slippageBps);
-        if (!q) continue;
-        const pc = getChain(p);
-        const valueSol = await pc.nativeToSol(Number(q.outAmount) / 10 ** pc.meta.native.decimals);
         const now = Date.now();
+        const pc = getChain(p);
+        let valueSol: number | null = null;
+        const usd = chainOf(p) === 'solana' && solUsd ? prices?.get(p.mint) : undefined;
+        if (usd && solUsd) {
+          const listed = (Number(p.amountRaw) / 10 ** p.decimals) * usd / solUsd;
+          const est = listed * (this.impact[p.mint] ?? 1);
+          if (!needsFullQuote(p, est, exitConfigFor(this.cfg, p.sources), this.impact[p.mint] ? this.quotedAt[p.mint] : undefined, now)) {
+            valueSol = est;
+            this.quotesSaved++;
+          } else {
+            const q = await pc.quoteSell(p.mint, BigInt(p.amountRaw), this.cfg.safety.slippageBps);
+            if (q) {
+              valueSol = await pc.nativeToSol(Number(q.outAmount) / 10 ** pc.meta.native.decimals);
+              if (listed > 0) this.impact[p.mint] = Math.min(1.05, valueSol / listed);
+              this.quotedAt[p.mint] = now;
+            }
+          }
+        } else {
+          const q = await pc.quoteSell(p.mint, BigInt(p.amountRaw), this.cfg.safety.slippageBps);
+          if (q) valueSol = await pc.nativeToSol(Number(q.outAmount) / 10 ** pc.meta.native.decimals);
+        }
+        if (valueSol == null) continue;
         this.values[p.mint] = { valueSol, pnlPct: (valueSol / p.costSol - 1) * 100, at: now };
         // Live chart: value as a multiple of what it cost (1 = break-even).
         if (p.costSol > 0) p.trail = pushPoint(p.trail ?? [], [now, Math.round((valueSol / p.costSol) * 10_000) / 10_000], 300);
@@ -1279,6 +1313,7 @@ export class BotEngine extends EventEmitter {
         /* ignore */
       }
     }
+    for (const m of Object.keys(this.impact)) if (!this.state.positions[m]) delete this.impact[m], delete this.quotedAt[m];
     if (Date.now() - this.trailSaved > 60_000 && Object.keys(this.state.positions).length) {
       this.trailSaved = Date.now();
       saveState(this.state, this.cfg.mode);
