@@ -35,6 +35,7 @@ export type WalletCfg = {
   trialStage?: 0 | 1;
   since?: number;
   pausedReason?: string;
+  shadow?: boolean; // copied virtually only (no money), until it proves itself
 };
 const EXIT_KEYS: Record<keyof Required<ExitOverrides>, string> = {
   stopLossPct: 'risk.stopLossPct',
@@ -186,7 +187,7 @@ export type Config = {
   learn: { enabled: boolean; autoTuneExits: 'paper' | 'always' | 'off' };
   monitor: { pollIntervalSec: number; exitCheckIntervalSec: number };
   /** New wallets start small and grow as they prove themselves; any wallet pauses after a losing streak. */
-  trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number };
+  trial: { enabled: boolean; winsToStepUp: number; pauseAfterLosses: number; shadowFirst: 'live' | 'always' | 'off'; shadowPaused: boolean };
   /** Paper mode: a pretend wallet so experiments feel real (buys stop when it runs out). */
   paper: { startSol: number };
   /** The ready-made strategy last applied ('' = none); the UI shows "modified" once settings differ. */
@@ -272,7 +273,7 @@ export const DEFAULT_CONFIG: Config = {
   tune: { weekly: true },
   learn: { enabled: true, autoTuneExits: 'paper' },
   monitor: { pollIntervalSec: 4, exitCheckIntervalSec: 20 },
-  trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5 },
+  trial: { enabled: true, winsToStepUp: 3, pauseAfterLosses: 5, shadowFirst: 'live', shadowPaused: true },
   strategy: '',
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
@@ -355,6 +356,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
 };
 const BOOLEANS = [
   'learn.enabled',
+  'trial.shadowPaused',
   'exits.adaptiveTrail','sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'execution.baseLive', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'scanner.baseCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
@@ -362,6 +364,7 @@ const ENUMS: Record<string, string[]> = {
   'execution.priorityLevel': ['medium', 'high', 'veryHigh'],
   'scanner.rules': ['normal', 'strict', 'loose'],
   'learn.autoTuneExits': ['paper', 'always', 'off'],
+  'trial.shadowFirst': ['live', 'always', 'off'],
 };
 
 const get = (o: any, path: string) => path.split('.').reduce((a, k) => a?.[k], o);
@@ -472,6 +475,7 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
       ...(typeof w.strategyAt === 'number' && Number.isFinite(w.strategyAt) && w.strategyAt > 0 ? { strategyAt: w.strategyAt } : {}),
       ...(w.trialStage === 0 || w.trialStage === 1 ? { trialStage: w.trialStage } : {}),
       ...(typeof w.since === 'number' && Number.isFinite(w.since) && w.since > 0 ? { since: w.since } : {}),
+      ...(w.shadow === true && w.enabled === false ? { shadow: true } : {}),
       ...(typeof w.pausedReason === 'string' && w.pausedReason && w.enabled === false ? { pausedReason: w.pausedReason.replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, 120) } : {}),
     });
   }

@@ -31,6 +31,7 @@ import fs from 'node:fs';
 import { Trade, Trader } from './trader';
 import { getTx, short, sleep, withRetry } from './util';
 import { readTradeLog } from './tradelog';
+import { emptyBook, restartShadow, SHADOW, shadowBuy, shadowSell, shadowStats, shadowVerdict, type ShadowBook } from './shadow';
 
 export type LogEntry = { t: number; level: string; msg: string };
 export type PositionValue = { valueSol: number; pnlPct: number; at: number; trailPct?: number };
@@ -104,7 +105,9 @@ export class BotEngine extends EventEmitter {
 
   /** (Re)load config, keys and the state file for the current mode. Safe while stopped. */
   reload() {
+    const prevMode = this.cfg?.mode;
     this.cfg = loadConfig();
+    if (prevMode && prevMode !== this.cfg.mode) this.shadow = this.loadShadow(); // paper and live keep separate shadow books
     try {
       this.kp = loadKeypair();
       this.keyError = null;
@@ -186,7 +189,7 @@ export class BotEngine extends EventEmitter {
   async start() {
     if (this.running) return;
     this.reload();
-    const wallets = this.cfg.wallets.filter((w) => w.enabled);
+    const wallets = this.cfg.wallets.filter((w) => w.enabled || w.shadow);
     const sc = this.cfg.scanner;
     const hasOrders = this.orders.some((o) => o.status === 'active');
     if (!wallets.length && !sc.tradeCoins && !sc.findTraders && !hasOrders) throw new Error('Add at least one wallet to copy first, turn on the Market scanner, or place an order.');
@@ -494,7 +497,12 @@ export class BotEngine extends EventEmitter {
       if (pause) {
         w.enabled = false;
         w.pausedReason = pause;
-        this.log(`Paused ${w.label}: ${pause}. Open positions from it still follow its sells. Turn it back on in Wallets.`, 'warn');
+        if (this.cfg.trial.shadowPaused && chainOf(w) === 'solana' && this.shadowCount() < SHADOW.max) {
+          w.shadow = true;
+          restartShadow(this.shadow, w.address, Date.now());
+          this.saveShadow(true);
+        }
+        this.log(`Paused ${w.label}: ${pause}. Open positions from it still follow its sells. ${w.shadow ? 'It keeps being copied virtually (shadow) and comes back by itself if it proves itself again.' : 'Turn it back on in Wallets.'}`, 'warn');
         changed = true;
       } else if (stepUp) {
         w.trialStage = w.trialStage === 0 ? 1 : undefined;
@@ -767,6 +775,52 @@ export class BotEngine extends EventEmitter {
     return { hours, since: this.startedAt && this.startedAt > since ? this.startedAt : since, seen: recent.filter((a) => a.k === 'seen').length, copied: recent.filter((a) => a.k === 'copied').length, skips: [...groups.values()].sort((a, b) => b.n - a.n) };
   }
 
+  // ---------- shadow copying: virtual copies of wallets that haven't proven themselves (yet) ----------
+  shadow: ShadowBook = this.loadShadow();
+  private shadowSavedAt = 0;
+  private loadShadow(): ShadowBook {
+    try {
+      const j = JSON.parse(fs.readFileSync(`data/shadow-${loadConfig().mode}.json`, 'utf8'));
+      return { open: j.open ?? {}, closed: j.closed ?? [], since: j.since ?? {} };
+    } catch {
+      return emptyBook();
+    }
+  }
+  saveShadow(now = false) {
+    if (!now && Date.now() - this.shadowSavedAt < 30_000) return;
+    this.shadowSavedAt = Date.now();
+    try {
+      fs.mkdirSync('data', { recursive: true });
+      fs.writeFileSync(`data/shadow-${this.cfg.mode}.json`, JSON.stringify(this.shadow));
+    } catch {
+      /* next time */
+    }
+  }
+  shadowCount = () => this.cfg.wallets.filter((w) => w.shadow).length;
+  /** If `s` is from a shadow wallet, replay it in the virtual book. True for a shadow wallet's buy (nothing real to do). */
+  private shadowTrade(s: Swap): boolean {
+    const w = this.cfg.wallets.find((x) => x.address === s.wallet);
+    if (!w?.shadow || w.enabled) return false;
+    if (s.quote !== 'SOL' || !(s.quoteAmount > 0) || s.tokenAmount <= 0n) return s.side === 'buy';
+    const price = s.quoteAmount / Number(s.tokenAmount);
+    const gap = this.walletEdges().gaps[s.wallet] ?? 5;
+    const now = Date.now();
+    if (s.side === 'buy') {
+      if (s.quoteAmount >= this.cfg.buy.minTargetBuySol && shadowBuy(this.shadow, s.wallet, s.mint, this.cfg.buy.fixedSol, price, Math.max(0, gap), now)) {
+        this.log(`Shadow: ${w.label} bought ${short(s.mint)}; copied virtually (no money).`, 'info');
+        this.saveShadow();
+      }
+      return true;
+    }
+    const fraction = s.tokenPost === 0n || s.tokenPre === 0n ? 1 : Number(s.tokenAmount) / Number(s.tokenPre);
+    const t = shadowSell(this.shadow, s.wallet, s.mint, fraction, price, Math.max(0, gap), now);
+    if (t) {
+      this.log(`Shadow: ${w.label} sold ${short(s.mint)}; virtual result ${t.proceeds - t.cost >= 0 ? '+' : ''}${(t.proceeds - t.cost).toFixed(4)} SOL.`, 'info');
+      this.saveShadow();
+    }
+    return false;
+  }
+
   /** Copied sells too small to follow on their own, added up per coin until they're worth a trade. */
   private smallSells = new Map<string, number>();
 
@@ -842,6 +896,7 @@ export class BotEngine extends EventEmitter {
 
   private async onTargetBuy(s: Swap) {
     const { cfg, state } = this;
+    if (this.shadowTrade(s)) return; // a shadow wallet: copied virtually only
     const r = cfg.risk;
     // Count every signal and why it was skipped (for the "ready for live?" report).
     const st = (this.sigStats[s.wallet] ??= { seen: 0, copied: 0, skips: {} });
@@ -1121,6 +1176,7 @@ export class BotEngine extends EventEmitter {
   }
 
   private async onTargetSell(s: Swap) {
+    this.shadowTrade(s);
     if (!this.cfg.sell.copySells) return;
     const p = this.state.positions[s.mint];
     if (!p || !p.sources.includes(s.wallet)) return;
@@ -1359,6 +1415,10 @@ export class BotEngine extends EventEmitter {
       running: this.running,
       startedAt: this.startedAt,
       activity: this.activitySummary(1),
+      shadow: Object.fromEntries(this.cfg.wallets.filter((w) => w.shadow).map((w) => {
+        const st = shadowStats(this.shadow, w.address, Date.now());
+        return [w.address, { ...st, ...shadowVerdict(st) }];
+      })),
       stream: !this.cfg.execution.fastStream ? null : !heliusWsUrl(rpcUrl()) ? 'needs a Helius RPC' : this.stream ? ({ connecting: 'connecting…', connected: 'on', unavailable: 'not on your Helius plan', reconnecting: 'reconnecting…', off: 'off' } as const)[this.stream.status] : 'starts with the bot',
       mode: this.cfg.mode,
       realizedPnlSol: this.state.realizedPnlSol,

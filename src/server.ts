@@ -50,6 +50,7 @@ import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
 import { bucketStats, LEARN, learnLessons, updateLessons, type Lesson, type Outcome, type Retired } from './learn';
 import { readTradeLog } from './tradelog';
+import { restartShadow, SHADOW, shadowStats, shadowVerdict } from './shadow';
 import { addSpotted, forgetSpotted, mergeCaught, spottedFor, type Spotted } from './spotter';
 import { earlyVerdict, prescreen, readEnough, rejectReason, searchSummary } from './scout';
 import { passesBacktest, passesBasics, pickCandidates, pickTokens, pumpBuyers, rulePicks, suggestStrategy, ScoutReport, ScoutResult } from './scout';
@@ -596,16 +597,19 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   const added: string[] = [];
   if (autoAdd && picks.length) {
     const next = structuredClone(engine.cfg);
+    // In live mode (or always, if chosen), new finds are copied virtually first and must prove themselves.
+    const shadowFirst = chain === 'solana' && (cfg.trial.shadowFirst === 'always' || (cfg.trial.shadowFirst === 'live' && cfg.mode === 'live'));
     for (const p of picks) {
-      if (next.wallets.some((w) => w.address === p.address) || next.wallets.filter((w) => w.enabled).length >= maxWallets) continue;
-      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: true, sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy, strategyBy: 'search' as const, strategyAt: Date.now() } : {}) });
+      if (next.wallets.some((w) => w.address === p.address)) continue;
+      if (shadowFirst ? next.wallets.filter((w) => w.shadow).length >= SHADOW.max : next.wallets.filter((w) => w.enabled).length >= maxWallets) continue;
+      next.wallets.push({ address: p.address, label: `scout-${p.address.slice(0, 4)}`, enabled: !shadowFirst, ...(shadowFirst ? { shadow: true } : {}), sizeMultiplier: p.sizeMultiplier, maxExposureSol: p.budgetSol, ...(p.strategy && p.strategy !== 'balanced' ? { strategy: p.strategy, strategyBy: 'search' as const, strategyAt: Date.now() } : {}) });
       added.push(p.address);
     }
     if (added.length) {
       const clean = sanitizeConfig(next, false);
       trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
-      for (const a of added) engine.log(`${byAi ? 'Wallet scout' : 'Market scanner'}: now copying ${a.slice(0, 4)}…${a.slice(-4)} on a trial: ${picks.find((p) => p.address === a)!.reason}`, byAi ? 'ai' : 'system');
+      for (const a of added) engine.log(`${byAi ? 'Wallet scout' : 'Market scanner'}: ${shadowFirst ? 'now copying virtually (shadow) until it proves itself' : 'now copying on a trial'} ${a.slice(0, 4)}…${a.slice(-4)}: ${picks.find((p) => p.address === a)!.reason}`, byAi ? 'ai' : 'system');
     }
   }
   // What happened to every wallet checked, in one line (on the Scanner page and in the activity log).
@@ -1244,6 +1248,35 @@ async function tuneWalletStrategies(d: Awaited<ReturnType<typeof loadBacktestDat
   for (const c of changes) journal({ at: Date.now(), kind: 'strategy', text: `${c.text}, so it was switched.`, setup: `${c.address}:${c.to ?? 'mine'}`, undoStrategy: { wallet: c.address, strategy: c.from } });
   saveLearning();
 }
+
+// ---------- shadow copying: promote wallets that proved themselves virtually, drop the ones that didn't ----------
+async function checkShadows() {
+  const cfg = engine.cfg;
+  const shadows = cfg.wallets.filter((w) => w.shadow);
+  if (!shadows.length) return;
+  const next = structuredClone(cfg);
+  const notes: string[] = [];
+  for (const w of shadows) {
+    const v = shadowVerdict(shadowStats(engine.shadow, w.address, Date.now()));
+    const nw = next.wallets.find((x) => x.address === w.address)!;
+    if (v.verdict === 'promote') {
+      if (next.wallets.filter((x) => x.enabled).length >= cfg.scanner.maxWallets) continue; // wait for a free slot
+      Object.assign(nw, { enabled: true, shadow: undefined, pausedReason: undefined, since: Date.now(), ...(cfg.trial.enabled ? { trialStage: 0 as const } : {}) });
+      notes.push(`${w.label} proved itself in shadow (${v.why}): now copying for real${cfg.trial.enabled ? ', starting at ¼ size' : ''}.`);
+    } else if (v.verdict === 'drop') {
+      Object.assign(nw, { shadow: undefined, pausedReason: "didn't prove itself in shadow" });
+      notes.push(`${w.label} stopped being shadowed: ${v.why}.`);
+    }
+  }
+  if (!notes.length) return;
+  for (const w of next.wallets) if (!w.shadow) delete w.shadow;
+  await applyChange(() => saveConfig(sanitizeConfig(next, false)));
+  for (const n of notes) engine.log(`Shadow: ${n}`, 'system');
+  if (notes.some((n) => n.includes('for real'))) alert('autopilot', `🌓 ${notes.join(' ')}`);
+}
+setInterval(() => {
+  if (engine.running) checkShadows().catch((e) => engine.log(`Shadow check failed: ${(e as Error).message}`, 'warn'));
+}, 10 * 60_000).unref();
 
 // ---------- weekly auto-tune: your exits vs other setups on the last 7 days ----------
 type Tune = { at: number; status: 'better' | 'fine' | 'error'; message: string; best?: { name: string; stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits']; totalSol: number }; currentSol?: number; dismissed?: boolean };
@@ -2368,6 +2401,28 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   }
 
   if (route === 'POST /api/autotune/run') return send(res, 200, runAutoTune(true));
+  if (route === 'POST /api/wallets/shadow') {
+    // From the Wallets page: shadow a wallet, stop shadowing it, or promote it now.
+    const b = await readBody(req);
+    const next = structuredClone(engine.cfg);
+    const w = next.wallets.find((x) => x.address === b.address);
+    if (!w) throw new HttpError(404, "That wallet isn't in your list.");
+    if (b.action === 'start') {
+      if (chainOf(w) !== 'solana') throw new HttpError(400, 'Shadow copying is for Solana wallets for now.');
+      if (next.wallets.filter((x) => x.shadow).length >= SHADOW.max) throw new HttpError(400, `At most ${SHADOW.max} wallets in shadow at once.`);
+      Object.assign(w, { enabled: false, shadow: true });
+      restartShadow(engine.shadow, w.address, Date.now());
+      engine.saveShadow(true);
+    } else if (b.action === 'stop') {
+      delete w.shadow;
+    } else if (b.action === 'promote') {
+      Object.assign(w, { enabled: true, pausedReason: undefined, since: Date.now(), ...(next.trial.enabled ? { trialStage: 0 as const } : {}) });
+      delete w.shadow;
+    } else throw new HttpError(400, 'Unknown action.');
+    await applyChange(() => saveConfig(sanitizeConfig(next, true)));
+    engine.log(b.action === 'start' ? `Shadow: copying ${w.label} virtually until it proves itself.` : b.action === 'promote' ? `Shadow: ${w.label} promoted by you; now copying for real.` : `Shadow: stopped shadowing ${w.label}.`, 'system');
+    return send(res, 200, { config: engine.cfg, status: engine.snapshot() });
+  }
   if (route === 'POST /api/learning/now') {
     learnRound();
     return send(res, 200, learningView());
