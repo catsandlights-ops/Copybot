@@ -371,3 +371,25 @@ test("don't buy into a crash: falling hard, or being dumped, in the last 5 minut
   assert.equal(marketSkipReason(info({ change5mPct: 2, sells5m: 60, buys5m: 10 }), f, null, 1), null); // many sells, price holding: not a dump
   assert.equal(marketSkipReason(info({ change5mPct: -40 }), { ...f, maxDrop5mPct: 0 }, null, 1), null); // off
 });
+
+test('trailing stop fits each coin: wild coins get more room, calm ones a tighter stop', async () => {
+  const { typicalSwingPct, trailWidthPct, planExit: plan } = await import('./rules');
+  const now = 10_000_000;
+  const series = (stepPct: number) => Array.from({ length: 120 }, (_, i) => [now - (119 - i) * 30_000, 1 + (Math.floor(i / 10) % 2 ? stepPct : 0) / 100] as [number, number]); // moves every 5 minutes
+  assert.equal(typicalSwingPct(series(1).slice(-20), now), null); // 10 minutes: not enough yet
+  const calm = typicalSwingPct(series(4), now)!, wild = typicalSwingPct(series(20), now)!;
+  assert.ok(calm < wild);
+  assert.equal(trailWidthPct(30, null), 30); // no history: your setting
+  assert.equal(trailWidthPct(30, 2), 18); // calm: 60% of 30
+  assert.equal(trailWidthPct(30, 16), 40); // 2.5 × 16
+  assert.equal(trailWidthPct(30, 40), 48); // wild: capped at 160%
+  // Peaked at 3x, now 33% off the peak: the plain 30% stop sells; a wild coin's 48% doesn't (yet).
+  const p = pos({ steps: ['recover'], peakMultiple: 3 });
+  assert.match(plan(p, 2.0, cfg).action!.reason, /trailing stop/);
+  assert.equal(plan(p, 2.0, cfg, 40).action, null);
+  assert.match(plan(p, 1.5, cfg, 40).action!.reason, /trailing stop: down 50% .*, 48% for this coin's swings/);
+  // A calm coin is sold earlier (18% off the peak).
+  assert.match(plan(p, 2.4, cfg, 2).action!.reason, /trailing stop: down 20%/);
+  // Switched off: always your setting.
+  assert.equal(plan(p, 2.4, { ...cfg, exits: { ...cfg.exits, adaptiveTrail: false } }, 2).action, null);
+});

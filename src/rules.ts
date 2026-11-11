@@ -20,7 +20,30 @@ export type ExitAction = { fraction: number; reason: string; step?: ExitStep };
 /** Rule #1's defaults when a setup doesn't say: lock in once up 20%, sell if it falls back to +5% (covers fees). */
 export const LOCK_DEFAULT = { atPct: 20, floorPct: 5 };
 
-export function planExit(p: ExitPosition, valueSol: number, cfg: Pick<Config, 'risk' | 'exits'>): { action: ExitAction | null; peakMultiple: number } {
+/**
+ * A coin's typical 5-minute move (%), from its value history [time ms, value multiple]: the median
+ * size of moves 5 minutes apart over the last hour. Null until there's about half an hour of history.
+ */
+export function typicalSwingPct(trail: [number, number][], now: number): number | null {
+  const pts = trail.filter(([t]) => t >= now - 3_600_000 && t <= now);
+  const moves: number[] = [];
+  let j = 0;
+  for (const [t, v] of pts) {
+    while (j < pts.length && pts[j][0] <= t - 300_000) j++;
+    const prev = pts[j - 1];
+    if (prev && prev[1] > 0 && t - prev[0] <= 420_000) moves.push(Math.abs(v / prev[1] - 1) * 100);
+  }
+  if (moves.length < 6 || !pts.length || pts[pts.length - 1][0] - pts[0][0] < 25 * 60_000) return null;
+  return median(moves);
+}
+
+/** Trailing stop width for a coin: 2.5x its typical swing, kept between 60% and 160% of your setting. */
+export function trailWidthPct(basePct: number, swingPct: number | null | undefined): number {
+  if (swingPct == null || !(basePct > 0)) return basePct;
+  return Math.min(basePct * 1.6, Math.max(basePct * 0.6, swingPct * 2.5));
+}
+
+export function planExit(p: ExitPosition, valueSol: number, cfg: Pick<Config, 'risk' | 'exits'>, swingPct?: number | null): { action: ExitAction | null; peakMultiple: number } {
   const multiple = p.costSol > 0 ? valueSol / p.costSol : 1;
   const peak = Math.max(p.peakMultiple ?? 1, multiple);
   const gainPct = (multiple - 1) * 100;
@@ -39,9 +62,11 @@ export function planExit(p: ExitPosition, valueSol: number, cfg: Pick<Config, 'r
   if (gainPct <= -risk.stopLossPct) return out({ fraction: 1, reason: `stop-loss ${gainPct.toFixed(0)}%` });
 
   if (exits.trailingStopPct > 0 && peakGainPct >= exits.trailingAfterPct) {
+    // Wild coins get more room so normal swings don't shake you out; calm coins a tighter stop.
+    const width = exits.adaptiveTrail === false ? exits.trailingStopPct : trailWidthPct(exits.trailingStopPct, swingPct);
     const dropPct = (1 - multiple / peak) * 100;
-    if (dropPct >= exits.trailingStopPct) {
-      return out({ fraction: 1, reason: `trailing stop: down ${dropPct.toFixed(0)}% from its peak (+${peakGainPct.toFixed(0)}%)` });
+    if (dropPct >= width) {
+      return out({ fraction: 1, reason: `trailing stop: down ${dropPct.toFixed(0)}% from its peak (+${peakGainPct.toFixed(0)}%)${Math.round(width) !== Math.round(exits.trailingStopPct) ? `, ${width.toFixed(0)}% for this coin's swings` : ''}` });
     }
   }
 

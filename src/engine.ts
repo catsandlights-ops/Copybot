@@ -21,7 +21,7 @@ import type { RawTx } from './util';
 import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
 import { panicReason } from './rules';
-import { perTokenValue, needsFullQuote } from './rules';
+import { perTokenValue, needsFullQuote, trailWidthPct, typicalSwingPct } from './rules';
 import { getPrices } from './jupiter';
 import { WSOL } from './decode';
 import { buyBlockReason, dangerReason, isBreakEvenLoss, smallVsUsual, holderSkipReason, ExitStep, freshGuard, GuardState, localDay, MarketInfo, marketSkipReason, planExit, priceDriftPct, recordSell, rollDay, walletExposureSol, walletRecords } from './rules';
@@ -33,7 +33,7 @@ import { getTx, short, sleep, withRetry } from './util';
 import { readTradeLog } from './tradelog';
 
 export type LogEntry = { t: number; level: string; msg: string };
-export type PositionValue = { valueSol: number; pnlPct: number; at: number };
+export type PositionValue = { valueSol: number; pnlPct: number; at: number; trailPct?: number };
 
 /**
  * The copy-trading bot. Emits:
@@ -1193,7 +1193,7 @@ export class BotEngine extends EventEmitter {
       for (const p of Object.values(this.state.positions)) {
         const v = this.values[p.mint];
         if (!v || gen !== this.gen || this.exiting.has(p.mint)) continue;
-        const plan = planExit(p, v.valueSol, exitConfigFor(this.cfg, p.sources));
+        const plan = planExit(p, v.valueSol, exitConfigFor(this.cfg, p.sources), this.swingOf(p));
         const { peakMultiple } = plan;
         let { action } = plan;
         // Scanner coins are quick trades: sell what's left once the hold limit is reached.
@@ -1266,6 +1266,11 @@ export class BotEngine extends EventEmitter {
     return dangerReason({ now, valueSol: unit, samples: s, liquidityUsd: info?.liquidityUsd ?? null, peakLiquidityUsd: p.peakLiquidityUsd ?? null, buys5m: info?.buys5m ?? null, sells5m: info?.sells5m ?? null, change5mPct: info?.change5mPct ?? null }, pr);
   }
 
+  /** A position's typical 5-minute move (%), from its recorded value history; null until there's enough. */
+  private swingOf(p: import('./state').Position): number | null {
+    return typicalSwingPct(p.trail ?? [], Date.now());
+  }
+
   /** When each position last had a full sell quote, and how its quote compared with the listed price. */
   private quotedAt: Record<string, number> = {};
   private impact: Record<string, number> = {}; // real sell value ÷ value at the listed price (thin coins sell below it)
@@ -1306,7 +1311,9 @@ export class BotEngine extends EventEmitter {
           if (q) valueSol = await pc.nativeToSol(Number(q.outAmount) / 10 ** pc.meta.native.decimals);
         }
         if (valueSol == null) continue;
-        this.values[p.mint] = { valueSol, pnlPct: (valueSol / p.costSol - 1) * 100, at: now };
+        const x = exitConfigFor(this.cfg, p.sources).exits;
+        const trailPct = x.trailingStopPct > 0 ? (x.adaptiveTrail === false ? x.trailingStopPct : trailWidthPct(x.trailingStopPct, this.swingOf(p))) : null;
+        this.values[p.mint] = { valueSol, pnlPct: (valueSol / p.costSol - 1) * 100, at: now, ...(trailPct != null ? { trailPct } : {}) };
         // Live chart: value as a multiple of what it cost (1 = break-even).
         if (p.costSol > 0) p.trail = pushPoint(p.trail ?? [], [now, Math.round((valueSol / p.costSol) * 10_000) / 10_000], 300);
       } catch {

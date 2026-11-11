@@ -1228,7 +1228,8 @@ function exitPlan(p) {
   const lockAt = x.lockAtPct ?? 20, lockFloor = x.lockFloorPct ?? 5;
   if (lockAt > 0 && peakGain >= lockAt) chips.push(`<span class="chip done" title="Rule #1: it has been up +${peakGain.toFixed(0)}%, so it won't be allowed to end as a loss.">🔒 profit locked: sells below +${lockFloor}%</span>`);
   if (x.trailingStopPct > 0 && peakGain >= x.trailingAfterPct) {
-    const floor = ((p.peakMultiple || 1) * (1 - x.trailingStopPct / 100) - 1) * 100;
+    const w = p.trailPct ?? x.trailingStopPct;
+    const floor = ((p.peakMultiple || 1) * (1 - w / 100) - 1) * 100;
     chips.push(`<span class="chip trail" title="Peak +${peakGain.toFixed(0)}%. Sells everything if it falls to ${pct(floor)}.">trailing: sells below ${pct(floor)}</span>`);
   }
   if (st) chips.push(`<span class="chip" title="This wallet uses its own strategy (Wallets page)">${esc(st.name)}</span>`);
@@ -2515,6 +2516,7 @@ const FIELDS = [
     { k: 'exits.tp2SellPct', adv: true, label: 'Take-profit 2 sells', unit: '% of rest' },
     { k: 'exits.trailingAfterPct', label: 'Start trailing stop after', unit: '% up', help: 'Once a position has been up this much, the trailing stop watches it.' },
     { k: 'exits.trailingStopPct', label: 'Trailing stop', unit: '% drop', help: 'Then sell everything if it falls this much from its highest point. 0 = off.' },
+    { k: 'exits.adaptiveTrail', label: 'Fit the trailing stop to each coin', type: 'toggle', help: () => `Wild coins get more room so normal swings don't shake you out, calm coins a tighter stop: 2.5× the coin's typical 5-minute move, between ${Math.round((S.config.exits.trailingStopPct || 30) * 0.6)}% and ${Math.round((S.config.exits.trailingStopPct || 30) * 1.6)}%. Uses your setting until a coin has about half an hour of price history.` },
     { k: 'risk.takeProfitPct', adv: true, label: 'Sell everything at', unit: '% up', help: 'Optional: close the whole position at this gain. 0 = off (use the steps above).' },
   ]},
   { title: 'Rug protection', tab: 'selling', desc: 'While you hold a token, sell everything at once if it looks like a rug pull or a dump. Checked with the stop-loss. 0 turns a check off.', fields: [
