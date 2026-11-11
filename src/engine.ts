@@ -209,23 +209,15 @@ export class BotEngine extends EventEmitter {
       this.watchers.push(c.watch(ws.map((w) => w.address), (s) => this.onChainSwap(s, gen), (e) => this.logError(e)));
       for (const w of ws) this.log(`Watching ${this.labels.get(w.address)} (${c.meta.name})`, 'system');
     }
-    for (const w of wallets.filter((x) => chainOf(x) === 'solana')) {
-      try {
-        const pk = new PublicKey(w.address);
-        const recent = await withRetry(() => this.conn.getSignaturesForAddress(pk, { limit: 50 }), 4);
-        recent.forEach((s) => this.remember(s.signature));
+    // Start Solana wallets a moment apart (a burst of requests is what makes a node refuse), and never give up on one.
+    // In the background, so exits, orders and the rest start right away even if the node is slow.
+    void (async () => {
+      for (const [i, w] of wallets.filter((x) => chainOf(x) === 'solana').entries()) {
+        if (i) await sleep(400);
         if (gen !== this.gen) return;
-        this.subs.push(
-          this.conn.onLogs(pk, (l) => {
-            if (!l.err && gen === this.gen) this.onSignature(l.signature, w.address).catch((e) => this.logError(e));
-          }, 'confirmed'),
-        );
-        this.pollLoop(w.address, gen);
-        this.log(`Watching ${this.labels.get(w.address)}`, 'system');
-      } catch (e) {
-        this.log(`Could not watch ${w.address}: ${(e as Error).message}`, 'error');
+        if (!(await this.watchSolana(w.address, gen))) void this.retryWatch(w.address, gen);
       }
-    }
+    })();
     this.exitLoop(gen);
     this.orderLoop(gen);
     this.moodLoop(gen);
@@ -241,6 +233,41 @@ export class BotEngine extends EventEmitter {
         this.emit('status');
       });
       this.stream.start();
+    }
+  }
+
+  /** Start watching one Solana wallet: remember its recent trades (so they aren't copied late), then listen. */
+  private async watchSolana(address: string, gen: number): Promise<boolean> {
+    try {
+      const pk = new PublicKey(address);
+      const recent = await withRetry(() => this.conn.getSignaturesForAddress(pk, { limit: 50 }), 4);
+      if (gen !== this.gen) return true;
+      recent.forEach((s) => this.remember(s.signature));
+      this.subs.push(
+        this.conn.onLogs(pk, (l) => {
+          if (!l.err && gen === this.gen) this.onSignature(l.signature, address).catch((e) => this.logError(e));
+        }, 'confirmed'),
+      );
+      this.pollLoop(address, gen);
+      this.log(`Watching ${this.labels.get(address) ?? short(address)}`, 'system');
+      return true;
+    } catch (e) {
+      if (e instanceof Error && /invalid public key|Non-base58/i.test(e.message)) {
+        this.log(`Can't watch ${short(address)}: that isn't a valid Solana address.`, 'error');
+        return true; // retrying won't help
+      }
+      return false;
+    }
+  }
+
+  /** The node was too busy to start watching a wallet: keep trying in the background, waiting longer each time. */
+  private async retryWatch(address: string, gen: number) {
+    const name = this.labels.get(address) ?? short(address);
+    this.log(`Couldn't start watching ${name} yet: the Solana node is busy. Retrying in the background${rpcUrl().includes('api.mainnet-beta.solana.com') ? ' (a private RPC such as Helius avoids this)' : ''}.`, 'warn');
+    for (let wait = 15_000; gen === this.gen; wait = Math.min(wait * 2, 5 * 60_000)) {
+      await sleep(wait + Math.random() * 3_000);
+      if (gen !== this.gen) return;
+      if (await this.watchSolana(address, gen)) return;
     }
   }
 
