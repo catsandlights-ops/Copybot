@@ -599,7 +599,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   if (autoAdd && picks.length) {
     const next = structuredClone(engine.cfg);
     // In live mode (or always, if chosen), new finds are copied virtually first and must prove themselves.
-    const shadowFirst = chain === 'solana' && (cfg.trial.shadowFirst === 'always' || (cfg.trial.shadowFirst === 'live' && cfg.mode === 'live'));
+    const shadowFirst = (cfg.trial.shadowFirst === 'always' || (cfg.trial.shadowFirst === 'live' && cfg.mode === 'live'));
     for (const p of picks) {
       if (next.wallets.some((w) => w.address === p.address)) continue;
       if (shadowFirst ? next.wallets.filter((w) => w.shadow).length >= SHADOW.max : next.wallets.filter((w) => w.enabled).length >= maxWallets) continue;
@@ -1226,7 +1226,7 @@ async function tuneWalletStrategies(d: Awaited<ReturnType<typeof loadBacktestDat
   const L = currentLearning();
   const vetoed = (key: string) => (L.vetoed ?? []).some((v) => v.setup === key && v.until > Date.now());
   const changes: { address: string; to: string | null; from: string | null; text: string }[] = [];
-  for (const w of d.cfg.wallets.filter((x) => x.enabled && chainOf(x) === 'solana')) {
+  for (const w of d.cfg.wallets.filter((x) => x.enabled && replayable(x) && d.swaps.some((s) => s.wallet === x.address))) {
     progress(`Checking which strategy fits ${w.label}…`);
     const pick = pickWalletStrategy(d.swaps, d.cfg, d.opts, d.marks, d.prices, w.address, recentFrom);
     if (!pick?.change || vetoed(`${w.address}:${pick.best.id}`)) continue;
@@ -1298,10 +1298,11 @@ function saveTune() {
   writeAtomic(TUNE_FILE, JSON.stringify(lastTune));
   broadcast('autotune', lastTune);
 }
+/** Wallets whose history can be replayed: Solana always, Base when there's an Alchemy key to read it. */
+const replayable = (w: { address: string; chain?: string }) => chainOf(w) === 'solana' || (chainOf(w) === 'base' && !!alchemyUrl());
 function runAutoTune(manual = false) {
-  // Backtests read Solana history; other chains' wallets aren't included yet.
-  const wallets = engine.cfg.wallets.filter((w) => w.enabled && chainOf(w) === 'solana').slice(0, 8).map((w) => w.address);
-  if (!wallets.length) throw new HttpError(400, 'Add Solana wallets to copy first (the settings check reads Solana history).');
+  const wallets = engine.cfg.wallets.filter((w) => w.enabled && replayable(w)).slice(0, 8).map((w) => w.address);
+  if (!wallets.length) throw new HttpError(400, engine.cfg.wallets.some((w) => w.enabled && chainOf(w) === 'base') ? NEEDS_ALCHEMY : 'Add wallets to copy first (the settings check replays their history).');
   if (jobs.some((j) => j.kind === 'optimize' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A settings comparison is already running.');
   const now = Date.now();
   const spec = backtestSpec({ wallets, from: now - 7 * 86_400_000, to: now, delayPct: measuredCopyGap() ?? 5 });
@@ -2413,7 +2414,6 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const w = next.wallets.find((x) => x.address === b.address);
     if (!w) throw new HttpError(404, "That wallet isn't in your list.");
     if (b.action === 'start') {
-      if (chainOf(w) !== 'solana') throw new HttpError(400, 'Shadow copying is for Solana wallets for now.');
       if (next.wallets.filter((x) => x.shadow).length >= SHADOW.max) throw new HttpError(400, `At most ${SHADOW.max} wallets in shadow at once.`);
       Object.assign(w, { enabled: false, shadow: true });
       restartShadow(engine.shadow, w.address, Date.now());

@@ -212,11 +212,15 @@ export class BotEngine extends EventEmitter {
     // Wallets on other chains (Base): watched by their chain's adapter. Paper mode only where live isn't ready.
     const byChain = new Map<string, typeof wallets>();
     for (const w of wallets) if (chainOf(w) !== 'solana') byChain.set(chainOf(w), [...(byChain.get(chainOf(w)) ?? []), w]);
-    for (const [id, ws] of byChain) {
+    for (const [id, all] of byChain) {
+      let ws = all;
       const c = getChain(id as ChainId);
       if (this.cfg.mode === 'live' && !c.liveTrading) {
-        this.log(`${ws.length} ${c.meta.name} wallet(s) not watched: live trading on ${c.meta.name} is off (Settings → Trading wallet), so they are skipped in live mode.`, 'warn');
-        continue;
+        // Shadow wallets cost nothing, so they're still watched; real copying waits for live trading on that chain.
+        const real = ws.filter((w) => w.enabled);
+        if (real.length) this.log(`${real.length} ${c.meta.name} wallet(s) not copied: live trading on ${c.meta.name} is off (Settings → Trading wallet), so they are skipped in live mode.`, 'warn');
+        ws = ws.filter((w) => w.shadow && !w.enabled);
+        if (!ws.length) continue;
       }
       if (!c.watch) continue;
       this.watchers.push(c.watch(ws.map((w) => w.address), (s) => this.onChainSwap(s, gen), (e) => this.logError(e)));
@@ -506,7 +510,7 @@ export class BotEngine extends EventEmitter {
       if (pause) {
         w.enabled = false;
         w.pausedReason = pause;
-        if (this.cfg.trial.shadowPaused && chainOf(w) === 'solana' && this.shadowCount() < SHADOW.max) {
+        if (this.cfg.trial.shadowPaused && this.shadowCount() < SHADOW.max) {
           w.shadow = true;
           restartShadow(this.shadow, w.address, Date.now());
           this.saveShadow(true);

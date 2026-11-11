@@ -152,3 +152,27 @@ test('pickWalletStrategy: finds the strategy that fits one wallet, and only swit
   // A wallet with no trades in the data: nothing to judge.
   assert.equal(pickWalletStrategy(swaps, { ...cfg, wallets: [{ ...cfg.wallets[0], address: 'B' }] }, opts, new Map(), prices, 'B', 0), null);
 });
+
+test('pickWalletStrategy works the same for a Base wallet (0x address, Base coins, ETH converted to SOL)', async () => {
+  const { pickWalletStrategy } = await import('./strategies');
+  const A = '0x' + 'ab'.repeat(20);
+  const T0 = Date.UTC(2026, 10, 1, 12) / 1000;
+  let n = 0;
+  const sw = (o: any, min: number) => ({ chain: 'base', signature: `0x${n++}`, wallet: A, blockTime: T0 + min * 60, decimals: 18, tokenAmount: 10n ** 18n, tokenPre: 0n, tokenPost: 0n, quote: 'SOL', quoteAmount: 1, nativeAmount: 0.05, ...o });
+  const STEP = 300_000;
+  const rows: [number, number, number][] = [[1, 1, 1], [1, 1, 1], [1, 1.4, 1.4], [1.4, 1.8, 1.7], [1.2, 1.7, 1.2], [0.9, 1.2, 0.9], [0.6, 0.9, 0.6], [0.5, 0.6, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]];
+  const pumpThenDump = { step: STEP, candles: rows.map(([l, h, c], i) => ({ t: (T0 - 300) * 1000 + i * STEP, l, h, c })) };
+  const cfg = structuredClone(DEFAULT_CONFIG);
+  cfg.wallets = [{ address: A, chain: 'base', label: 'b', enabled: true, sizeMultiplier: 1, maxExposureSol: 0 } as any];
+  cfg.buy = { ...cfg.buy, fixedSol: 0.1, minTargetBuySol: 0 };
+  cfg.exits.lockAtPct = 0;
+  cfg.protect.crashPct = 0;
+  cfg.risk.maxOpenPositions = 20;
+  cfg.risk.maxTotalExposureSol = 10;
+  const mints = Array.from({ length: 12 }, (_, i) => '0x' + String(i).padStart(40, 'c'));
+  const swaps = mints.flatMap((m) => [sw({ side: 'buy', mint: m }, 0), sw({ side: 'sell', mint: m, quoteAmount: 0.5, tokenPre: 10n ** 18n }, 60)]) as any[];
+  const p = pickWalletStrategy(swaps, cfg, { delayPct: 0, feeSol: 0 }, new Map(), new Map(mints.map((m) => [m, pumpThenDump])), A, 0)!;
+  assert.ok(p, 'a Base wallet is judged like any other');
+  assert.ok(p.best.totalSol > p.current.totalSol);
+  assert.equal(p.change, true);
+});

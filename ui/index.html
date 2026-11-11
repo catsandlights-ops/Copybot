@@ -1283,7 +1283,7 @@ function shadowNote(w) {
     <div style="margin-top:2px"><a href="#" data-shadow="promote" data-addr="${esc(w.address)}">Promote now</a> · <a href="#" class="muted" data-shadow="stop" data-addr="${esc(w.address)}">Stop</a></div></div>`;
 }
 function shadowButtons(w) {
-  if (/^0x/i.test(w.address) || w.shadow || w.enabled !== false) return '';
+  if (w.shadow || w.enabled !== false) return '';
   return ` <button class="btn sm ghost" data-shadow="start" data-addr="${esc(w.address)}" title="Copy it virtually (no money) and bring it back by itself if it proves itself">Shadow</button>`;
 }
 document.addEventListener('click', async (e) => {
@@ -1423,7 +1423,7 @@ function renderWallets(el) {
             <td class="r num muted">${held || '—'}</td>
             <td class="r"><input class="input wallet-num" type="number" min="0.1" max="10" step="0.1" data-mult="${i}" value="${esc(w.sizeMultiplier ?? 1)}" aria-label="Size multiplier"></td>
             <td class="r"><input class="input wallet-num" type="number" min="0" step="0.05" data-budget="${i}" value="${esc(w.maxExposureSol ?? 0)}" aria-label="Budget in SOL"></td>
-            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button>${shadowButtons(w)}${chainOfW(w) === 'base' ? ' <span class="chip" title="Base wallet: copied in paper mode">Base</span>' : ''} <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
+            <td class="r" style="white-space:nowrap"><button class="btn sm ${w.exits || w.strategy ? 'primary' : ''}" data-exits="${i}" title="Give this wallet its own strategy or exits">${w.strategy ? esc((S.strategies || []).find((x) => x.id === w.strategy)?.name || 'Strategy') : 'Strategy'}${w.exits ? ' ✓' : ''}</button> <button class="btn sm" data-analyze="${esc(w.address)}">Analyze</button>${shadowButtons(w)}${chainOfW(w) === 'base' ? ` <span class="chip" title="${S.config.mode === 'live' && !S.config.execution?.baseLive ? 'Base wallet: not copied in live mode until Live trading on Base is on (Settings → Trading wallet). Shadow still works.' : 'Base wallet'}">Base</span>` : ''} <button class="btn sm ghost danger" data-remove="${i}" title="Remove wallet" aria-label="Remove wallet">✕</button></td>
           </tr>`; }).join('')}
       </tbody></table></div>` : '<div class="empty"><h3>No wallets yet</h3>Paste a wallet address above, or use Find wallets to discover good ones.</div>'}
     </div>`;
