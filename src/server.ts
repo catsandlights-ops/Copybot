@@ -919,11 +919,13 @@ setInterval(() => {
 }, 10 * 60_000).unref();
 
 // ---------- watchlist ----------
+/** A Solana or Base token address. */
+const isTokenAddress = (a: unknown): a is string => isAddress(a) || (typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a));
 const WATCHLIST = 'data/watchlist.json';
 function readWatchlist(): string[] {
   try {
     const l = JSON.parse(fs.readFileSync(WATCHLIST, 'utf8'));
-    return Array.isArray(l) ? l.filter(isAddress).slice(0, 30) : [];
+    return Array.isArray(l) ? l.filter(isTokenAddress).slice(0, 30) : [];
   } catch {
     return [];
   }
@@ -2032,11 +2034,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/orders') {
     const b = await readBody(req);
-    if (engine.cfg.mode === 'live' && !engine.kp) throw new HttpError(400, 'Live mode needs a trading wallet first (Settings → Trading wallet).');
     const o = makeOrder(b, Date.now(), crypto.randomBytes(6).toString('hex'));
     if (typeof o === 'string') throw new HttpError(400, o);
+    if (engine.cfg.mode === 'live' && o.chain === 'base' && !getChainAdapter('base').liveTrading) throw new HttpError(400, 'Live trading on Base is off: turn it on in Settings → Trading wallet to place Base orders in live mode.');
+    if (engine.cfg.mode === 'live' && o.chain !== 'base' && !engine.kp) throw new HttpError(400, 'Live mode needs a trading wallet first (Settings → Trading wallet).');
     if (!o.symbol) {
-      const info = await markets.tokens([o.mint]).catch(() => []);
+      const info = await markets.tokensAnyChain([o.mint]).catch(() => []);
       const sym = (info as any[])[0]?.symbol;
       if (sym && sym !== '?') o.symbol = sym;
     }
@@ -2217,7 +2220,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
             solUsd ? engine.cfg.buy.fixedSol * solUsd : null,
             Date.now(),
           );
-          return { ...t, filterVerdict: verdict, watched: readWatchlist().includes(mint) };
+          return { ...t, filterVerdict: verdict, watched: readWatchlist().includes(mch === 'base' ? mint.toLowerCase() : mint) };
         });
       }
       case 'GET /api/markets/chart': {
@@ -2237,12 +2240,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         return reply(() => markets.topTraders(pool, duration as (typeof markets.DURATIONS)[number]));
       }
       case 'GET /api/markets/watchlist':
-        return reply(() => markets.tokens(readWatchlist()));
+        return reply(() => markets.tokensAnyChain(readWatchlist()));
       case 'PUT /api/markets/watchlist': {
         const b = await readBody(req);
-        if (!isAddress(b.mint)) throw new HttpError(400, 'Not a valid token address');
-        const list = readWatchlist().filter((m) => m !== b.mint);
-        if (b.watch) list.unshift(b.mint);
+        if (!isTokenAddress(b.mint)) throw new HttpError(400, 'Not a valid token address');
+        const mint = isAddress(b.mint) ? b.mint : b.mint.toLowerCase();
+        const list = readWatchlist().filter((m) => m !== mint);
+        if (b.watch) list.unshift(mint);
         fs.mkdirSync('data', { recursive: true });
         writeAtomic(WATCHLIST, JSON.stringify(list.slice(0, 30)));
         return send(res, 200, { watched: !!b.watch });

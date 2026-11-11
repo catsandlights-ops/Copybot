@@ -367,7 +367,7 @@ export class BotEngine extends EventEmitter {
     const mints = [...new Set(active.map((o) => o.mint))];
     const prices = new Map<string, number | null>();
     for (let i = 0; i < mints.length; i += 30) {
-      const list = await markets.tokens(mints.slice(i, i + 30)).catch(() => []);
+      const list = await markets.tokensAnyChain(mints.slice(i, i + 30)).catch(() => []);
       for (const t of list as { mint: string | null; priceUsd: number | null }[]) {
         if (!t.mint) continue;
         prices.set(t.mint, t.priceUsd ?? null);
@@ -392,7 +392,7 @@ export class BotEngine extends EventEmitter {
       } else if ('buySol' in act) {
         this.log(`Order: ${describeOrder(o)}${o.kind === 'dca' ? ` (buy ${o.done + 1} of ${o.times})` : ''}`, 'signal');
         const why = await new Promise<string | null>((resolve) => {
-          this.enqueue(async () => resolve(await this.orderBuyNow(o.mint, act.buySol).catch((e) => (e as Error).message)));
+          this.enqueue(async () => resolve(await this.orderBuyNow(o.mint, act.buySol, getChain(o.chain ?? 'solana')).catch((e) => (e as Error).message)));
         });
         if (why) this.log(`  skipped: ${plainSkip(why)}`, 'skip');
         replace(afterAttempt(o, !why, why ?? `bought ${act.buySol} SOL`, Date.now()));
@@ -407,19 +407,20 @@ export class BotEngine extends EventEmitter {
   }
 
   /** An order's buy: the same limits and safety checks as every other buy. Returns why not, or null. */
-  private async orderBuyNow(mint: string, sol: number): Promise<string | null> {
+  private async orderBuyNow(mint: string, sol: number, chain: ChainAdapter = this.chain): Promise<string | null> {
     if (!this.running) return 'the bot stopped';
+    if (this.cfg.mode === 'live' && !chain.liveTrading) return `live trading on ${chain.meta.name} is off (Settings → Trading wallet)`;
     const room = this.roomFor(mint, sol);
     if (room) return room;
-    if (this.kp && this.cfg.mode === 'live') {
-      const bal = await this.chain.balance(this.ctx(), this.kp.publicKey.toBase58());
-      if (bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
+    if (this.cfg.mode === 'live') {
+      const bal = await this.liveBalanceSol(chain);
+      if (bal != null && bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
     }
-    const checked = await this.tokenChecks(mint, sol, false);
+    const checked = await this.tokenChecks(mint, sol, false, false, chain);
     if (typeof checked === 'string') return checked;
     if (!this.running) return 'the bot stopped';
-    const entry = await this.entryFor(mint, this.chain, checked.info, 'order'); // your own orders are never blocked by lessons
-    await this.trader.buy(mint, checked.check.decimals, checked.check.buyQuote, ORDER_SOURCE);
+    const entry = await this.entryFor(mint, chain, checked.info, 'order'); // your own orders are never blocked by lessons
+    await this.trader.buy(mint, checked.check.decimals, checked.check.buyQuote, ORDER_SOURCE, undefined, chain);
     this.noteEntry(mint, entry);
     return null;
   }

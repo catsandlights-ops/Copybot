@@ -71,3 +71,12 @@ test('describeOrder and fmtPrice', () => {
   assert.equal(fmtPrice(123.45), '123.45');
   assert.equal(fmtPrice(0.05318), '0.05318');
 });
+
+test('makeOrder: a Base coin (0x…) makes a Base order, address lowercased', () => {
+  const o = makeOrder({ kind: 'buy', mint: '0xAbCdEf0123456789aBcDeF0123456789AbCdEf01', cond: 'below', priceUsd: 0.5, sol: 0.1, expiresInHours: 24 }, t0, 'b1');
+  assert.notEqual(typeof o, 'string', String(o));
+  assert.equal((o as Order).chain, 'base');
+  assert.equal((o as Order).mint, '0xabcdef0123456789abcdef0123456789abcdef01');
+  assert.equal(mk({ kind: 'buy', cond: 'below', priceUsd: 0.5, sol: 0.1, expiresInHours: 24 }).chain, 'solana');
+  assert.equal(makeOrder({ kind: 'buy', mint: '0x123', cond: 'below', priceUsd: 1, sol: 0.1 }, t0, 'b2'), 'Enter a valid token address');
+});

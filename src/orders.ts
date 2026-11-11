@@ -38,9 +38,10 @@ const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : N
 export function makeOrder(b: any, now: number, id: string): Order | string {
   const kind: OrderKind | undefined = (['buy', 'sell', 'dca'] as const).find((k) => k === b?.kind);
   if (!kind) return 'Pick an order type';
-  if (!isAddress(b.mint)) return 'Enter a valid token address';
+  const onBase = typeof b?.mint === 'string' && /^0x[0-9a-fA-F]{40}$/.test(b.mint);
+  if (!onBase && !isAddress(b.mint)) return 'Enter a valid token address';
   const symbol = String(b.symbol ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').slice(0, 20);
-  const o: Order = { id, chain: 'solana', kind, mint: b.mint, symbol, done: 0, attempts: 0, status: 'active', createdAt: now, updatedAt: now };
+  const o: Order = { id, chain: onBase ? 'base' : 'solana', kind, mint: onBase ? b.mint.toLowerCase() : b.mint, symbol, done: 0, attempts: 0, status: 'active', createdAt: now, updatedAt: now };
   const hours = num(b.expiresInHours);
   if (kind === 'buy' || kind === 'sell') {
     if (b.cond !== 'below' && b.cond !== 'above') return 'Pick "at or below" or "at or above"';

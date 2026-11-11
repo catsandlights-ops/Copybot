@@ -1434,8 +1434,8 @@ function renderWallets(el) {
     const chain = isEvm(address) ? 'base' : 'solana';
     if (chain === 'base') address = address.toLowerCase();
     if (ws.some((w) => w.address === address)) return toast('That wallet is already in the list', true);
-    if (chain === 'base' && S.config.mode === 'live') toast('Base wallets only run in paper mode for now: it will be watched when you switch to paper.', true);
-    if (await saveWallets([...ws, { chain, address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], chain === 'base' ? 'Base wallet added (paper mode)' : 'Wallet added')) {
+    if (chain === 'base' && S.config.mode === 'live' && !S.config.execution?.baseLive) toast('Live trading on Base is off, so this wallet is only copied in paper mode (turn it on in Settings → Trading wallet).', true);
+    if (await saveWallets([...ws, { chain, address, label: f.get('label').trim() || `trader-${ws.length + 1}`, enabled: true }], chain === 'base' ? 'Base wallet added' : 'Wallet added')) {
       e.target.reset();
       // Base: say what kind of address this is (a smart-contract wallet, a regular one, or one that never trades itself).
       if (chain === 'base') api('POST', '/api/wallets/base-check', { address }).then((r) => { if (r.level === 'warn') confirmModal({ title: 'Check this Base address', confirm: 'OK', body: `<p>${esc(r.text)}</p>` }); else toast(r.text); }).catch(() => {});
@@ -1996,6 +1996,7 @@ function renderOrders(el) {
   paintOrderLists();
   const tokBox = $('#of-tok');
   const showTok = () => {
+    if (!tokBox.isConnected) return; // you left the page while the price was loading
     const t = OF.tok;
     tokBox.innerHTML = !t ? '' : t.error ? `<span class="neg">${esc(t.error)}</span>` : `<b>${esc(t.symbol)}</b> ${esc(t.name || '')} · now <b>${orderPrice(t.priceUsd)}</b>${S.status.positions.some((p) => p.mint === OF.mint) ? ' · <span class="pos">you hold it</span>' : ''}`;
     const q = $('#of-quick');
@@ -2003,12 +2004,13 @@ function renderOrders(el) {
     document.querySelectorAll('[data-pct]').forEach((b) => (b.onclick = () => { $('#of-price').value = +(OF.tok.priceUsd * (1 + Number(b.dataset.pct) / 100)).toPrecision(4); $('#of-cond').value = Number(b.dataset.pct) < 0 ? 'below' : 'above'; summary(); }));
   };
   const lookup = async () => {
-    const m = $('#of-mint').value.trim();
+    let m = $('#of-mint').value.trim();
+    if (isEvm(m)) m = m.toLowerCase(); // a Base coin
     OF.mint = m;
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)) { OF.tok = null; showTok(); return; }
+    if (!isEvm(m) && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m)) { OF.tok = null; showTok(); return; }
     if (OF.tok && OF.tok.mint === m && $('#of-tok').innerHTML) return; // unchanged: don't redraw (a click may be on its way)
     tokBox.textContent = 'Looking up the price…';
-    try { const t = (await api('GET', `/api/markets/token?mint=${m}`))?.data; OF.tok = t ? { ...t, mint: m } : { mint: m, error: 'No market data for this token.' }; } catch (e) { OF.tok = { mint: m, error: e.message }; }
+    try { const t = (await api('GET', `/api/markets/token?mint=${m}${isEvm(m) ? '&chain=base' : ''}`))?.data; OF.tok = t ? { ...t, mint: m } : { mint: m, error: 'No market data for this token.' }; } catch (e) { OF.tok = { mint: m, error: e.message }; }
     showTok(); summary();
   };
   const val = (id) => { const e = $(id); return e ? e.value : undefined; };
@@ -2017,7 +2019,8 @@ function renderOrders(el) {
     const b = body(), name = OF.tok?.symbol || 'this token';
     const txt = b.kind === 'dca' ? (b.sol > 0 && b.times > 0 ? `${b.times} buys of ${b.sol} SOL = up to ${+(b.sol * b.times).toFixed(4)} SOL of ${esc(name)} in total.` : '')
       : b.priceUsd > 0 && OF.tok?.priceUsd ? `That's ${Math.abs((b.priceUsd / OF.tok.priceUsd - 1) * 100).toFixed(1)}% ${b.priceUsd < OF.tok.priceUsd ? 'below' : 'above'} the current price.${(b.cond === 'below') === (b.priceUsd >= OF.tok.priceUsd) ? ' <b>It would fill right away.</b>' : ''}` : '';
-    $('#of-sum').innerHTML = txt;
+    const sum = $('#of-sum');
+    if (sum) sum.innerHTML = txt;
   };
   el.querySelectorAll('#of-kind button').forEach((b) => (b.onclick = () => { OF.kind = b.dataset.k; renderOrders(el); }));
   el.querySelectorAll('[data-hold]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); $('#of-mint').value = a.dataset.hold; lookup(); }));
@@ -2090,7 +2093,6 @@ const tokenThumb = (img, sym) => img ? `<img class="tthumb" src="${esc(img)}" al
 function renderMarkets(el) {
   if (S.m.token) return renderToken(el);
   const mc = S.m.chain || 'solana';
-  if (mc === 'base' && S.m.tab === 'watch') S.m.tab = 'trending';
   const pkey = S.m.tab === 'watch' ? 'pools:watch' : `pools:${mc}:${S.m.tab}`;
   const ov = mdata('overview'), pools = mdata(pkey), news = mdata('news'), wh = mdata('whales');
   mload('overview', '/api/markets/overview');
@@ -2109,7 +2111,7 @@ function renderMarkets(el) {
       <div class="card">
         <div class="card-h"><h2>Tokens</h2><span class="spacer"></span>
           <div class="seg" style="margin-right:8px">${[['solana', 'Solana'], ['base', 'Base']].map(([k, l]) => `<button data-mchain="${k}" class="${mc === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-          <div class="seg">${[['trending', 'Trending'], ['new', 'New'], ...(mc === 'solana' ? [['watch', '★ Watchlist']] : [])].map(([k, l]) => `<button data-mtab="${k}" class="${S.m.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+          <div class="seg">${[['trending', 'Trending'], ['new', 'New'], ['watch', '★ Watchlist']].map(([k, l]) => `<button data-mtab="${k}" class="${S.m.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
         <div class="tbl-wrap"><table>
           <thead><tr><th>Token</th><th class="r">Price</th><th class="r">1h</th><th class="r">24h</th><th class="r">Volume 24h</th><th class="r">Liquidity</th><th class="r">Mkt cap</th><th class="r">Age</th><th>Buys / sells</th></tr></thead>
           <tbody>${!pools ? loadingRow(9) : pools.error ? `<tr><td colspan="9">${errBox(pools)}</td></tr>` : !rows.length ? `<tr><td colspan="9" class="empty">${S.m.tab === 'watch' ? 'Your watchlist is empty. Open a token and press ★ Watch.' : 'Nothing right now.'}</td></tr>` : rows.map((t) => {
@@ -2189,8 +2191,8 @@ function renderToken(el) {
     <div class="card tok-h">
       <div class="row" style="gap:14px">${tokenThumb(t.image, t.symbol).replace('tthumb', 'tthumb lg')}<div><h2 style="margin:0">${esc(t.symbol)} <span class="muted" style="font-weight:500;font-size:15px">${esc(t.name)}</span></h2><div class="row" style="gap:12px"><b class="num" style="font-size:24px">${priceFmt(t.priceUsd)}</b>${chg(t.change?.h24)}<span class="muted small">24h</span></div></div></div>
       <div class="row">
-        ${tc === 'solana' ? `<button class="btn" id="mk-order">Place an order</button>
-        <button class="btn ${t.watched ? '' : 'primary'}" id="mk-watch">${t.watched ? '★ Watching' : '☆ Watch'}</button>` : '<span class="chip" title="Orders and the watchlist are Solana-only for now">Base</span>'}
+        <button class="btn" id="mk-order">Place an order</button>
+        <button class="btn ${t.watched ? '' : 'primary'}" id="mk-watch">${t.watched ? '★ Watching' : '☆ Watch'}</button>${tc === 'base' ? ' <span class="chip">Base</span>' : ''}
         <a class="btn" href="https://dexscreener.com/${tc}/${esc(t.pool)}" target="_blank" rel="noopener">Dexscreener</a>
         ${tc === 'base' ? `<a class="btn" href="https://basescan.org/token/${esc(t.mint)}" target="_blank" rel="noopener">Basescan</a>` : `<a class="btn" href="https://solscan.io/token/${esc(t.mint)}" target="_blank" rel="noopener">Solscan</a>`}
       </div>

@@ -211,6 +211,14 @@ export function tokens(mints: string[], chain: ChainId = DEFAULT_CHAIN) {
   });
 }
 
+/** Like tokens(), for a list that may mix Solana and Base coins (in the same order). */
+export async function tokensAnyChain(mints: string[]) {
+  const isBase = (m: string) => /^0x[0-9a-fA-F]{40}$/.test(m);
+  const [sol, base] = await Promise.all([tokens(mints.filter((m) => !isBase(m)), 'solana'), tokens(mints.filter(isBase), 'base')]);
+  const by = new Map<string, any>([...sol, ...base].map((t: any) => [t.mint, t]));
+  return mints.map((m) => by.get(m)).filter(Boolean);
+}
+
 export function search(q: string, chain: ChainId = DEFAULT_CHAIN) {
   const query = q.replace(/[^\w\s.$-]/g, '').trim().slice(0, 60);
   if (query.length < 2) return Promise.resolve([]);
