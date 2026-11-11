@@ -13,6 +13,13 @@ window.GUIDES = [
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
+<h3>New in 0.8.8</h3>
+<ul>
+<li><b>Shadow copying:</b> new wallets (in live mode) and wallets paused for losing are copied <i>virtually</i>, with no money, until they prove themselves in your own conditions: 8+ finished trades over a day, a profit, and winning 1.3× what they lose. Then they start real copying on the usual trial. See their progress on the Wallets page, with Promote now and Stop.</li>
+<li><b>Don't buy into a crash:</b> no copy into a coin that fell 15%+ in the last 5 minutes or is being dumped (Settings → Safety).</li>
+<li><b>A trailing stop that fits each coin:</b> wild coins get more room, calm ones a tighter stop (2.5× the coin's typical 5-minute move, 60–160% of your setting).</li>
+<li><b>Lighter and faster:</b> your trade history stays in memory (500× faster to read after months of trades), and open positions are priced with one request for all of them, with a full quote only near a stop or target.</li>
+</ul>
 <h3>New in 0.8.7</h3>
 <ul>
 <li><b>A strategy for each wallet, re-checked daily:</b> with Learning on, Copybot replays each wallet's last week with your settings and with every strategy, and gives it the one that clearly fits it best: only with 5+ finished trades, a real profit, a clear margin, and not worse over the last 2 days. Switched by itself in paper mode, suggested in live; every switch is in the Learning journal with Undo.</li>
