@@ -23,6 +23,9 @@ fs.writeFileSync(
   path.join(dir, 'config.json'),
   JSON.stringify({ mode: 'paper', wallets: [...world.wallets.map((w, i) => ({ address: w.address, label: `w${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })), { chain: 'base', address: baseWallet, label: 'base-1', enabled: false, sizeMultiplier: 1, maxExposureSol: 0 }] }),
 );
+const bs58 = (await import('bs58')).default;
+const { Keypair } = createRequire(import.meta.url)('@solana/web3.js');
+fs.writeFileSync(path.join(dir, '.env'), `PRIVATE_KEY=${bs58.encode(Keypair.generate().secretKey)}\n`);
 const child = spawn(process.execPath, [path.join(root, 'dist/server.mjs')], {
   cwd: dir,
   env: { ...process.env, NO_OPEN: '1', PORT: String(port), RPC_URL: `http://127.0.0.1:${worldPort}/rpc`, STRESS_WORLD_PORT: String(worldPort), NODE_OPTIONS: `--import ${path.join(here, 'intercept.mjs')}` },
@@ -37,6 +40,8 @@ for (let i = 0; i < 100 && !url; i++) {
 }
 if (!url) throw new Error('the app did not start:\n' + out.slice(-2000));
 
+const shots = process.argv.find((a) => a.startsWith('--shots='))?.slice(8); // save screenshots of the go-live steps here
+const shot = (n) => (shots ? page.screenshot({ path: path.join(shots, `golive-${n}.png`) }) : null);
 const errors = [];
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
@@ -66,6 +71,50 @@ if (!tok?.trim()) errors.push('a Base coin on the Orders page was not looked up'
 await page.click('.nav[data-page="markets"]');
 await page.waitForTimeout(600);
 if (!(await page.$('[data-mtab="watch"]'))) errors.push('no watchlist tab on Markets');
+// The go-live assistant: opens from Settings → Live, walks its 5 steps, runs a test trade
+// (the fake market can't execute swaps, so it must fail cleanly), switches to live, and undoes the starter limits.
+await page.evaluate(() => window.openSettings?.('#mode-card'));
+await page.waitForTimeout(700);
+await page.click('#mode-seg [data-m="live"]');
+await page.waitForSelector('#gl-next', { timeout: 15_000 }).catch(() => errors.push('the go-live assistant did not open'));
+for (let i = 0; i < 3; i++) {
+  if (!(await page.$('#gl-next'))) break;
+  await shot(i + 1);
+  await page.click('#gl-next');
+  await page.waitForTimeout(400);
+}
+if (await page.$('[data-gltest="solana"]')) {
+  await page.click('[data-gltest="solana"]');
+  await page.click('#modal-root [data-a=yes]');
+  await page.waitForFunction(() => !document.querySelector('[data-gltest]')?.disabled, null, { timeout: 60_000 }).catch(() => errors.push('the test trade never finished'));
+  await shot(4);
+  const res = await page.textContent('.wz-body');
+  if (!/Failed at the|Worked in/.test(res)) errors.push('the test trade showed no result');
+} else errors.push('no Solana test-trade button');
+await page.click('#gl-next');
+await page.waitForTimeout(400);
+await shot(5);
+if (!(await page.$('#gl-go'))) errors.push('no Switch to live button on the last step');
+else {
+  await page.click('#gl-go');
+  await page.click('#modal-root [data-a=yes]');
+  await page.waitForTimeout(1500);
+  if (await page.$('#modal-root [data-a=no]')) await page.click('#modal-root [data-a=no]'); // don't start the bot
+  const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+  if (cfg.mode !== 'live') errors.push(`after the switch the mode is ${cfg.mode}`);
+  if (!(cfg.buy?.fixedSol <= 0.25)) errors.push(`starter limits not applied (per trade ${cfg.buy?.fixedSol})`);
+  if (!fs.existsSync(path.join(dir, 'data/golive.json'))) errors.push('the normal limits were not saved');
+  await page.evaluate(() => window.openSettings?.('#mode-card'));
+  await page.waitForTimeout(1200);
+  if (!(await page.$('#gl-restore'))) errors.push('no "bring back my normal limits" button in live mode');
+  else {
+    await page.click('#gl-restore');
+    await page.click('#modal-root [data-a=yes]');
+    await page.waitForTimeout(1200);
+    const after = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+    if (after.risk?.maxOpenPositions === 3 && cfg.risk?.maxOpenPositions === 3) errors.push('normal limits were not restored');
+  }
+}
 
 await browser.close();
 child.kill('SIGKILL');

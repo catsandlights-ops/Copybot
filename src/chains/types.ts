@@ -32,7 +32,8 @@ export type ChainMeta = {
 
 /** Everything that talks to the chain itself. */
 export type ChainContext = { conn: Connection; kp: Keypair | null; cfg: Config };
-export type SwapExtras = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void; onSent?: (sig: string) => void };
+/** test: the go-live assistant's tiny test trade, allowed before live trading on that chain is switched on. */
+export type SwapExtras = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void; onSent?: (sig: string) => void; test?: boolean };
 
 export interface ChainAdapter {
   meta: ChainMeta;

@@ -32,6 +32,7 @@ import { getChain as getChainAdapter, isChainId as isChainIdFn } from './chains'
 import { getQuote } from './jupiter';
 import { downsample, pushPoint, runningTotal, since, type Pt } from './series';
 import { exitConfigFor } from './config';
+import { applyRoles, currentLimits, rampAdvice, roundTrip, starterLimits, suggestRoles, withLimits, type GoLiveRecord, type WalletRole } from './golive';
 import { PublicKey } from '@solana/web3.js';
 import { backupRpcUrl, failover, onRpcSwitch } from './env';
 import { readSecret } from './env';
@@ -1388,6 +1389,74 @@ async function solPerUnit(mint: string, raw: bigint, slippageBps: number): Promi
   return sol == null ? null : sol / Number(raw);
 }
 
+const GOLIVE_FILE = 'data/golive.json';
+let goLiveTesting = false;
+function readGoLive(): GoLiveRecord | null {
+  try {
+    return JSON.parse(fs.readFileSync(GOLIVE_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+/** Everything the go-live assistant shows: paper results, the checklist, the trading wallets, the starter limits. */
+async function goLivePlan() {
+  const ready = readinessReport();
+  const ctx = engine.chainCtx();
+  const sol = getChainAdapter('solana');
+  const base = getChainAdapter('base');
+  const solAddr = engine.kp?.publicKey.toBase58() ?? null;
+  const baseAddr = base.liveOwner?.() ?? null;
+  const [solBal, ethBal] = await Promise.all([solAddr ? sol.balance(ctx, solAddr).catch(() => null) : null, baseAddr ? base.balance(ctx, baseAddr).catch(() => null) : null]);
+  const ethInSol = ethBal != null ? await base.nativeToSol(ethBal).catch(() => null) : null;
+  const money = (solBal ?? 0) + (ethInSol ?? 0);
+  const usesBaseWallets = engine.cfg.wallets.some((w) => chainOf(w) === 'base' && (w.enabled || w.shadow));
+  const rec = readGoLive();
+  const liveSells = readTrades(1e9).filter((t: any) => t.mode === 'live' && t.side === 'sell');
+  return {
+    mode: engine.cfg.mode,
+    ...ready,
+    wallets: {
+      solana: { hasKey: !!engine.kp, address: solAddr, balance: solBal, keyError: engine.keyError ?? null },
+      base: { hasKey: hasSecret('BASE_PRIVATE_KEY'), address: baseAddr, balance: ethBal, balanceSol: ethInSol, liveOn: engine.cfg.execution.baseLive, used: usesBaseWallets },
+    },
+    moneySol: money,
+    starter: starterLimits(money, engine.cfg),
+    current: currentLimits(engine.cfg),
+    roles: suggestRoles(engine.cfg.wallets, ready.sources),
+    record: rec,
+    ramp: rampAdvice(rec, liveSells, Date.now()),
+  };
+}
+
+/** Paper results per source, the money-protecting checklist and the overall verdict (Settings and the go-live assistant). */
+function readinessReport() {
+  // Paper results per source, with the paper-mode signal counts.
+  let stats: import('./readiness').SignalStats = {};
+  try {
+    stats = engine.cfg.mode === 'paper' ? (engine.saveSigStats(), engine.sigStats) : JSON.parse(fs.readFileSync('data/signal-stats-paper.json', 'utf8'));
+  } catch {
+    /* none yet */
+  }
+  const trades = readTrades(1e9);
+  const now = Date.now();
+  const sources = [
+    ...engine.cfg.wallets.map((w) => sourceReport(w.address, w.label, chainOf(w), trades, stats[w.address], getChainAdapter(chainOf(w)).liveTrading, now)),
+    sourceReport(SCANNER_SOURCE, 'Market scanner', 'solana', trades, undefined, true, now),
+    sourceReport(ORDER_SOURCE, 'Your orders', 'solana', trades, undefined, true, now),
+  ].filter((s) => s.buys > 0 || engine.cfg.wallets.some((w) => w.address === s.source));
+  const c = engine.cfg;
+  const checklist = liveChecklist({
+    hasKey: !!engine.kp,
+    privateRpc: !rpcUrl().includes('api.mainnet-beta.solana.com'),
+    dailyLossLimitSol: c.risk.dailyLossLimitSol,
+    stopLossPct: c.risk.stopLossPct,
+    maxTotalExposureSol: c.risk.maxTotalExposureSol,
+    connectionOk: lastStatus ? lastStatus.summary.level !== 'bad' : null,
+    autopilotBudgetOk: !c.ai.enabled || c.ai.dailyBudgetUsd <= 20,
+  });
+  return { at: now, sources, checklist, overall: overallVerdict(sources, checklist) };
+}
+
 // ---------- connection status: is every outside service working? ----------
 const usesBase = () => engine.cfg.wallets.some((w) => chainOf(w) === 'base');
 const statusChecks = (): Check[] => [
@@ -1847,32 +1916,65 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/status/check') return send(res, 200, await checkStatus());
 
-  if (route === 'GET /api/readiness') {
-    // Paper results per source, with the paper-mode signal counts.
-    let stats: import('./readiness').SignalStats = {};
+  if (route === 'GET /api/readiness') return send(res, 200, readinessReport());
+
+  // ---------- the go-live assistant ----------
+  if (route === 'GET /api/golive') return send(res, 200, await goLivePlan());
+  if (route === 'GET /api/golive/ramp') {
+    const rec = readGoLive();
+    return send(res, 200, { record: rec, ramp: rampAdvice(rec, readTrades(1e9).filter((t: any) => t.mode === 'live' && t.side === 'sell'), Date.now()) });
+  }
+  if (route === 'POST /api/golive/test') {
+    // A real, tiny round trip (native → USDC → native) proving the trading wallet works.
+    const b = await readBody(req);
+    const chainId = b.chain === 'base' ? 'base' : 'solana';
+    if (goLiveTesting) throw new HttpError(409, 'A test trade is already running.');
+    const chain = getChainAdapter(chainId);
+    const owner = chainId === 'solana' ? engine.kp?.publicKey.toBase58() : chain.liveOwner?.();
+    if (!owner) throw new HttpError(400, chainId === 'solana' ? 'Add a Solana trading wallet first (Settings → Trading wallet).' : 'Add a Base trading key first (Settings → Trading wallet).');
+    goLiveTesting = true;
     try {
-      stats = engine.cfg.mode === 'paper' ? (engine.saveSigStats(), engine.sigStats) : JSON.parse(fs.readFileSync('data/signal-stats-paper.json', 'utf8'));
-    } catch {
-      /* none yet */
+      const amount = chainId === 'solana' ? 0.01 : 0.0005;
+      engine.log(`Go-live test: swapping ${amount} ${chain.meta.native.symbol} to ${chain.meta.stable.symbol} and back, with real money, to check the ${chain.meta.name} trading wallet works.`, 'system');
+      const r = await roundTrip(chain, engine.chainCtx(), owner, amount);
+      if (r.ok) engine.log(`Go-live test on ${chain.meta.name} passed in ${r.seconds}s; it cost ${Number.isFinite(r.costNative) ? `${r.costNative.toFixed(6)} ${chain.meta.native.symbol}` : 'a few cents'} in fees.${r.note}`, 'system');
+      else engine.log(`Go-live test on ${chain.meta.name} failed at the ${r.step} step: ${r.error}`, 'warn');
+      return send(res, 200, r);
+    } finally {
+      goLiveTesting = false;
     }
-    const trades = readTrades(1e9);
-    const now = Date.now();
-    const sources = [
-      ...engine.cfg.wallets.map((w) => sourceReport(w.address, w.label, chainOf(w), trades, stats[w.address], getChainAdapter(chainOf(w)).liveTrading, now)),
-      sourceReport(SCANNER_SOURCE, 'Market scanner', 'solana', trades, undefined, true, now),
-      sourceReport(ORDER_SOURCE, 'Your orders', 'solana', trades, undefined, true, now),
-    ].filter((s) => s.buys > 0 || engine.cfg.wallets.some((w) => w.address === s.source));
-    const c = engine.cfg;
-    const checklist = liveChecklist({
-      hasKey: !!engine.kp,
-      privateRpc: !rpcUrl().includes('api.mainnet-beta.solana.com'),
-      dailyLossLimitSol: c.risk.dailyLossLimitSol,
-      stopLossPct: c.risk.stopLossPct,
-      maxTotalExposureSol: c.risk.maxTotalExposureSol,
-      connectionOk: lastStatus ? lastStatus.summary.level !== 'bad' : null,
-      autopilotBudgetOk: !c.ai.enabled || c.ai.dailyBudgetUsd <= 20,
-    });
-    return send(res, 200, { at: now, sources, checklist, overall: overallVerdict(sources, checklist) });
+  }
+  if (route === 'POST /api/golive/apply') {
+    // The switch: starter limits (optional), which wallets copy for real, Base on or off, then live.
+    const b = await readBody(req);
+    const plan = await goLivePlan();
+    if (!plan.wallets.solana.hasKey && !(b.baseLive && plan.wallets.base.hasKey)) throw new HttpError(400, 'Add a trading wallet first (Settings → Trading wallet).');
+    const roles: Record<string, WalletRole> = {};
+    for (const [a, r] of Object.entries(b.roles ?? {})) if (engine.cfg.wallets.some((w) => w.address === a) && (r === 'live' || r === 'shadow' || r === 'off')) roles[a] = r;
+    let next = applyRoles(engine.cfg, roles, Date.now());
+    const before = currentLimits(engine.cfg);
+    const starter = b.starter ? plan.starter.limits : null;
+    if (starter) next = withLimits(next, starter);
+    next.execution.baseLive = !!b.baseLive && plan.wallets.base.hasKey;
+    next.mode = 'live';
+    const cfg = sanitizeConfig(next, true);
+    trialAndResume(cfg);
+    const rec: GoLiveRecord = { at: Date.now(), before, starter };
+    fs.mkdirSync('data', { recursive: true });
+    writeAtomic(GOLIVE_FILE, JSON.stringify(rec));
+    await applyChange(() => saveConfig(cfg));
+    const live = Object.values(roles).filter((r) => r === 'live').length;
+    engine.log(`Live mode on (go-live assistant): ${live} wallet${live === 1 ? '' : 's'} copied for real${Object.values(roles).some((r) => r === 'shadow') ? ', the others in shadow until they prove themselves' : ''}${starter ? `; starter limits: ${starter.fixedSol} SOL per trade, ${starter.maxOpenPositions} coins at once` : ''}${cfg.execution.baseLive ? '; Base live on' : ''}.`, 'system');
+    return send(res, 200, { config: engine.cfg, status: engine.snapshot() });
+  }
+  if (route === 'POST /api/golive/restore') {
+    const rec = readGoLive();
+    if (!rec?.starter || rec.restoredAt) throw new HttpError(400, 'There are no starter limits to undo.');
+    const cfg = sanitizeConfig(withLimits(engine.cfg, rec.before), true);
+    writeAtomic(GOLIVE_FILE, JSON.stringify({ ...rec, restoredAt: Date.now() }));
+    await applyChange(() => saveConfig(cfg));
+    engine.log(`Normal limits are back: ${rec.before.fixedSol} SOL per trade, up to ${rec.before.maxOpenPositions} coins at once.`, 'system');
+    return send(res, 200, { config: engine.cfg });
   }
 
   // ---------- backup and restore (secrets are never included) ----------

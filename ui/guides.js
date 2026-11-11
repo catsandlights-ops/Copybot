@@ -407,9 +407,16 @@ window.GUIDES = [
 <li><b>Use a brand-new wallet</b> just for Copybot (in Phantom: add a new account), funded only with money you can afford to lose.</li>
 <li><b>Add a fast RPC.</b> Live trading on the free connection misses exits too, not just entries.</li>
 <li><b>Paste the key</b> in Settings → Trading wallet. On Windows it's encrypted so only your user account can read it. It never leaves your PC.</li>
-<li><b>Switch Settings → Trading mode to Live</b> and start the bot.</li>
+<li><b>Switch Settings → Trading mode to Live.</b> The <b>go-live assistant</b> opens and walks you through it:
+  <ul>
+  <li><b>Paper results:</b> wallets that made money in paper copy for real; the rest stay in <b>shadow</b> (copied with no money) until they prove themselves.</li>
+  <li><b>Safety:</b> the settings that protect real money, with what to fix.</li>
+  <li><b>Trading wallets:</b> your Solana and Base keys and balances, and whether Base trades for real too.</li>
+  <li><b>Test trade:</b> a real swap of 0.01 SOL (or 0.0005 ETH) to USDC and straight back, proving your wallet can trade. It costs a few cents.</li>
+  <li><b>Start small:</b> smaller trades and tighter limits for the first week, sized to your wallet.</li>
+  </ul></li>
 </ol>
-<p class="tip">Start with small buys. You can always raise them once live results match paper.</p>`,
+<p class="tip">Your own limits are saved. After 7 days and 10 closed live trades in profit, Settings → Trading mode suggests bringing them back (one click). You can also bring them back sooner, or switch to paper any time.</p>`,
   },
   {
     id: 'autopilot', cat: 'features', mins: 5, title: 'The AI autopilot (Claude)',

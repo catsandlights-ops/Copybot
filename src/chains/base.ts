@@ -262,7 +262,7 @@ export const base: ChainAdapter = {
   quoteBuy: (token, wei, slip) => kyberQuote(NATIVE_PLACEHOLDER, token, wei, slip),
   quoteSell: (token, raw, slip) => kyberQuote(token, NATIVE_PLACEHOLDER, raw, slip),
   async executeSwap(ctx, quote, extras) {
-    if (!this.liveTrading) throw new Error('Live trading on Base is off (Settings → Trading wallet).');
+    if (!this.liveTrading && !extras?.test) throw new Error('Live trading on Base is off (Settings → Trading wallet).');
     const key = baseKey();
     if (!key) throw new Error('No Base trading key saved (Settings → Trading wallet).');
     const { executeBaseSwap } = await import('./base-live');

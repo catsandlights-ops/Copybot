@@ -680,6 +680,97 @@ function wizard(step = 0) {
   if (al) al.onclick = async () => { await finish(); await openSettings('#alerts-settings'); };
 }
 
+// ---------------- go-live assistant: a guided switch from paper to live ----------------
+const GL_STEPS = ['Paper results', 'Safety', 'Trading wallets', 'Test trade', 'Start small'];
+const GL = { plan: null, roles: {}, baseLive: false, starter: true, tests: {}, testing: null };
+async function goLive(step = 0) {
+  if (step === 0 || !GL.plan) {
+    $('#modal-root').innerHTML = '<div class="modal-bg"><div class="modal wizard" role="dialog" aria-modal="true" aria-label="Go live"><div class="wz-body"><h2>Going live</h2><p class="muted"><span class="spinner" style="display:inline-block;vertical-align:middle"></span> Checking your paper results and trading wallets…</p></div></div></div>';
+    const p = await act(() => api('GET', '/api/golive'));
+    if (!p) { $('#modal-root').innerHTML = ''; return; }
+    GL.plan = p; GL.roles = { ...p.roles }; GL.tests = {};
+    GL.baseLive = p.wallets.base.hasKey && (p.wallets.base.liveOn || p.wallets.base.used);
+    GL.starter = true;
+  }
+  const p = GL.plan, w = p.wallets;
+  const dots = GL_STEPS.map((l, i) => `<span class="wz-dot ${i === step ? 'on' : i < step ? 'done' : ''}" title="${l}"></span>`).join('');
+  const tag = { ready: ['buy', 'Proven'], risky: ['paper', 'Risky'], no: ['sell', 'Losing'], 'not-yet': ['paper', 'Needs more data'] };
+  const sol = (x, d = 3) => x == null || !Number.isFinite(x) ? '—' : `${x >= 0 ? '+' : ''}${x.toFixed(d)} SOL`;
+  const walletRows = S.config.wallets.filter((x) => GL.roles[x.address] !== undefined && (x.enabled !== false || x.shadow)).map((x) => {
+    const src = p.sources.find((s) => s.source === x.address);
+    const t = tag[src?.verdict] || tag['not-yet'];
+    return `<tr><td><b>${esc(x.label)}</b>${chainOfW(x) === 'base' ? ' <span class="chip">Base</span>' : ''}<div class="muted" style="font-size:12px">${src ? `${src.closed} closed · ${src.days} days` : 'no paper trades'}</div></td>
+      <td class="r num ${src && src.pnlSol >= 0 ? 'pos' : 'neg'}">${src ? sol(src.pnlSol) : '—'}</td><td><span class="tag ${t[0]}">${t[1]}</span></td>
+      <td class="r"><select class="input" data-role="${esc(x.address)}" style="width:auto;height:30px">${[['live', 'Copy for real'], ['shadow', 'Shadow (no money)'], ['off', 'Off']].map(([v, l]) => `<option value="${v}" ${GL.roles[x.address] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`;
+  }).join('');
+  const nLive = Object.values(GL.roles).filter((r) => r === 'live').length;
+  const keyRow = (name, k, extra = '') => `<div class="row" style="gap:8px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--border)"><span class="${k.hasKey ? 'pos' : 'neg'}" style="font-weight:700;width:14px">${k.hasKey ? '✓' : '✕'}</span><div style="flex:1"><b>${name}</b> ${k.hasKey ? `<span class="mono muted" style="font-size:12.5px">${esc(short(k.address || ''))}</span> · balance <b>${k.balance == null ? '—' : k.balance.toFixed(name === 'Base' ? 5 : 4)} ${name === 'Base' ? 'ETH' : 'SOL'}</b>${k.balanceSol != null && name === 'Base' ? ` <span class="muted">(≈ ${k.balanceSol.toFixed(3)} SOL)</span>` : ''}` : `<span class="muted">no trading key saved${k.keyError ? ` (${esc(k.keyError)})` : ''}</span>`}${extra}</div></div>`;
+  const testBox = (c, label) => {
+    const r = GL.tests[c];
+    const res = !r ? '' : r.ok ? `<span class="pos">✓ Worked in ${r.seconds}s, cost ${Number.isFinite(r.costNative) ? `${r.costNative.toFixed(6)} ${c === 'base' ? 'ETH' : 'SOL'}` : 'a few cents'}.${esc(r.note || '')}</span>` : `<span class="neg">✕ Failed at the ${esc(r.step)} step: ${esc(r.error)}</span>`;
+    return `<div class="row" style="gap:10px;padding:6px 0"><button class="btn" data-gltest="${c}" ${GL.testing ? 'disabled' : ''}>${GL.testing === c ? '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Testing…' : label}</button><span style="font-size:13px">${res}</span></div>`;
+  };
+  const st = p.starter, cur = p.current;
+  const cmp = (l, a, b, u = '') => `<tr><td>${l}</td><td class="r num muted">${a}${u}</td><td class="r num"><b>${b}${u}</b></td></tr>`;
+  const body = [
+    `<h2>Your paper results</h2>
+     <div class="banner ${p.overall.level === 'ready' ? 'info' : 'warn'}" style="margin:0 0 10px"><div><b>${esc(p.overall.text)}</b></div></div>
+     ${walletRows ? `<p class="muted" style="margin-top:0">Wallets that made money in paper are set to copy for real. The rest keep being copied in <b>shadow</b> (virtually, no money) and come over by themselves once they prove themselves.</p>
+       <div class="tbl-wrap"><table><thead><tr><th>Wallet</th><th class="r">Paper profit</th><th>Verdict</th><th class="r">In live mode</th></tr></thead><tbody>${walletRows}</tbody></table></div>` : '<p class="muted">You have no wallets to copy yet.</p>'}`,
+    `<h2>Safety settings</h2><p class="muted" style="margin-top:0">The settings that protect real money. The last step can set the limits for you.</p>
+     ${p.checklist.map((c) => `<div class="row" style="gap:8px;align-items:flex-start;padding:3px 0"><span class="${c.ok ? 'pos' : 'neg'}" style="font-weight:700;width:14px">${c.ok ? '✓' : '✕'}</span><div><div>${esc(c.text)}</div>${c.ok ? '' : `<div class="muted" style="font-size:12.5px">${esc(c.fix)}</div>`}</div></div>`).join('')}
+     <div class="row" style="margin-top:8px"><button class="btn sm" id="gl-ns">Check connections now</button><span class="muted" id="gl-ns-msg" style="font-size:13px"></span></div>`,
+    `<h2>Trading wallets</h2><p class="muted" style="margin-top:0">Use <b>new wallets</b> holding only what you're willing to lose. Copybot never sends money anywhere except into trades.</p>
+     ${keyRow('Solana', w.solana)}
+     ${keyRow('Base', w.base, w.base.hasKey ? `<div style="margin-top:6px"><label class="row" style="gap:8px"><label class="switch"><input type="checkbox" id="gl-base" ${GL.baseLive ? 'checked' : ''}><i></i></label><span>Copy Base wallets for real too</span></label></div>` : w.base.used ? '<div class="muted" style="font-size:12.5px">Without a Base key, your Base wallets keep running in shadow only.</div>' : '')}
+     ${!w.solana.hasKey || !w.base.hasKey ? '<div class="row" style="margin-top:8px"><button class="btn sm" id="gl-keys">Add a trading wallet (Settings)</button></div>' : ''}
+     <p class="muted" style="font-size:12.5px">In total about <b>${p.moneySol.toFixed(3)} SOL</b> to trade with.</p>`,
+    `<h2>Test trade (recommended)</h2><p class="muted" style="margin-top:0">A real, tiny swap to a dollar coin and straight back, to prove your wallet signs and sends trades. It costs a few cents in fees.</p>
+     ${w.solana.hasKey ? testBox('solana', 'Test Solana (0.01 SOL)') : '<p class="muted">No Solana wallet to test.</p>'}
+     ${w.base.hasKey && GL.baseLive ? testBox('base', 'Test Base (0.0005 ETH)') : ''}`,
+    `<h2>Start small</h2><p class="muted" style="margin-top:0">For the first week, smaller trades and tighter limits, sized to your wallet. Your own settings are saved: Copybot suggests bringing them back after ${7} days and ${10} closed trades in profit.</p>
+     <label class="row" style="gap:8px;margin-bottom:8px"><label class="switch"><input type="checkbox" id="gl-starter" ${GL.starter ? 'checked' : ''}><i></i></label><span><b>Use starter limits</b></span></label>
+     <div class="tbl-wrap"><table><thead><tr><th></th><th class="r">Now</th><th class="r">Starter</th></tr></thead><tbody>
+       ${cmp('Per trade', cur.fixedSol, st.limits.fixedSol, ' SOL')}${cmp('Coins at once', cur.maxOpenPositions, st.limits.maxOpenPositions)}${cmp('SOL in trades at once', cur.maxTotalExposureSol || 'no cap', st.limits.maxTotalExposureSol, cur.maxTotalExposureSol ? ' SOL' : '')}${cmp('Daily loss limit', cur.dailyLossLimitSol || 'off', st.limits.dailyLossLimitSol, cur.dailyLossLimitSol ? ' SOL' : '')}${cmp('Stop-loss', cur.stopLossPct || 'off', st.limits.stopLossPct, '%')}
+     </tbody></table></div>
+     ${st.notes.filter((n) => /Add at least/.test(n)).map((n) => `<div class="banner warn" style="margin:10px 0 0"><div>${esc(n)}</div></div>`).join('')}
+     <p style="margin-bottom:0">${nLive ? `<b>${nLive}</b> wallet${nLive === 1 ? '' : 's'} will be copied with real money.` : '<b class="neg">No wallet is set to copy for real</b> (step 1).'}${GL.tests.solana?.ok || GL.tests.base?.ok ? '' : Object.keys(GL.tests).length ? ' <span class="neg">The test trade didn\'t pass: check step 4 before going live.</span>' : ' <span class="muted">You skipped the test trade.</span>'}</p>`,
+  ][step];
+  const last = step === GL_STEPS.length - 1;
+  $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal wizard" role="dialog" aria-modal="true" aria-label="Go live">
+    <div class="wz-top"><div class="wz-dots">${dots}</div><button class="btn sm ghost" id="gl-close">Stay in paper</button></div>
+    <div class="wz-body">${body}</div>
+    <div class="row wz-nav">${step ? '<button class="btn" id="gl-back">Back</button>' : ''}<span class="spacer" style="flex:1"></span>
+      ${last ? `<button class="btn stop" id="gl-go" ${!w.solana.hasKey && !(w.base.hasKey && GL.baseLive) ? 'disabled' : ''}>Switch to live</button>` : `<button class="btn primary" id="gl-next">Next</button>`}</div></div></div>`;
+  const close = () => { $('#modal-root').innerHTML = ''; GL.plan = null; };
+  $('#gl-close').onclick = close;
+  const bk = $('#gl-back'); if (bk) bk.onclick = () => goLive(step - 1);
+  const nx = $('#gl-next'); if (nx) nx.onclick = () => goLive(step + 1);
+  document.querySelectorAll('[data-role]').forEach((sel) => (sel.onchange = () => { GL.roles[sel.dataset.role] = sel.value; }));
+  const bl = $('#gl-base'); if (bl) bl.onchange = () => { GL.baseLive = bl.checked; };
+  const sr = $('#gl-starter'); if (sr) sr.onchange = () => { GL.starter = sr.checked; };
+  const ks = $('#gl-keys'); if (ks) ks.onclick = () => { close(); openSettings('#wallet-card'); };
+  const ns = $('#gl-ns'); if (ns) ns.onclick = async () => {
+    $('#gl-ns-msg').innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Checking…';
+    const r = await act(() => api('POST', '/api/status/check'));
+    if (r) { S.netstatus = r; $('#gl-ns-msg').innerHTML = r.summary.level === 'bad' ? `<span class="neg">${esc(r.summary.text || 'Something needs fixing: see Settings → Connections.')}</span>` : `<span class="pos">✓ ${esc(r.summary.text || 'Everything is working.')}</span>`; } else $('#gl-ns-msg').innerHTML = '';
+  };
+  document.querySelectorAll('[data-gltest]').forEach((b) => (b.onclick = async () => {
+    const c = b.dataset.gltest;
+    if (!(await confirmModal({ title: 'Make a real test trade?', confirm: 'Make the test trade', body: `<p>Copybot will swap <b>${c === 'base' ? '0.0005 ETH' : '0.01 SOL'}</b> to USDC and straight back, using real money from your ${c === 'base' ? 'Base' : 'Solana'} trading wallet. Only the fees (a few cents) are spent.</p>` }))) return goLive(step);
+    GL.testing = c; goLive(step);
+    GL.tests[c] = await act(() => api('POST', '/api/golive/test', { chain: c }));
+    GL.testing = null; goLive(step);
+  }));
+  const gg = $('#gl-go'); if (gg) gg.onclick = async () => {
+    if (!(await confirmModal({ title: 'Switch to live trading?', danger: true, confirm: 'Switch to live', body: `<p>From now on Copybot trades with <b>real money</b>${GL.starter ? `, starting small (${st.limits.fixedSol} SOL per trade)` : ''}. You can switch back to paper at any time in Settings.</p>` }))) return goLive(step);
+    const r = await act(() => api('POST', '/api/golive/apply', { roles: GL.roles, starter: GL.starter, baseLive: GL.baseLive }), 'Live mode on');
+    if (!r) return goLive(step);
+    S.config = r.config; S.status = r.status; close(); render();
+    if (!S.status.running && (await confirmModal({ title: 'Start the bot now?', confirm: 'Start', body: '<p>Live mode is on. Start copying now?</p>' }))) await act(() => api('POST', '/api/start'), 'Bot started in live mode');
+  };
+}
+
 const copyBtn = (v) => `<button class="copy" title="Copy" data-copy="${esc(v)}">${ICON_COPY}</button>`;
 // Base (and other EVM chains) use 0x… addresses; everything else is Solana.
 const isEvm = (a) => /^0x[0-9a-fA-F]{40}$/.test(String(a || ''));
@@ -2757,7 +2848,7 @@ function renderSettings(el) {
       <div class="card" id="mode-card" data-tab="basics"><div class="card-h"><h2>Trading mode</h2></div><div class="card-b row" style="justify-content:space-between">
         <div style="max-width:560px" class="muted">${live ? '<b style="color:var(--red)">Live:</b> the bot spends real SOL from your trading wallet.' : '<b style="color:var(--text)">Paper:</b> trades are simulated with real prices. Paper and live positions are tracked separately.'}</div>
         <div class="seg" id="mode-seg"><button data-m="paper" class="${!live ? 'on' : ''}">Paper</button><button data-m="live" class="${live ? 'on live' : ''}">Live</button></div>
-      </div></div>
+      </div>${live ? '<div class="card-b" id="gl-ramp" style="padding-top:0"></div>' : ''}</div>
 
       ${FIELDS.map((s) => `<div class="card" data-tab="${s.tab}"${s.id ? ` id="${s.id}"` : ''}><div class="card-h"><div><h2>${s.title}</h2><div class="muted" style="font-size:12.5px">${s.desc}</div></div></div>${s.extra ? s.extra() : ''}${s.fields.map(fieldHtml).join('')}${s.fields.some((f) => f.adv) ? '<div class="more-set"><a href="#" data-more>Show more settings</a></div>' : ''}</div>`).join('')}
 
@@ -2805,6 +2896,7 @@ function renderSettings(el) {
   bindNetStatus();
   bindBackup();
   bindReady();
+  loadRamp();
   const bks = $('#bk-keysave'); if (bks) bks.onclick = async () => { const r = await act(() => api('PUT', '/api/connection', { baseKey: $('#bk-input').value }), 'Base key saved'); if (r) { S.connection = r; render(); } };
   const bkr = $('#bk-remove'); if (bkr) bkr.onclick = async () => { if (!(await confirmModal({ title: 'Remove the Base key?', danger: true, confirm: 'Remove', body: '<p>Live trading on Base stops. Your ETH stays in that wallet.</p>' }))) return; const r = await act(() => api('PUT', '/api/connection', { baseKey: '' }), 'Base key removed'); if (r) { S.connection = r; render(); } };
   const blo = $('#bl-on'); if (blo) blo.onchange = async (e) => {
@@ -2884,6 +2976,21 @@ function netStatusHtml() {
     ${rows ? `<div class="card-b" style="padding-top:0">${rows}</div>` : ''}`;
 }
 // ----- ready for live? -----
+/** In live mode after the go-live assistant: how the starter week is going, and a button to bring normal limits back. */
+function loadRamp() {
+  const el = $('#gl-ramp'); if (!el) return;
+  api('GET', '/api/golive/ramp').then((r) => {
+    const box = $('#gl-ramp'); if (!box) return;
+    if (!r?.ramp) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="banner ${r.ramp.due ? 'info' : ''}" style="margin:0"><div>${esc(r.ramp.text)}</div><button class="btn sm ${r.ramp.due ? 'primary' : 'ghost'}" id="gl-restore">${r.ramp.due ? 'Bring back my normal limits' : 'Bring them back now'}</button></div>`;
+    $('#gl-restore').onclick = async () => {
+      const b = r.record.before;
+      if (!(await confirmModal({ title: 'Bring back your normal limits?', confirm: 'Bring them back', body: `<p>${b.fixedSol} SOL per trade, up to ${b.maxOpenPositions} coins and ${b.maxTotalExposureSol || 'no cap on'} SOL in trades at once, daily loss limit ${b.dailyLossLimitSol || 'off'}, stop-loss ${b.stopLossPct || 'off'}%.</p>` }))) return;
+      const x = await act(() => api('POST', '/api/golive/restore'), 'Normal limits are back');
+      if (x) { S.config = x.config; render(); }
+    };
+  }).catch(() => {});
+}
 function loadReady() { return api('GET', '/api/readiness').then((r) => { S.ready = r; const el = $('#ready-card'); if (el) { el.innerHTML = readyHtml(); bindReady(); } return r; }).catch(() => null); }
 function readyHtml() {
   const r = S.ready;
@@ -3073,12 +3180,7 @@ async function saveSettings() {
 async function setMode(mode) {
   if (mode === S.config.mode) return;
   if (S.dirty) return toast('Save or discard your other changes first', true);
-  if (mode === 'live') {
-    const rd = await loadReady();
-    const ok = await confirmModal({ title: 'Switch to live trading?', danger: true, confirm: 'Switch to live',
-      body: `${rd ? `<div class="banner ${rd.overall.level === 'ready' ? 'info' : 'warn'}" style="margin:0 0 10px"><div><b>Ready for live?</b> ${esc(rd.overall.text)} Details in Settings → Ready for live?</div></div>` : ''}<p>From now on the bot spends <b>real SOL</b>. Before you switch:</p><ul><li>You've run paper mode for a few days and like the results</li><li>You're using a separate wallet with only money you can lose</li><li>You're on a private RPC (Helius), not the public one</li></ul>` });
-    if (!ok) return;
-  }
+  if (mode === 'live') return goLive(0); // the guided switch
   const r = await act(() => api('PUT', '/api/config', { ...S.config, mode }), mode === 'live' ? 'Live mode on' : 'Paper mode on');
   if (r) { S.config = r.config; render(); }
 }

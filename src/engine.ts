@@ -163,6 +163,8 @@ export class BotEngine extends EventEmitter {
   private ctx() {
     return { conn: this.conn, kp: this.kp, cfg: this.cfg };
   }
+  /** The same, for the go-live assistant's test trade. */
+  chainCtx = () => this.ctx();
 
   /** Track processed signatures without growing memory forever. */
   private remember(sig: string) {
