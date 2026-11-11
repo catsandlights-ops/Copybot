@@ -200,3 +200,47 @@ test('crash safety: a trade sent just before the app died is booked on the next 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("no buyers: retries quietly with growing pauses, then writes the coin off after 2 hours", async () => {
+  const { solana } = await import('./chains/solana');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-noroute-'));
+  const prev = process.cwd();
+  const saved = solana.quoteSell;
+  const realNow = Date.now;
+  let now = 1_800_000_000_000;
+  try {
+    process.chdir(dir);
+    fs.mkdirSync('data');
+    Date.now = () => now;
+    let quotes = 0;
+    (solana as any).quoteSell = async () => (quotes++, null); // nobody is buying
+    const MINT = '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr';
+    const cfg = sanitizeConfig({}, false);
+    const state = { positions: { [MINT]: { chain: 'solana', mint: MINT, decimals: 6, amountRaw: '1000', costSol: 0.1, openedAt: now - 13 * 3_600_000, sources: ['scanner'] } }, realizedPnlSol: 0 } as any;
+    const logs: string[] = [];
+    const t = new Trader(null as any, cfg, state, null, { log: (m) => logs.push(m), trade: () => {}, name: (w) => w });
+    assert.equal(await t.sell(MINT, 1, "held 12 h (the scanner's limit)"), null);
+    assert.equal(logs.length, 1);
+    assert.match(logs[0], /no one is buying it.*writes it off after 2 hours/);
+    // The exit check runs every 20 s: those tries are skipped without asking or logging again.
+    for (let i = 0; i < 10; i++) {
+      now += 20_000;
+      await t.sell(MINT, 1, 'x');
+    }
+    assert.ok(quotes < 6, `asked ${quotes} times in 200 s`);
+    assert.equal(logs.length, 1);
+    // Two hours later, still no buyers: written off as a loss, freeing the slot.
+    for (let i = 0; i < 30 && state.positions[MINT]; i++) {
+      now += 10 * 60_000;
+      await t.sell(MINT, 1, 'x');
+    }
+    assert.equal(state.positions[MINT], undefined);
+    assert.ok(Math.abs(state.realizedPnlSol + 0.1) < 1e-12);
+    assert.match(logs.at(-1)!, /written off as a loss of 0.1000 SOL/);
+  } finally {
+    Date.now = realNow;
+    (solana as any).quoteSell = saved;
+    process.chdir(prev);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
