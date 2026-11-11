@@ -62,6 +62,38 @@ export class Trader {
     return chain.nativeToSol(PAPER_FEE_BASE_ETH).catch(() => 0);
   }
 
+  /** Coins nobody would buy last time we tried to sell: when we first noticed, how often, when to try again. */
+  private noRoute = new Map<string, { since: number; tries: number; nextAt: number; loggedAt: number }>();
+  /** How long a coin may have no buyers at all before it's written off in the books. */
+  static readonly WRITE_OFF_AFTER_MS = 2 * 3_600_000;
+
+  /**
+   * A sale found no route: nobody to sell to (liquidity pulled, or the coin is dead). Try again with
+   * growing pauses (30 s up to 10 min), say so once an hour, and after 2 hours close it in the books
+   * as a loss so it stops holding a slot and your budget. In live mode the coins stay in your wallet.
+   */
+  private noBuyers(p: Position, reason: string): number | null {
+    const now = Date.now();
+    const nr = this.noRoute.get(p.mint) ?? { since: now, tries: 0, nextAt: now, loggedAt: 0 };
+    nr.tries++;
+    nr.nextAt = now + Math.min(30_000 * 2 ** (nr.tries - 1), 10 * 60_000);
+    this.noRoute.set(p.mint, nr);
+    if (now - nr.since >= Trader.WRITE_OFF_AFTER_MS && nr.tries >= 5) {
+      this.noRoute.delete(p.mint);
+      const loss = -p.costSol;
+      this.state.realizedPnlSol += loss;
+      delete this.state.positions[p.mint];
+      this.record({ t: now, chain: getChain(p).meta.id, mode: this.cfg.mode, side: 'sell', mint: p.mint, sol: 0, tokenRaw: '0', pnl: loss, reason: 'no buyers for 2 hours: written off', sources: [...p.sources], ...(p.entry ? { entry: p.entry } : {}), sig: 'NONE' });
+      this.hooks.log(`${short(p.mint)}: no one has been willing to buy it for 2 hours (its liquidity is gone), so it was written off as a loss of ${p.costSol.toFixed(4)} SOL to free its slot.${this.live ? ' The coins are still in your wallet if a buyer ever appears.' : ''}`, 'error');
+      return loss;
+    }
+    if (now - nr.loggedAt >= 3_600_000) {
+      nr.loggedAt = now;
+      this.hooks.log(`SELL ${short(p.mint)} can't happen right now: no one is buying it (no route; ${reason}). Copybot keeps trying every few minutes and writes it off after 2 hours.`, 'warn');
+    }
+    return null;
+  }
+
   /** Coins with a sell that was sent but not confirmed yet: don't sell them again meanwhile. */
   private lateSells = new Set<string>();
 
@@ -156,11 +188,12 @@ export class Trader {
       return null;
     }
     const chain = getChain(p);
+    // No buyers last time: wait before asking again (and don't fill the log).
+    const nr = this.noRoute.get(mint);
+    if (nr && Date.now() < nr.nextAt) return null;
     const q = await chain.quoteSell(mint, amount, this.cfg.safety.slippageBps);
-    if (!q) {
-      this.hooks.log(`SELL ${short(mint)} skipped: no route (${reason})`, 'warn');
-      return null;
-    }
+    if (!q) return this.noBuyers(p, reason);
+    this.noRoute.delete(mint);
     const book = (r: Fill, late = false): number => {
       const pos = this.state.positions[mint];
       const heldNow = pos ? BigInt(pos.amountRaw) : 0n;
