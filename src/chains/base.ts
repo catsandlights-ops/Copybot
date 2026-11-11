@@ -257,6 +257,7 @@ export const base: ChainAdapter = {
     const { lateReceipt } = await import('./base-live');
     return lateReceipt(hash);
   },
+  tokenBalance: async (_ctx, owner, token) => BigInt(await baseRpc.balanceOf(token, owner)),
   decodeSwap: () => null, // Base swaps come from watch(), which reads receipts instead of Solana transactions
   quoteBuy: (token, wei, slip) => kyberQuote(NATIVE_PLACEHOLDER, token, wei, slip),
   quoteSell: (token, raw, slip) => kyberQuote(token, NATIVE_PLACEHOLDER, raw, slip),

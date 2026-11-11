@@ -27,6 +27,7 @@ test('Base trades confirmed late are booked when they go through; dropped ones c
       executeSwap: async () => { sends++; throw Object.assign(new Error('sent, not confirmed yet'), { pendingHash: '0xhash' + sends }); },
       settleLate: () => new Promise<boolean>((r) => { settle = r; }),
       readFill: async () => ({ tokenRaw: 1000n, native: 0.001 }),
+      tokenBalance: async () => 1000n, // the wallet holds what the books say
       nativeToSol: async (n: number) => n * 10,
       quoteSell: async (_t: string, raw: bigint) => ({ inputMint: TOKEN, outputMint: WETH, inAmount: raw.toString(), outAmount: '900000000000000' }),
     });
@@ -66,7 +67,7 @@ test('Base trades confirmed late are booked when they go through; dropped ones c
     assert.ok(Math.abs(state.realizedPnlSol - 0) < 1e-12); // sold 1000 for 0.01 SOL, cost 0.01 SOL
   } finally {
     for (const [k, d] of Object.entries(saved)) Object.defineProperty(base, k, d);
-    for (const k of ['settleLate'] as const) if (!(k in saved)) delete (base as any)[k];
+    for (const k of ['settleLate', 'tokenBalance'] as const) if (!(k in saved)) delete (base as any)[k];
     process.chdir(prev);
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -93,6 +94,52 @@ test('paper trades pay an estimated network fee on the way in and out', async ()
     assert.ok(Math.abs(pnl! - (0.3 - PAPER_FEE_SOL - (0.25 + PAPER_FEE_SOL))) < 1e-12); // got 0.3 − fee
   } finally {
     (solana as any).quoteSell = saved;
+    process.chdir(prev);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('live sells: sell what the wallet really holds; a coin that vanished is closed as lost', async () => {
+  const { solana } = await import('./chains/solana');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-real-'));
+  const prev = process.cwd();
+  const saved = Object.getOwnPropertyDescriptors(solana);
+  try {
+    process.chdir(dir);
+    fs.mkdirSync('data');
+    const W = solana.meta.native.wrapped;
+    const MINT = '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr';
+    let wallet = 600n, soldAmount = 0n;
+    Object.defineProperty(solana, 'liveTrading', { get: () => true, configurable: true });
+    Object.assign(solana, {
+      tokenBalance: async () => wallet,
+      quoteSell: async (_m: string, raw: bigint) => { soldAmount = raw; return { inputMint: MINT, outputMint: W, inAmount: raw.toString(), outAmount: '100000000' }; },
+      executeSwap: async () => 'SIG',
+      decodeSwap: () => null,
+    });
+    const cfg = sanitizeConfig({ mode: 'live' }, false);
+    cfg.mode = 'live';
+    const logs: string[] = [];
+    const state = { positions: { [MINT]: { chain: 'solana', mint: MINT, decimals: 6, amountRaw: '1000', costSol: 0.2, openedAt: Date.now() - 3_600_000, sources: ['w'] } }, realizedPnlSol: 0 } as any;
+    const t = new Trader(null as any, cfg, state, Keypair.generate(), { log: (m) => logs.push(m), trade: () => {}, name: (w) => w });
+    (t as any).fill = async (sig: string, _c: unknown, q: any) => ({ sig, ...q }); // no network: use the quote
+    // The books say 1000 but the wallet holds 600: it sells 600, not 1000.
+    await t.sell(MINT, 1, 'test');
+    assert.equal(soldAmount, 600n);
+    assert.match(logs.join('\n'), /holds less than the books said \(600 vs 1000\)/);
+    // A coin that's no longer in the wallet at all: closed in the books as a loss.
+    state.positions[MINT] = { chain: 'solana', mint: MINT, decimals: 6, amountRaw: '1000', costSol: 0.2, openedAt: Date.now() - 3_600_000, sources: ['w'] };
+    wallet = 0n;
+    const pnl = await t.sell(MINT, 1, 'test');
+    assert.equal(pnl, -0.2);
+    assert.equal(state.positions[MINT], undefined);
+    // Just bought and not showing yet: wait, don't close it.
+    state.positions[MINT] = { chain: 'solana', mint: MINT, decimals: 6, amountRaw: '1000', costSol: 0.2, openedAt: Date.now(), sources: ['w'] };
+    assert.equal(await t.sell(MINT, 1, 'test'), null);
+    assert.ok(state.positions[MINT]);
+  } finally {
+    for (const [k, d] of Object.entries(saved)) Object.defineProperty(solana, k, d);
+    for (const k of ['tokenBalance'] as const) if (!(k in saved)) delete (solana as any)[k];
     process.chdir(prev);
     fs.rmSync(dir, { recursive: true, force: true });
   }

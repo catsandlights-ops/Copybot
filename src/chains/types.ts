@@ -67,6 +67,8 @@ export interface ChainAdapter {
   readFill?(hash: string, owner: string): Promise<{ tokenRaw: bigint; native: number } | null>;
   /** A trade sent but not confirmed in time: keep checking; true once it confirms, false if it failed or vanished. */
   settleLate?(hash: string): Promise<boolean>;
+  /** How much of a token the wallet really holds (raw units), to sell what's there. */
+  tokenBalance?(ctx: ChainContext, owner: string, token: string): Promise<bigint>;
 }
 
 /** Every chain id, for validating stored records (kept here so config can use it without import cycles). */

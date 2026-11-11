@@ -72,6 +72,55 @@ const JITO_SEND = 'https://mainnet.block-engine.jito.wtf/api/v1/transactions';
  */
 export type SwapOpts = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void };
 
+/** Sent, but the node was too busy to tell whether it landed before it expired; followed up later (see trader). */
+export class SolPendingError extends Error {
+  constructor(readonly pendingHash: string) {
+    super(`Solana transaction ${pendingHash} was sent, but the network was too busy to confirm it. Copybot keeps checking and adds it to your books if it went through.`);
+  }
+}
+
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Wait until a sent transaction lands or provably expires. While waiting, the same signed
+ * transaction is re-sent every 2 s (it can only execute once), which helps it land on a busy
+ * network. Node errors on the way don't count as a failure: only an on-chain error, or the
+ * blockhash expiring without it landing, does. If the node can't tell us at all, it's followed up later.
+ */
+export async function landOrExpire(conn: Connection, sig: string, lastValidBlockHeight: number, resend: (() => Promise<unknown>) | null, timeoutMs = 120_000): Promise<void> {
+  const until = Date.now() + timeoutMs;
+  let height: number | null = null;
+  while (Date.now() < until) {
+    const st = await conn.getSignatureStatuses([sig]).then((r) => r.value[0], () => undefined);
+    if (st?.err) throw new Error(`Swap ${sig} failed on-chain: ${JSON.stringify(st.err)}`);
+    if (st && (st.confirmationStatus === 'confirmed' || st.confirmationStatus === 'finalized')) return;
+    height = await conn.getBlockHeight('confirmed').catch(() => height);
+    if (height != null && height > lastValidBlockHeight) {
+      // Expired: one last look in history (it may have landed just before), then it's final.
+      const last = await conn.getSignatureStatus(sig, { searchTransactionHistory: true }).then((r) => r.value, () => undefined);
+      if (last && !last.err && last.confirmationStatus) return;
+      if (last?.err) throw new Error(`Swap ${sig} failed on-chain: ${JSON.stringify(last.err)}`);
+      if (last === null) throw new Error("The trade didn't land before it expired (the network was busy), so nothing was traded. It's tried again on the next signal.");
+      break; // the node can't answer: follow it up later
+    }
+    if (resend) await resend().catch(() => null);
+    await pause(2_000);
+  }
+  throw new SolPendingError(sig);
+}
+
+/** A trade that couldn't be confirmed in time: true once it's seen landed, false once it certainly can't. */
+export async function solLateReceipt(conn: Connection, sig: string, maxMs = 5 * 60_000, everyMs = 10_000): Promise<boolean> {
+  const until = Date.now() + maxMs;
+  while (Date.now() < until) {
+    const st = await conn.getSignatureStatus(sig, { searchTransactionHistory: true }).then((r) => r.value, () => undefined);
+    if (st?.err) return false;
+    if (st?.confirmationStatus) return true;
+    await pause(everyMs);
+  }
+  return false; // well past its expiry and still unknown: it never landed
+}
+
 export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, priorityLevel: string, maxPriorityLamports: number, jitoTipLamports = 0, opts: SwapOpts = {}): Promise<string> {
   const res = await fetch(`${jupUrl()}/swap`, {
     method: 'POST',
@@ -116,15 +165,11 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
     if (ok) {
       const sig = bs58encode(tx.signatures[0]);
       try {
-        const conf = await conn.confirmTransaction({ signature: sig, blockhash: tx.message.recentBlockhash, lastValidBlockHeight }, 'confirmed');
-        if (conf.value.err) throw new Error(`Swap ${sig} failed on-chain: ${JSON.stringify(conf.value.err)}`);
+        await landOrExpire(conn, sig, lastValidBlockHeight, null);
         return sig;
       } catch (e) {
-        const st = (await conn.getSignatureStatus(sig, { searchTransactionHistory: true })).value;
-        if (st?.confirmationStatus && !st.err) return sig;
-        if (st?.err) throw e;
-        // Not landed through Jito in time: the blockhash has expired, so nothing can land twice.
-        throw new Error("The private (Jito) send didn't land in time. Nothing was traded; it will be tried again on the next signal.");
+        if (/didn't land before it expired/.test((e as Error).message)) throw new Error("The private (Jito) send didn't land in time. Nothing was traded; it will be tried again on the next signal.");
+        throw e;
       }
     }
     opts.onNote?.("Jito didn't accept the private send; sent the normal way instead.");
@@ -138,14 +183,6 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
     }).catch(() => null); // the RPC send below is the fallback
   }
   const sig = await conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 3 });
-  try {
-    const conf = await conn.confirmTransaction({ signature: sig, blockhash: tx.message.recentBlockhash, lastValidBlockHeight }, 'confirmed');
-    if (conf.value.err) throw new Error(`Swap ${sig} failed on-chain: ${JSON.stringify(conf.value.err)}`);
-  } catch (e) {
-    // Confirmation can time out even though the swap landed; check before giving up,
-    // otherwise we'd lose track of tokens we actually bought.
-    const st = (await conn.getSignatureStatus(sig, { searchTransactionHistory: true })).value;
-    if (!st || st.err || !st.confirmationStatus) throw e;
-  }
+  await landOrExpire(conn, sig, lastValidBlockHeight, () => conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }));
   return sig;
 }

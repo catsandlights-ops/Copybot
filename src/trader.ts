@@ -62,6 +62,36 @@ export class Trader {
     return chain.nativeToSol(PAPER_FEE_BASE_ETH).catch(() => 0);
   }
 
+  /**
+   * Live only: compare the books with the wallet. Less in the wallet: the books are corrected (the
+   * cost stays, so the loss shows). Nothing left (and not just bought): the position is closed in
+   * the books as lost. Returns 'wait' when it's too soon to tell, or the loss when it was closed.
+   */
+  private async realHolding(p: Position, chain: ChainAdapter, reason: string): Promise<'ok' | 'wait' | number> {
+    if (!this.live || !chain.tokenBalance) return 'ok';
+    const owner = chain.meta.id === 'solana' ? this.kp?.publicKey.toBase58() : chain.liveOwner?.();
+    if (!owner) return 'ok';
+    const actual = await chain.tokenBalance({ conn: this.conn, kp: this.kp, cfg: this.cfg }, owner, p.mint).catch(() => null);
+    const booked = BigInt(p.amountRaw);
+    if (actual == null || actual >= booked) return 'ok';
+    if (actual > 0n) {
+      this.hooks.log(`${short(p.mint)}: your wallet holds less than the books said (${actual} vs ${booked}); selling what's really there.`, 'warn');
+      p.amountRaw = actual.toString();
+      saveState(this.state, this.cfg.mode);
+      return 'ok';
+    }
+    if (Date.now() - p.openedAt < 5 * 60_000) {
+      this.hooks.log(`SELL ${short(p.mint)} waits: the coins don't show in your wallet yet (${reason})`, 'warn');
+      return 'wait';
+    }
+    const loss = -p.costSol;
+    this.state.realizedPnlSol += loss;
+    delete this.state.positions[p.mint];
+    this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'sell', mint: p.mint, sol: 0, tokenRaw: '0', pnl: -p.costSol, reason: 'no longer in your wallet', sources: [...p.sources], ...(p.entry ? { entry: p.entry } : {}), sig: 'NONE' });
+    this.hooks.log(`${short(p.mint)} is no longer in your wallet (moved, burned or taken), so it was closed in the books as a loss of ${p.costSol.toFixed(4)} SOL.`, 'error');
+    return loss;
+  }
+
   /** Coins with a sell that was sent but not confirmed yet: don't sell them again meanwhile. */
   private lateSells = new Set<string>();
 
@@ -146,16 +176,19 @@ export class Trader {
   async sell(mint: string, fraction: number, reason: string, ref?: CopyRef): Promise<number | null> {
     const p = this.state.positions[mint];
     if (!p) return null;
-    const held = BigInt(p.amountRaw);
-    const all = fraction >= 0.95;
-    const amount = all ? held : (held * BigInt(Math.round(fraction * 1e6))) / 1_000_000n;
-    if (amount <= 0n) return null;
-
     if (this.lateSells.has(mint)) {
       this.hooks.log(`SELL ${short(mint)} waits: an earlier sell of this coin is still being confirmed (${reason})`, 'warn');
       return null;
     }
     const chain = getChain(p);
+    // Live: sell what the wallet really holds (some coins take a fee on every transfer, so it can be less).
+    const real = await this.realHolding(p, chain, reason);
+    if (real === 'wait') return null;
+    if (typeof real === 'number') return real; // closed in the books as lost
+    const held = BigInt(p.amountRaw);
+    const all = fraction >= 0.95;
+    const amount = all ? held : (held * BigInt(Math.round(fraction * 1e6))) / 1_000_000n;
+    if (amount <= 0n) return null;
     const q = await chain.quoteSell(mint, amount, this.cfg.safety.slippageBps);
     if (!q) {
       this.hooks.log(`SELL ${short(mint)} skipped: no route (${reason})`, 'warn');
