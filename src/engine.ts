@@ -614,7 +614,8 @@ export class BotEngine extends EventEmitter {
     const c = getChain(swap);
     const amount = swap.nativeAmount != null ? `${swap.nativeAmount.toFixed(4)} ${c.meta.native.symbol} (≈ ${swap.quoteAmount.toFixed(3)} SOL)` : `${swap.quoteAmount.toFixed(2)} ${swap.quote}`;
     if (!this.quietSignal(swap)) this.log(`${this.labels.get(swap.wallet) ?? short(swap.wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} on ${c.meta.name} for ${amount} (${age.toFixed(1)}s ago)`, 'signal');
-    if (age > this.cfg.risk.maxSignalAgeSec) {
+    // Late buys aren't chased; a late SELL is still followed (they're out: so should we be), within 6 hours.
+    if (swap.side === 'buy' ? age > this.cfg.risk.maxSignalAgeSec : age > 6 * 3600) {
       if (swap.side === 'buy') { this.noteActivity('seen'); this.noteActivity('skip', 'signal too old'); }
       return this.log('  skipped: signal too old', 'skip');
     }
@@ -626,7 +627,8 @@ export class BotEngine extends EventEmitter {
     if (!swap) return;
     const age = swap.blockTime ? Date.now() / 1000 - swap.blockTime : 0;
     if (!this.quietSignal(swap)) this.log(`${this.labels.get(wallet)} ${swap.side === 'buy' ? 'bought' : 'sold'} ${short(swap.mint)} for ${swap.quoteAmount.toFixed(3)} ${swap.quote} (${age.toFixed(1)}s ago)`, 'signal');
-    if (age > this.cfg.risk.maxSignalAgeSec) {
+    // Late buys aren't chased; a late SELL is still followed (they're out: so should we be), within 6 hours.
+    if (swap.side === 'buy' ? age > this.cfg.risk.maxSignalAgeSec : age > 6 * 3600) {
       if (swap.side === 'buy') { this.noteActivity('seen'); this.noteActivity('skip', 'signal too old'); }
       return this.log('  skipped: signal too old', 'skip');
     }
@@ -1206,7 +1208,7 @@ export class BotEngine extends EventEmitter {
    * up again as it recovers, and checks lightly while the fast Helius stream is connected.
    */
   private polled = new Set<string>();
-  pollSlow = 1; // 1 = normal pace; up to 8× slower while the node is refusing requests
+  pollSlow = 1; // 1 = normal pace; up to 4× slower while the node is refusing requests
   private pollOkStreak = 0;
   private pollWarnedAt = 0;
   /** Seconds between two checks of the same wallet right now. */
@@ -1229,15 +1231,12 @@ export class BotEngine extends EventEmitter {
       try {
         const sigs = await this.conn.getSignaturesForAddress(new PublicKey(wallet), { limit: 15 });
         for (const x of sigs.reverse()) if (!x.err && gen === this.gen) this.onSignature(x.signature, wallet).catch((e) => this.logError(e));
-        // Recover quickly once the node answers again: twice as fast after every 3 good answers.
-        if (++this.pollOkStreak >= 3 && this.pollSlow > 1) {
-          this.pollSlow = Math.max(1, this.pollSlow / 2);
-          this.pollOkStreak = 0;
-        }
+        // Recover as the node answers again: a little faster with every good answer.
+        if (this.pollSlow > 1) this.pollSlow = Math.max(1, this.pollSlow / 1.25);
       } catch (e) {
         this.pollOkStreak = 0;
         if (/429|Too Many|rate/i.test((e as Error).message)) {
-          this.pollSlow = Math.min(8, this.pollSlow * 2);
+          this.pollSlow = Math.min(4, this.pollSlow * 1.5);
           if (Date.now() - this.pollWarnedAt > 10 * 60_000) {
             this.pollWarnedAt = Date.now();
             this.log(`The Solana node is busy, so the backup check slows down for a while (each wallet every ${Math.round(this.pollEverySec())} s). The live feed still reports trades as they happen.`, 'warn');
@@ -1249,6 +1248,7 @@ export class BotEngine extends EventEmitter {
   }
 
   private exiting = new Set<string>(); // mints with an exit already queued
+  private unpriced: Record<string, number> = {}; // positions with no price, since when
 
   /** Values open positions and runs the exit plan: stop-loss, trailing stop, staged take-profits. */
   private async exitLoop(gen: number) {
@@ -1257,6 +1257,23 @@ export class BotEngine extends EventEmitter {
       let changed = false;
       for (const p of Object.values(this.state.positions)) {
         const v = this.values[p.mint];
+        if (!v && gen === this.gen && !this.exiting.has(p.mint)) {
+          // No price and no buyers for 10 minutes (rugged, liquidity gone): try to sell, which backs off
+          // quietly and writes it off after 2 hours, so it can't block new trades forever.
+          const since = (this.unpriced[p.mint] ??= Date.now());
+          if (Date.now() - since > 10 * 60_000) {
+            this.exiting.add(p.mint);
+            this.enqueue(async () => {
+              try {
+                await this.trader.sell(p.mint, 1, 'no price: nobody is buying it');
+              } finally {
+                this.exiting.delete(p.mint);
+              }
+            }, true);
+          }
+          continue;
+        }
+        if (v) delete this.unpriced[p.mint];
         if (!v || gen !== this.gen || this.exiting.has(p.mint)) continue;
         const plan = planExit(p, v.valueSol, exitConfigFor(this.cfg, p.sources), this.swingOf(p));
         const { peakMultiple } = plan;
