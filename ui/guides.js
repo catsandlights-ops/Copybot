@@ -18,6 +18,7 @@ window.GUIDES = [
 <li><b>Shadow copying:</b> new wallets (in live mode) and wallets paused for losing are copied <i>virtually</i>, with no money, until they prove themselves in your own conditions: 8+ finished trades over a day, a profit, and winning 1.3× what they lose. Then they start real copying on the usual trial. See their progress on the Wallets page, with Promote now and Stop.</li>
 <li><b>Don't buy into a crash:</b> no copy into a coin that fell 15%+ in the last 5 minutes or is being dumped (Settings → Safety).</li>
 <li><b>A trailing stop that fits each coin:</b> wild coins get more room, calm ones a tighter stop (2.5× the coin's typical 5-minute move, 60–160% of your setting).</li>
+<li><b>Coins nobody will buy:</b> a sale with no buyers (liquidity pulled) is retried quietly instead of every 20 seconds, and after 2 hours the coin is written off as a loss so it stops holding a slot and your budget.</li>
 <li><b>Lighter and faster:</b> your trade history stays in memory (500× faster to read after months of trades), and open positions are priced with one request for all of them, with a full quote only near a stop or target.</li>
 </ul>
 <h3>New in 0.8.7</h3>
