@@ -114,3 +114,41 @@ test('a wallet can have its own strategy; its exit overrides still win; others u
   // Money settings are never per-wallet-strategy.
   assert.equal(r1.risk.maxTotalExposureSol, c.risk.maxTotalExposureSol);
 });
+
+test('pickWalletStrategy: finds the strategy that fits one wallet, and only switches on clear evidence', async () => {
+  const { pickWalletStrategy } = await import('./strategies');
+  const A = 'WalletA';
+  const T0 = Date.UTC(2026, 10, 1, 12) / 1000;
+  let n = 0;
+  const sw = (o: any, min: number) => ({ signature: `s${n++}`, wallet: A, blockTime: T0 + min * 60, decimals: 6, tokenAmount: 1_000_000n, tokenPre: 0n, tokenPost: 0n, quote: 'SOL', quoteAmount: 1, ...o });
+  const STEP = 300_000;
+  const series = (rows: [number, number, number][]) => ({ step: STEP, candles: rows.map(([l, h, c], i) => ({ t: (T0 - 300) * 1000 + i * STEP, l, h, c })) });
+  // Every coin pumps to 1.8x within 15 minutes, then they ride it down and sell at 0.5x.
+  const pumpThenDump = series([[1, 1, 1], [1, 1, 1], [1, 1.4, 1.4], [1.4, 1.8, 1.7], [1.2, 1.7, 1.2], [0.9, 1.2, 0.9], [0.6, 0.9, 0.6], [0.5, 0.6, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]]);
+  const cfg = structuredClone(DEFAULT_CONFIG);
+  cfg.wallets = [{ address: A, label: 'a', enabled: true, sizeMultiplier: 1, maxExposureSol: 0 }];
+  cfg.buy = { ...cfg.buy, fixedSol: 0.1, minTargetBuySol: 0 };
+  cfg.exits.lockAtPct = 0; // compare the strategies' own exits
+  cfg.protect.crashPct = 0;
+  cfg.risk.maxOpenPositions = 20;
+  cfg.risk.maxTotalExposureSol = 10;
+  const mints = Array.from({ length: 12 }, (_, i) => `M${i}`);
+  const swaps = mints.flatMap((m) => [sw({ side: 'buy', mint: m }, 0), sw({ side: 'sell', mint: m, quoteAmount: 0.5, tokenPre: 1_000_000n }, 60)]) as any[];
+  const prices = new Map(mints.map((m) => [m, pumpThenDump]));
+  const opts = { delayPct: 0, feeSol: 0 };
+  const p = pickWalletStrategy(swaps, cfg, opts, new Map(), prices, A, 0)!;
+  assert.equal(p.current.id, 'mine');
+  assert.ok(p.best.totalSol > p.current.totalSol, 'a strategy that takes profit on the way up beats riding it down');
+  assert.notEqual(p.best.id, 'mine');
+  assert.equal(p.change, true);
+  // Already on the best strategy: nothing to change.
+  const onBest = structuredClone(cfg);
+  onBest.wallets[0].strategy = p.best.id;
+  assert.equal(pickWalletStrategy(swaps, onBest, opts, new Map(), prices, A, 0)!.change, false);
+  // Only 2 coins: too few finished trades to switch on.
+  const few = pickWalletStrategy(swaps.slice(0, 4), cfg, opts, new Map(), prices, A, 0)!;
+  assert.equal(few.change, false);
+  assert.equal(few.why, 'too few finished trades to tell');
+  // A wallet with no trades in the data: nothing to judge.
+  assert.equal(pickWalletStrategy(swaps, { ...cfg, wallets: [{ ...cfg.wallets[0], address: 'B' }] }, opts, new Map(), prices, 'B', 0), null);
+});

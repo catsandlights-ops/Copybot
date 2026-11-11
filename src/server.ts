@@ -44,7 +44,7 @@ import * as ai from './ai';
 import { getHolderStats } from './solscan';
 import { runBacktest } from './backtest';
 import { optimizeExits } from './optimize';
-import { applyStrategy, compareStrategies, STRATEGIES, strategyById } from './strategies';
+import { applyStrategy, compareStrategies, STRATEGIES, strategyById, pickWalletStrategy } from './strategies';
 import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { quoteSell } from './jupiter';
@@ -1127,7 +1127,7 @@ async function resetPaper() {
 }
 
 // ---------- learning: lessons from your own results, and exits re-tuned as markets change ----------
-type JournalEntry = { at: number; kind: 'lesson' | 'retired' | 'exits' | 'undo'; text: string; setup?: string; undo?: { stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits'] } };
+type JournalEntry = { at: number; kind: 'lesson' | 'retired' | 'exits' | 'strategy' | 'undo'; text: string; setup?: string; undo?: { stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits'] }; undoStrategy?: { wallet: string; strategy: string | null } };
 type Learning = { lessons: Lesson[]; retired: Retired[]; journal: JournalEntry[]; lastAt: number; vetoed?: { setup: string; until: number }[] };
 const learnFile = (mode: string) => `data/learning-${mode}.json`;
 function loadLearning(mode: string): Learning {
@@ -1218,6 +1218,41 @@ async function applyExits(best: NonNullable<Tune['best']>, why: string) {
   saveLearning();
 }
 
+/**
+ * Learning, per wallet: replay each wallet's last week with your settings and with every strategy,
+ * and give it the one that clearly fits it best (switched in paper mode, suggested in live).
+ */
+async function tuneWalletStrategies(d: Awaited<ReturnType<typeof loadBacktestData>>, auto: boolean, progress: (p: string) => void) {
+  const recentFrom = Date.now() - 2 * 86_400_000;
+  const L = currentLearning();
+  const vetoed = (key: string) => (L.vetoed ?? []).some((v) => v.setup === key && v.until > Date.now());
+  const changes: { address: string; to: string | null; from: string | null; text: string }[] = [];
+  for (const w of d.cfg.wallets.filter((x) => x.enabled && chainOf(x) === 'solana')) {
+    progress(`Checking which strategy fits ${w.label}…`);
+    const pick = pickWalletStrategy(d.swaps, d.cfg, d.opts, d.marks, d.prices, w.address, recentFrom);
+    if (!pick?.change || vetoed(`${w.address}:${pick.best.id}`)) continue;
+    const sol = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(3)} SOL`;
+    changes.push({ address: w.address, to: pick.best.id === 'mine' ? null : pick.best.id, from: w.strategy || null, text: `${w.label}: "${pick.best.name}" fits it best (${sol(pick.best.totalSol)} over the last week vs ${sol(pick.current.totalSol)} with "${pick.current.name}")` });
+  }
+  if (!changes.length) return;
+  if (!auto) {
+    for (const c of changes) engine.log(`Strategy check: ${c.text}. Change it on the Wallets page if you agree.`, 'ai');
+    alert('autopilot', `🔧 ${changes.length} wallet${changes.length > 1 ? 's' : ''} would do better with another strategy. Open Copybot → Wallets.`);
+    return;
+  }
+  const next = structuredClone(engine.cfg);
+  for (const c of changes) {
+    const w = next.wallets.find((x) => x.address === c.address);
+    if (!w) continue;
+    if (c.to) w.strategy = c.to;
+    else delete w.strategy;
+  }
+  await applyChange(() => saveConfig(sanitizeConfig(next, false)));
+  currentLearning();
+  for (const c of changes) journal({ at: Date.now(), kind: 'strategy', text: `${c.text}, so it was switched.`, setup: `${c.address}:${c.to ?? 'mine'}`, undoStrategy: { wallet: c.address, strategy: c.from } });
+  saveLearning();
+}
+
 // ---------- weekly auto-tune: your exits vs other setups on the last 7 days ----------
 type Tune = { at: number; status: 'better' | 'fine' | 'error'; message: string; best?: { name: string; stopLossPct: number; takeProfitPct: number; exits: import('./config').Config['exits']; totalSol: number }; currentSol?: number; dismissed?: boolean };
 const TUNE_FILE = 'data/autotune.json';
@@ -1235,7 +1270,7 @@ function saveTune() {
 }
 function runAutoTune(manual = false) {
   // Backtests read Solana history; other chains' wallets aren't included yet.
-  const wallets = engine.cfg.wallets.filter((w) => w.enabled && chainOf(w) === 'solana').slice(0, 5).map((w) => w.address);
+  const wallets = engine.cfg.wallets.filter((w) => w.enabled && chainOf(w) === 'solana').slice(0, 8).map((w) => w.address);
   if (!wallets.length) throw new HttpError(400, 'Add Solana wallets to copy first (the settings check reads Solana history).');
   if (jobs.some((j) => j.kind === 'optimize' && (j.status === 'queued' || j.status === 'running'))) throw new HttpError(409, 'A settings comparison is already running.');
   const now = Date.now();
@@ -1279,6 +1314,7 @@ function runAutoTune(manual = false) {
         lastTune = { ...lastTune, status: 'fine', message: `Learning switched your exits to "${lastTune.best.name}". You can undo it on the Autopilot page.`, dismissed: true };
         saveTune();
       } else if (better) alert('autopilot', `🔧 ${lastTune.message} Open Copybot to use them.`);
+      if (engine.cfg.learn.enabled) await tuneWalletStrategies(d, auto, progress);
       return o;
     } catch (e) {
       lastTune = { at: Date.now(), status: 'error', message: `The weekly settings check couldn't run: ${(e as Error).message}` };
@@ -2358,6 +2394,20 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   if (route === 'POST /api/learning/undo') {
     const b = await readBody(req);
     const L = currentLearning();
+    const st = L.journal.find((x) => x.at === b.at && x.kind === 'strategy' && x.undoStrategy);
+    if (st?.undoStrategy) {
+      const next = structuredClone(engine.cfg);
+      const w = next.wallets.find((x) => x.address === st.undoStrategy!.wallet);
+      if (!w) throw new HttpError(404, "That wallet isn't in your list anymore.");
+      if (st.undoStrategy.strategy) w.strategy = st.undoStrategy.strategy;
+      else delete w.strategy;
+      await applyChange(() => saveConfig(sanitizeConfig(next, true)));
+      if (st.setup) L.vetoed = [...(L.vetoed ?? []).filter((v) => v.until > Date.now()), { setup: st.setup, until: Date.now() + 7 * 86_400_000 }]; // don't switch right back
+      delete st.undoStrategy;
+      journal({ at: Date.now(), kind: 'undo', text: `you undid a strategy change for ${w.label}; its previous strategy is back.` });
+      saveLearning();
+      return send(res, 200, { config: engine.cfg, learning: learningView() });
+    }
     const e = L.journal.find((x) => x.at === b.at && x.kind === 'exits' && x.undo);
     if (!e?.undo) throw new HttpError(404, 'Nothing to undo there.');
     const next = structuredClone(engine.cfg);

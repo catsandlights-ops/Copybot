@@ -13,6 +13,11 @@ window.GUIDES = [
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
+<h3>New in 0.8.7</h3>
+<ul>
+<li><b>A strategy for each wallet, re-checked daily:</b> with Learning on, Copybot replays each wallet's last week with your settings and with every strategy, and gives it the one that clearly fits it best: only with 5+ finished trades, a real profit, a clear margin, and not worse over the last 2 days. Switched by itself in paper mode, suggested in live; every switch is in the Learning journal with Undo.</li>
+<li><b>No more lost wallets:</b> if the Solana node is too busy when the bot starts, it keeps retrying in the background instead of skipping that wallet for the whole session.</li>
+</ul>
 <h3>New in 0.8.6</h3>
 <ul>
 <li><b>Choose your paper amount:</b> Dashboard → Paper wallet → <i>Change amount</i> (1 to 100 SOL, or any amount), keeping your results or starting fresh. Also in Settings → Basics.</li>

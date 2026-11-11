@@ -60,3 +60,45 @@ export function compareStrategies(swaps: Swap[], cfg: Config, opts: BacktestOpts
     best.copied > 0 && best.totalSol <= 0 ? 'all-lose' : best.id === 'current' ? 'current' : Math.max(current.closed, best.closed) < 10 ? 'few-trades' : margin < Math.max(0.01, Math.max(current.spentSol, best.spentSol) * 0.1) ? 'small' : 'better';
   return { results, best, current, currentIs, verdict };
 }
+
+// ---------------- the best strategy for one wallet ----------------
+
+/** 'mine' = no strategy of its own: the wallet follows your global settings. */
+export type WalletStrategyResult = { id: string; name: string; totalSol: number; closed: number; spentSol: number; recentSol: number; recentClosed: number };
+export type WalletStrategyPick = { address: string; current: WalletStrategyResult; best: WalletStrategyResult; results: WalletStrategyResult[]; change: boolean; why: string };
+
+/**
+ * Replay one wallet's trades with your own settings and with each strategy, and decide whether
+ * another strategy clearly fits it better: enough finished trades, a real profit, a clear margin,
+ * and not worse on the most recent days (one lucky stretch isn't enough). Your per-wallet exit
+ * overrides are left out of the comparison (they'd hide the differences) but are kept when applying.
+ */
+export function pickWalletStrategy(swaps: Swap[], cfg: Config, opts: BacktestOpts, marks: Map<string, number | null>, prices: Map<string, PriceSeries>, address: string, recentFrom: number): WalletStrategyPick | null {
+  const w = cfg.wallets.find((x) => x.address === address);
+  if (!w) return null;
+  const mine = swaps.filter((s) => s.wallet === address);
+  if (!mine.length) return null;
+  const recent = mine.filter((s) => (s.blockTime ?? 0) * 1000 >= recentFrom);
+  const run = (id: string, name: string): WalletStrategyResult => {
+    const c = structuredClone(cfg);
+    const { exits: _x, strategy: _s, ...rest } = w;
+    c.wallets = [{ ...rest, enabled: true, ...(id === 'mine' ? {} : { strategy: id }) }];
+    const all = runBacktest(mine, c, opts, marks, prices);
+    const late = recent.length ? runBacktest(recent, c, opts, marks, prices) : null;
+    return { id, name, totalSol: all.totalSol, closed: all.closed, spentSol: all.spentSol, recentSol: late?.totalSol ?? 0, recentClosed: late?.closed ?? 0 };
+  };
+  const results = [run('mine', 'Your settings'), ...STRATEGIES.map((s) => run(s.id, s.name))];
+  results.sort((a, b) => b.totalSol - a.totalSol);
+  const current = results.find((r) => r.id === (w.strategy || 'mine')) ?? results.find((r) => r.id === 'mine')!;
+  const best = results[0];
+  const margin = best.totalSol - current.totalSol;
+  const need = Math.max(0.005, Math.max(best.spentSol, current.spentSol) * 0.1);
+  const why =
+    best.id === current.id ? 'its current strategy did best'
+    : best.closed < 5 ? 'too few finished trades to tell'
+    : best.totalSol <= 0 ? 'no strategy made money with it'
+    : margin < need ? 'the difference was too small'
+    : best.recentClosed >= 2 && best.recentSol < current.recentSol ? 'it did worse over the last 2 days'
+    : 'clearly better';
+  return { address, current, best, results, change: why === 'clearly better', why };
+}
