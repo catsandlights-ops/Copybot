@@ -935,11 +935,15 @@ async function readBody(req: http.IncomingMessage, limit = 200_000): Promise<any
     raw += chunk;
     if (raw.length > limit) throw new HttpError(413, 'Request too large');
   }
+  let body: unknown;
   try {
-    return raw ? JSON.parse(raw) : {};
+    body = raw ? JSON.parse(raw) : {};
   } catch {
     throw new HttpError(400, 'Invalid JSON');
   }
+  // Every endpoint takes an object: "null", a list or a bare value is refused here, not deep inside.
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'Expected a JSON object');
+  return body;
 }
 
 function send(res: http.ServerResponse, code: number, data: unknown) {

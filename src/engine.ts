@@ -92,8 +92,15 @@ export class BotEngine extends EventEmitter {
       this.lastRateWarn = Date.now();
       return this.log('RPC is rate-limiting the bot, so some trades may be missed. A private RPC (e.g. Helius) fixes this.', 'warn');
     }
+    // A garbled or cut-off reply from a service (network hiccup): not our bug, and retried anyway.
+    if (/in JSON at position|Unexpected (end of JSON|token)|is not valid JSON|Bad control character/i.test(msg)) {
+      if (Date.now() - this.lastBrokenWarn < 60_000) return;
+      this.lastBrokenWarn = Date.now();
+      return this.log('A service sent a garbled reply (a network hiccup), so a check was skipped; Copybot tries again on its own.', 'warn');
+    }
     this.log(`Error: ${msg}`, 'error');
   }
+  private lastBrokenWarn = 0;
 
   log(msg: string, level = 'info') {
     const e = { t: Date.now(), level, msg };
