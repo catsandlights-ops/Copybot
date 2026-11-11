@@ -32,7 +32,7 @@ export type ChainMeta = {
 
 /** Everything that talks to the chain itself. */
 export type ChainContext = { conn: Connection; kp: Keypair | null; cfg: Config };
-export type SwapExtras = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void };
+export type SwapExtras = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void; onSent?: (sig: string) => void };
 
 export interface ChainAdapter {
   meta: ChainMeta;

@@ -109,6 +109,13 @@ export async function getTxBatch(sigs: string[]): Promise<(RawTx | null | undefi
   });
 }
 
+/** Save a file so a crash can never leave it half-written: write a temporary copy, then swap it in. */
+export function writeAtomic(file: string, data: string, opts: { mode?: number } = {}) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, data, opts.mode ? { mode: opts.mode } : undefined);
+  fs.renameSync(tmp, file);
+}
+
 /** Run async jobs with a concurrency cap. */
 export async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);

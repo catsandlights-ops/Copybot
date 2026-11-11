@@ -70,7 +70,7 @@ const JITO_SEND = 'https://mainnet.block-engine.jito.wtf/api/v1/transactions';
  * With a Jito tip, the swap pays that tip instead of a priority fee and is sent to Jito's block
  * engine as well as your RPC (same signature, so it can only land once).
  */
-export type SwapOpts = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void };
+export type SwapOpts = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote?: (m: string) => void; onSent?: (sig: string) => void };
 
 /** Sent, but the node was too busy to tell whether it landed before it expired; followed up later (see trader). */
 export class SolPendingError extends Error {
@@ -164,6 +164,7 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
       .catch(() => false);
     if (ok) {
       const sig = bs58encode(tx.signatures[0]);
+      opts.onSent?.(sig);
       try {
         await landOrExpire(conn, sig, lastValidBlockHeight, null);
         return sig;
@@ -183,6 +184,7 @@ export async function executeSwap(conn: Connection, kp: Keypair, quote: Quote, p
     }).catch(() => null); // the RPC send below is the fallback
   }
   const sig = await conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 3 });
+  opts.onSent?.(sig);
   await landOrExpire(conn, sig, lastValidBlockHeight, () => conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }));
   return sig;
 }

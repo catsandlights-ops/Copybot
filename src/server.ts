@@ -1,3 +1,4 @@
+import { writeAtomic } from './util';
 /**
  * Local control panel for the bot.
  *   npm run app      → browser version on http://localhost:4777
@@ -108,7 +109,7 @@ function detectVersionChange(): { from: string; to: string } | null {
   }
   if (previous === current) return null;
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ version: current }));
+  writeAtomic(file, JSON.stringify({ version: current }));
   return previous ? { from: previous, to: current } : null;
 }
 const justUpdated = detectVersionChange();
@@ -310,7 +311,7 @@ async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary:
   walletReviewBusy = true;
   lastWalletReview = Date.now();
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(WALLET_REVIEW_FILE, JSON.stringify({ at: lastWalletReview }));
+  writeAtomic(WALLET_REVIEW_FILE, JSON.stringify({ at: lastWalletReview }));
   try {
     const recs = walletRecords(engine.readTrades(), cfg.mode);
     const view: ai.WalletView[] = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
@@ -434,7 +435,7 @@ function recentScoutMints(): Set<string> {
 function rememberScoutMints(mints: string[]) {
   const l = [...mints, ...recentScoutMints()].filter((m, i, a) => a.indexOf(m) === i).slice(0, 18);
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(SCOUT_HISTORY, JSON.stringify(l));
+  writeAtomic(SCOUT_HISTORY, JSON.stringify(l));
 }
 
 function startScout(auto: boolean, chain: import('./chains').ChainId = 'solana') {
@@ -622,7 +623,7 @@ async function runScout(progress: (p: string) => void, auto = false, chain: impo
   rememberScoutMints(tokens.map((t) => t.mint));
   lastScout = result;
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(SCOUT_FILE, JSON.stringify(result));
+  writeAtomic(SCOUT_FILE, JSON.stringify(result));
   broadcast('scout', result);
   return result;
 }
@@ -898,7 +899,7 @@ async function runScannerTest(days: number, progress: (p: string) => void): Prom
   const result: ScanTest = { at: now, days, coins: series.map((s) => ({ symbol: s.r.symbol, kind: s.kind, signals: coinSignalsCount.get(s.r.mint) ?? 0 })), rows: out, trades, skippedCoins: skipped };
   lastScannerTest = result;
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(SCANTEST_FILE, JSON.stringify(result));
+  writeAtomic(SCANTEST_FILE, JSON.stringify(result));
   return result;
 }
 
@@ -1290,7 +1291,7 @@ let lastTune: Tune | null = (() => {
 })();
 function saveTune() {
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(TUNE_FILE, JSON.stringify(lastTune));
+  writeAtomic(TUNE_FILE, JSON.stringify(lastTune));
   broadcast('autotune', lastTune);
 }
 function runAutoTune(manual = false) {
@@ -1477,7 +1478,7 @@ setInterval(() => {
   if (now - seriesSaved > 120_000) {
     seriesSaved = now;
     fs.mkdirSync('data', { recursive: true });
-    fs.writeFileSync(SERIES_FILE(mode), JSON.stringify(pts));
+    writeAtomic(SERIES_FILE(mode), JSON.stringify(pts));
   }
 }, 30_000).unref();
 
@@ -2238,7 +2239,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         const list = readWatchlist().filter((m) => m !== b.mint);
         if (b.watch) list.unshift(b.mint);
         fs.mkdirSync('data', { recursive: true });
-        fs.writeFileSync(WATCHLIST, JSON.stringify(list.slice(0, 30)));
+        writeAtomic(WATCHLIST, JSON.stringify(list.slice(0, 30)));
         return send(res, 200, { watched: !!b.watch });
       }
     }
@@ -2250,7 +2251,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (b.setupDone !== undefined && typeof b.setupDone !== 'boolean') throw new HttpError(400, 'Invalid setupDone');
     uiPrefs = { mode: b.mode ?? uiPrefs.mode, setupDone: b.setupDone ?? uiPrefs.setupDone };
     fs.mkdirSync('data', { recursive: true });
-    fs.writeFileSync('data/ui.json', JSON.stringify(uiPrefs));
+    writeAtomic('data/ui.json', JSON.stringify(uiPrefs));
     broadcast('ui', uiPrefs);
     return send(res, 200, uiPrefs);
   }
@@ -2534,7 +2535,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       }
       lastHealth = { at: Date.now(), period: base.range!, delayPct, wallets: rows };
       fs.mkdirSync('data', { recursive: true });
-      fs.writeFileSync(HEALTH_FILE, JSON.stringify(lastHealth));
+      writeAtomic(HEALTH_FILE, JSON.stringify(lastHealth));
       broadcast('health', lastHealth);
       return lastHealth;
     });

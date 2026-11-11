@@ -3,7 +3,11 @@ import { Config } from './config';
 import { WSOL } from './decode';
 import type { Quote } from './jupiter';
 import { Position, State, saveState } from './state';
-import { appendJsonl, getTx, short } from './util';
+import { appendJsonl, getTx, short, writeAtomic } from './util';
+import { readTradeLog } from './tradelog';
+import fs from 'node:fs';
+
+const pickTrip = (t: { mint: string; side: 'buy' | 'sell'; decimals: number; source?: string; reason?: string }) => ({ mint: t.mint, side: t.side, decimals: t.decimals, ...(t.source ? { source: t.source } : {}), ...(t.reason ? { reason: t.reason } : {}) });
 import { copyGapPct } from './rules';
 import { ORDER_SOURCE, SCANNER_SOURCE } from './config';
 import { getChain, type ChainAdapter } from './chains';
@@ -30,6 +34,9 @@ export type Trade = {
 export type CopyRef = { theirSol: number; theirRaw: bigint; at: number | null };
 
 type Fill = { sig: string; tokenRaw: bigint; sol: number };
+/** What a live trade needs to be booked if the app stops before it's recorded. */
+type Trip = { mint: string; side: 'buy' | 'sell'; decimals: number; source?: string; reason?: string };
+export type InFlight = Trip & { sig: string; chain: string; quoted: { tokenRaw: string; sol: number }; at: number };
 /** Typical network fees per trade (the same estimate backtests use on Solana; Base gas is far cheaper). */
 export const PAPER_FEE_SOL = 0.0002;
 export const PAPER_FEE_BASE_ETH = 0.00002;
@@ -92,10 +99,80 @@ export class Trader {
     return loss;
   }
 
+  // ---------- trades in flight (crash safety) ----------
+  private inflightFile = () => `data/inflight-${this.cfg.mode}.json`;
+  private readInflight(): InFlight[] {
+    try {
+      const j = JSON.parse(fs.readFileSync(this.inflightFile(), 'utf8'));
+      return Array.isArray(j) ? j : [];
+    } catch {
+      return [];
+    }
+  }
+  private addInflight(e: InFlight) {
+    fs.mkdirSync('data', { recursive: true });
+    writeAtomic(this.inflightFile(), JSON.stringify([...this.readInflight().filter((x) => x.sig !== e.sig), e]));
+  }
+  private clearInflight(sig: string) {
+    if (!sig || sig === 'PAPER') return;
+    const list = this.readInflight();
+    if (list.some((x) => x.sig === sig)) writeAtomic(this.inflightFile(), JSON.stringify(list.filter((x) => x.sig !== sig)));
+  }
+
+  /**
+   * At start (live): trades that were sent but never booked because the app stopped (a crash, the PC
+   * shutting down) are looked up on-chain. Landed ones are booked now; the rest were never traded.
+   */
+  async recoverInflight(): Promise<number> {
+    if (!this.live) return 0;
+    const booked = new Set(readTradeLog().map((t: any) => t.sig));
+    let recovered = 0;
+    for (const e of this.readInflight()) {
+      const chain = getChain({ chain: e.chain });
+      if (booked.has(e.sig)) {
+        this.clearInflight(e.sig); // booked just before the app stopped
+        continue;
+      }
+      const landed = chain.settleLate ? await chain.settleLate(e.sig).catch(() => false) : false;
+      if (landed) {
+        const r = await this.fill(e.sig, chain, { tokenRaw: BigInt(e.quoted.tokenRaw), sol: e.quoted.sol });
+        this.bookRecovered(e, r, chain);
+        recovered++;
+      } else this.hooks.log(`A ${e.side} of ${short(e.mint)} that was being sent when Copybot stopped never went through, so nothing changed.`, 'system');
+      this.clearInflight(e.sig);
+    }
+    return recovered;
+  }
+  private bookRecovered(e: InFlight, r: Fill, chain: ChainAdapter) {
+    const now = Date.now();
+    if (e.side === 'buy') {
+      const p: Position = this.state.positions[e.mint] ?? { chain: chain.meta.id, mint: e.mint, decimals: e.decimals, amountRaw: '0', costSol: 0, openedAt: e.at, sources: [] };
+      p.amountRaw = (BigInt(p.amountRaw) + r.tokenRaw).toString();
+      p.costSol += r.sol;
+      if (e.source && !p.sources.includes(e.source)) p.sources.push(e.source);
+      this.state.positions[e.mint] = p;
+      this.record({ t: now, chain: chain.meta.id, mode: this.cfg.mode, side: 'buy', mint: e.mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source: e.source, sig: r.sig });
+    } else {
+      const p = this.state.positions[e.mint];
+      const held = p ? BigInt(p.amountRaw) : 0n;
+      const frac = held > 0n ? Math.min(1, Number(r.tokenRaw) / Number(held)) : 1;
+      const cost = p ? p.costSol * frac : 0;
+      const pnl = r.sol - cost;
+      this.state.realizedPnlSol += pnl;
+      if (p) {
+        p.amountRaw = (held - r.tokenRaw > 0n ? held - r.tokenRaw : 0n).toString();
+        p.costSol -= cost;
+        if (BigInt(p.amountRaw) === 0n) delete this.state.positions[e.mint];
+      }
+      this.record({ t: now, chain: chain.meta.id, mode: this.cfg.mode, side: 'sell', mint: e.mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason: e.reason ?? 'recovered', sources: [...(p?.sources ?? [])], sig: r.sig });
+    }
+    this.hooks.log(`Recovered a ${e.side} of ${short(e.mint)} that went through while Copybot was stopping; it's in your books now.`, 'warn');
+  }
+
   /** Coins with a sell that was sent but not confirmed yet: don't sell them again meanwhile. */
   private lateSells = new Set<string>();
 
-  private async swap(q: Quote, chain: ChainAdapter = this.chain, late?: { onFill: (r: Fill) => void; mint: string; side: 'buy' | 'sell' }): Promise<Fill> {
+  private async swap(q: Quote, chain: ChainAdapter = this.chain, late?: { onFill: (r: Fill) => void } & Trip): Promise<Fill> {
     const toToken = q.outputMint !== chain.meta.native.wrapped;
     // Amounts in the chain's own coin, converted to SOL (Copybot's books are in SOL).
     const native = Number(toToken ? q.inAmount : q.outAmount) / 10 ** chain.meta.native.decimals;
@@ -109,18 +186,25 @@ export class Trader {
     const kp = this.kp!;
     const x = this.cfg.execution;
     let sig: string;
+    let sent: string | null = null;
+    // Written down the moment it's sent: if the app stops before it's booked, the next start books it.
+    const onSent = (s: string) => {
+      sent = s;
+      if (late) this.addInflight({ ...pickTrip(late), sig: s, chain: chain.meta.id, quoted: { tokenRaw: quoted.tokenRaw.toString(), sol: quoted.sol }, at: Date.now() });
+    };
     try {
-      sig = await chain.executeSwap({ conn: this.conn, kp, cfg: this.cfg }, q, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn') });
+      sig = await chain.executeSwap({ conn: this.conn, kp, cfg: this.cfg }, q, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn'), onSent });
     } catch (e) {
       const hash = (e as { pendingHash?: string }).pendingHash;
       if (hash && late && chain.settleLate) this.watchLate(hash, chain, quoted, late);
+      else if (sent) this.clearInflight(sent); // failed for good: nothing to book
       throw e;
     }
     return this.fill(sig, chain, quoted);
   }
 
   /** Follow a trade that was sent but not confirmed in time, and book it if it goes through. */
-  private watchLate(hash: string, chain: ChainAdapter, quoted: { tokenRaw: bigint; sol: number }, late: { onFill: (r: Fill) => void; mint: string; side: 'buy' | 'sell' }) {
+  private watchLate(hash: string, chain: ChainAdapter, quoted: { tokenRaw: bigint; sol: number }, late: { onFill: (r: Fill) => void } & Trip) {
     if (late.side === 'sell') this.lateSells.add(late.mint);
     void chain.settleLate!(hash)
       .then(async (ok) => {
@@ -128,7 +212,10 @@ export class Trader {
         late.onFill(await this.fill(hash, chain, quoted));
       })
       .catch((e) => this.hooks.log(`Couldn't follow up the ${late.side} of ${short(late.mint)} (${short(hash)}): ${(e as Error).message}. Check it on ${chain.meta.name}'s explorer.`, 'warn'))
-      .finally(() => this.lateSells.delete(late.mint));
+      .finally(() => {
+        this.lateSells.delete(late.mint);
+        this.clearInflight(hash);
+      });
   }
 
   /** What really happened, from the confirmed transaction (falls back to the quote). */
@@ -169,7 +256,9 @@ export class Trader {
       const note = g.gapPct !== undefined ? `, ${g.gapPct >= 0 ? `${g.gapPct.toFixed(1)}% above` : `${(-g.gapPct).toFixed(1)}% below`} their price${g.lagSec !== undefined ? `, ${g.lagSec}s after them` : ''}` : '';
       this.hooks.log(`BUY ${short(mint)} for ${r.sol.toFixed(4)} SOL (${source === SCANNER_SOURCE ? 'market scanner' : source === ORDER_SOURCE ? 'your order' : `copying ${this.hooks.name(source)}${note}`})${late ? ' — confirmed late, now in your positions' : ''}`, 'buy');
     };
-    book(await this.swap(q, chain, { side: 'buy', mint, onFill: (r) => book(r, true) }));
+    const r = await this.swap(q, chain, { side: 'buy', mint, decimals, source, onFill: (x) => book(x, true) });
+    book(r);
+    this.clearInflight(r.sig);
   }
 
   /** Sell `fraction` (0..1] of our position. Returns the realized P&L, or null if nothing was sold. */
@@ -210,6 +299,9 @@ export class Trader {
       this.hooks.log(`SELL ${short(mint)} ${(soldFrac * 100).toFixed(0)}% for ${r.sol.toFixed(4)} SOL, PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} (${reason})${late ? ' — confirmed late' : ''}`, 'sell');
       return pnl;
     };
-    return book(await this.swap(q, chain, { side: 'sell', mint, onFill: (r) => book(r, true) }));
+    const r = await this.swap(q, chain, { side: 'sell', mint, decimals: p.decimals, reason, onFill: (x) => book(x, true) });
+    const pnl = book(r);
+    this.clearInflight(r.sig);
+    return pnl;
   }
 }

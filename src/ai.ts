@@ -14,7 +14,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import type { Config } from './config';
 import { readSecret } from './env';
-import { appendJsonl } from './util';
+import { appendJsonl, writeAtomic } from './util';
 
 export const AI_MODEL = 'claude-opus-5-5';
 // USD per million tokens for Claude Opus 5.5.
@@ -50,7 +50,7 @@ function addCost(usd: number) {
   u.costUsd += usd;
   u.calls++;
   fs.mkdirSync('data', { recursive: true });
-  fs.writeFileSync(USAGE_FILE, JSON.stringify(u));
+  writeAtomic(USAGE_FILE, JSON.stringify(u));
 }
 
 // ---------- decision log ----------

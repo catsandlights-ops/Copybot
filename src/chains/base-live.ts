@@ -121,7 +121,7 @@ export async function lateReceipt(hash: string, maxMs = 30 * 60_000, everyMs = 1
 }
 
 /** Check, rehearse, sign and send one transaction; wait until it's confirmed. */
-async function sendChecked(account: ReturnType<typeof baseAccount>, req: { to: string; data: string; value: bigint }, expect: Expect, maxFeeWei: bigint, gasHint?: bigint): Promise<string> {
+async function sendChecked(account: ReturnType<typeof baseAccount>, req: { to: string; data: string; value: bigint }, expect: Expect, maxFeeWei: bigint, gasHint?: bigint, onSent?: (hash: string) => void): Promise<string> {
   const from = account.address;
   // Rehearse first: a transaction that would fail is never sent (and costs nothing).
   await baseRpc.call('eth_call', [{ from, to: req.to, data: req.data, value: '0x' + req.value.toString(16) }, 'latest']).catch((e: Error) => {
@@ -136,6 +136,7 @@ async function sendChecked(account: ReturnType<typeof baseAccount>, req: { to: s
   const signed = await account.signTransaction({ chainId: BASE_CHAIN_ID, type: 'eip1559', to: req.to as `0x${string}`, data: req.data as `0x${string}`, value: req.value, gas, nonce, maxFeePerGas: f.maxFeePerGas, maxPriorityFeePerGas: f.maxPriorityFeePerGas });
   const hash = await baseRpc.call<string>('eth_sendRawTransaction', [signed]);
   lastNonce.set(from.toLowerCase(), nonce);
+  onSent?.(hash);
   const rc = await waitReceipt(hash, from);
   if (rc.status !== '0x1') throw new Error(`Base transaction ${hash} failed on-chain.`);
   return hash;
@@ -145,11 +146,11 @@ async function sendChecked(account: ReturnType<typeof baseAccount>, req: { to: s
  * Execute a Base swap from a KyberSwap quote: approve the exact amount if selling a token,
  * then build, check, rehearse, sign and send the swap. Returns the swap's transaction hash.
  */
-export function executeBaseSwap(key: string, quote: Quote, slippageBps: number, maxFeeEth: number, weth: string): Promise<string> {
-  return oneAtATime(() => swapNow(key, quote, slippageBps, maxFeeEth, weth));
+export function executeBaseSwap(key: string, quote: Quote, slippageBps: number, maxFeeEth: number, weth: string, onSent?: (hash: string) => void): Promise<string> {
+  return oneAtATime(() => swapNow(key, quote, slippageBps, maxFeeEth, weth, onSent));
 }
 
-async function swapNow(key: string, quote: Quote, slippageBps: number, maxFeeEth: number, weth: string): Promise<string> {
+async function swapNow(key: string, quote: Quote, slippageBps: number, maxFeeEth: number, weth: string, onSent?: (hash: string) => void): Promise<string> {
   const account = baseAccount(key);
   const owner = account.address.toLowerCase();
   const maxFeeWei = BigInt(Math.round(maxFeeEth * 1e18));
@@ -168,5 +169,5 @@ async function swapNow(key: string, quote: Quote, slippageBps: number, maxFeeEth
   const j = (await res.json().catch(() => ({}))) as { code?: number; message?: string; data?: { routerAddress: string; data: string; transactionValue?: string; gas?: string } };
   if (!res.ok || j.code !== 0 || !j.data) throw new Error(`KyberSwap couldn't build the swap (${j.message ?? res.status})`);
   const value = BigInt(j.data.transactionValue ?? '0');
-  return sendChecked(account, { to: j.data.routerAddress, data: j.data.data, value }, { kind: 'swap', owner, value: selling ? 0n : amountIn }, maxFeeWei, j.data.gas ? BigInt(j.data.gas) : undefined);
+  return sendChecked(account, { to: j.data.routerAddress, data: j.data.data, value }, { kind: 'swap', owner, value: selling ? 0n : amountIn }, maxFeeWei, j.data.gas ? BigInt(j.data.gas) : undefined, onSent);
 }

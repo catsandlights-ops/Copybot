@@ -1,3 +1,4 @@
+import { writeAtomic } from './util';
 import 'dotenv/config';
 import fs from 'node:fs';
 import { Connection, Keypair } from '@solana/web3.js';
@@ -47,7 +48,8 @@ export function updateEnv(updates: Record<string, string>) {
     else lines.push(`${k}=${v}`);
     process.env[k] = v;
   }
-  fs.writeFileSync(file, lines.join('\n') + '\n', { mode: 0o600 });
+  // Your keys live here: never leave the file half-written if the PC dies mid-save.
+  writeAtomic(file, lines.join('\n') + '\n', { mode: 0o600 });
 }
 
 // ---------------- trading wallet key ----------------

@@ -29,7 +29,7 @@ import { getMarketInfo, getSolUsd } from './market';
 import * as ai from './ai';
 import fs from 'node:fs';
 import { Trade, Trader } from './trader';
-import { getTx, short, sleep, withRetry } from './util';
+import { getTx, short, sleep, withRetry, writeAtomic } from './util';
 import { readTradeLog } from './tradelog';
 import { emptyBook, restartShadow, SHADOW, shadowBuy, shadowSell, shadowStats, shadowVerdict, type ShadowBook } from './shadow';
 
@@ -225,6 +225,8 @@ export class BotEngine extends EventEmitter {
       }
     })();
     this.pollSlow = 1;
+    // Trades that were sent while Copybot last stopped: book the ones that went through.
+    if (this.cfg.mode === 'live') void this.trader.recoverInflight().catch((e) => this.logError(e));
     this.pollerLoop(gen);
     this.exitLoop(gen);
     this.orderLoop(gen);
@@ -575,7 +577,7 @@ export class BotEngine extends EventEmitter {
     if (!this.sigDirty) return;
     this.sigDirty = false;
     fs.mkdirSync('data', { recursive: true });
-    fs.writeFileSync(this.sigFile(), JSON.stringify(this.sigStats));
+    writeAtomic(this.sigFile(), JSON.stringify(this.sigStats));
   }
 
   /** Watchers for wallets on other chains. */
@@ -712,7 +714,7 @@ export class BotEngine extends EventEmitter {
   })();
   private saveRugs() {
     fs.mkdirSync('data', { recursive: true });
-    fs.writeFileSync('data/rugs.json', JSON.stringify(this.rugs));
+    writeAtomic('data/rugs.json', JSON.stringify(this.rugs));
   }
   /** A coin rugged us: never buy it again, nor coins from whoever created it. */
   private rememberRug(mint: string, why: string) {
@@ -746,7 +748,7 @@ export class BotEngine extends EventEmitter {
       this.buySizesSaved = Date.now();
       try {
         fs.mkdirSync('data', { recursive: true });
-        fs.writeFileSync('data/buy-sizes.json', JSON.stringify(Object.fromEntries(this.buySizes)));
+        writeAtomic('data/buy-sizes.json', JSON.stringify(Object.fromEntries(this.buySizes)));
       } catch {
         /* next time */
       }
@@ -791,7 +793,7 @@ export class BotEngine extends EventEmitter {
     this.shadowSavedAt = Date.now();
     try {
       fs.mkdirSync('data', { recursive: true });
-      fs.writeFileSync(`data/shadow-${this.cfg.mode}.json`, JSON.stringify(this.shadow));
+      writeAtomic(`data/shadow-${this.cfg.mode}.json`, JSON.stringify(this.shadow));
     } catch {
       /* next time */
     }

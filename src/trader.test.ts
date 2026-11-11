@@ -144,3 +144,59 @@ test('live sells: sell what the wallet really holds; a coin that vanished is clo
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('crash safety: a trade sent just before the app died is booked on the next start, once', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-crash-'));
+  const prev = process.cwd();
+  const saved = Object.getOwnPropertyDescriptors(base);
+  try {
+    process.chdir(dir);
+    fs.mkdirSync('data');
+    let landed = true;
+    Object.defineProperty(base, 'liveTrading', { get: () => true, configurable: true });
+    Object.assign(base, {
+      liveOwner: () => '0x1111111111111111111111111111111111111111',
+      // Sent... and then the app "dies": this never finishes.
+      executeSwap: (_c: unknown, _q: unknown, x: any) => { x.onSent('0xsent1'); return new Promise(() => {}); },
+      settleLate: async () => landed,
+      readFill: async () => ({ tokenRaw: 1000n, native: 0.001 }),
+      nativeToSol: async (n: number) => n * 10,
+    });
+    const cfg = sanitizeConfig({ mode: 'live' }, false);
+    cfg.mode = 'live';
+    const before = { positions: {}, realizedPnlSol: 0 } as any;
+    const t1 = new Trader(null as any, cfg, before, Keypair.generate(), { log: () => {}, trade: () => {}, name: (w) => w });
+    void t1.buy(TOKEN, 18, { inputMint: WETH, outputMint: TOKEN, inAmount: '1000000000000000', outAmount: '990' } as any, 'wallet-a', undefined, base);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(JSON.parse(fs.readFileSync('data/inflight-live.json', 'utf8'))[0].sig, '0xsent1'); // written down when sent
+    // Next start: it landed, so it's booked (with the real fill), and the note is cleared.
+    const state = { positions: {}, realizedPnlSol: 0 } as any;
+    const logs: string[] = [];
+    const t2 = new Trader(null as any, cfg, state, Keypair.generate(), { log: (m) => logs.push(m), trade: () => {}, name: (w) => w });
+    assert.equal(await t2.recoverInflight(), 1);
+    assert.equal(state.positions[TOKEN].amountRaw, '1000');
+    assert.ok(Math.abs(state.positions[TOKEN].costSol - 0.01) < 1e-12);
+    assert.match(logs.join('\n'), /Recovered a buy/);
+    assert.deepEqual(JSON.parse(fs.readFileSync('data/inflight-live.json', 'utf8')), []);
+    // Starting again books nothing twice.
+    assert.equal(await t2.recoverInflight(), 0);
+    // A trade that never landed changes nothing.
+    landed = false;
+    void t1.buy(TOKEN, 18, { inputMint: WETH, outputMint: TOKEN, inAmount: '1000000000000000', outAmount: '990' } as any, 'wallet-a', undefined, base);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(await t2.recoverInflight(), 0);
+    assert.equal(state.positions[TOKEN].amountRaw, '1000');
+    // Booked just before the crash (it's in the trade log already): not booked again.
+    landed = true;
+    fs.appendFileSync('data/trades.jsonl', JSON.stringify({ sig: '0xsent1', side: 'buy', mode: 'live' }) + '\n');
+    void t1.buy(TOKEN, 18, { inputMint: WETH, outputMint: TOKEN, inAmount: '1000000000000000', outAmount: '990' } as any, 'wallet-a', undefined, base);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(await t2.recoverInflight(), 0);
+    assert.equal(state.positions[TOKEN].amountRaw, '1000');
+  } finally {
+    for (const [k, d] of Object.entries(saved)) Object.defineProperty(base, k, d);
+    for (const k of ['settleLate', 'tokenBalance'] as const) if (!(k in saved)) delete (base as any)[k];
+    process.chdir(prev);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
