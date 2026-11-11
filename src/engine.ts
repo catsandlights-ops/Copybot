@@ -644,7 +644,7 @@ export class BotEngine extends EventEmitter {
     const r = cfg.risk;
     const blocked = buyBlockReason(this.guard, r, Date.now());
     if (blocked) return blocked;
-    if (!state.positions[mint] && Object.keys(state.positions).length >= r.maxOpenPositions) return 'max open positions reached';
+    if (!state.positions[mint] && this.slotsUsed(state) >= r.maxOpenPositions) return 'max open positions reached';
     if (exposure(state) + sol > r.maxTotalExposureSol) return 'max total exposure reached';
     if (cfg.mode === 'paper') {
       const free = paperFreeSol(cfg.paper.startSol, state.realizedPnlSol, exposure(state));
@@ -726,6 +726,10 @@ export class BotEngine extends EventEmitter {
     writeAtomic('data/rugs.json', JSON.stringify(this.rugs));
   }
   /** A coin rugged us: never buy it again, nor coins from whoever created it. */
+  /** Open positions that count toward the limit: a dead coin waiting to be written off doesn't block new trades. */
+  private slotsUsed(state: { positions: Record<string, unknown> }) {
+    return Object.keys(state.positions).filter((m) => !this.trader.noBuyersState(m)).length;
+  }
   private rememberRug(mint: string, why: string) {
     if (!this.cfg.safety.rugMemory) return;
     if (!this.rugs.mints.includes(mint)) this.rugs.mints.push(mint);
@@ -937,7 +941,7 @@ export class BotEngine extends EventEmitter {
     // A second wallet confirming a coin we hold: buy more, once (if turned on).
     const addOn = !!holding && b.consensusAddOn && b.consensusBoost > 1 && agree.length >= 2 && !holding.addedOn && !holding.sources.includes(s.wallet);
     if (holding && r.skipIfAlreadyHolding && !addOn) return skip('already holding');
-    if (!holding && Object.keys(state.positions).length >= r.maxOpenPositions) return skip('max open positions reached');
+    if (!holding && this.slotsUsed(state) >= r.maxOpenPositions) return skip('max open positions reached');
     const rules = walletRules(cfg, s.wallet);
     if (s.quote === 'SOL' && s.quoteAmount < rules.minTargetBuySol) return skip(`their buy is below ${rules.minTargetBuySol} SOL`);
     // A wallet's small test buys aren't its convictions: compare with what it usually buys.
@@ -1261,7 +1265,7 @@ export class BotEngine extends EventEmitter {
           // No price and no buyers for 10 minutes (rugged, liquidity gone): try to sell, which backs off
           // quietly and writes it off after 2 hours, so it can't block new trades forever.
           const since = (this.unpriced[p.mint] ??= Date.now());
-          if (Date.now() - since > 10 * 60_000) {
+          if (Date.now() - since > 10 * 60_000 && this.trader.noBuyersState(p.mint) !== 'wait') {
             this.exiting.add(p.mint);
             this.enqueue(async () => {
               try {
@@ -1285,6 +1289,21 @@ export class BotEngine extends EventEmitter {
         if (peakMultiple !== p.peakMultiple) {
           p.peakMultiple = peakMultiple;
           changed = true;
+        }
+        const stuck = this.trader.noBuyersState(p.mint);
+        if (stuck) {
+          // Nobody would buy it last time: retry when due, quietly (no repeating "selling everything").
+          if (stuck === 'due') {
+            this.exiting.add(p.mint);
+            this.enqueue(async () => {
+              try {
+                await this.trader.sell(p.mint, 1, 'no buyers: trying again');
+              } finally {
+                this.exiting.delete(p.mint);
+              }
+            }, true);
+          }
+          continue;
         }
         if (!action) {
           const peakBefore = p.peakLiquidityUsd;

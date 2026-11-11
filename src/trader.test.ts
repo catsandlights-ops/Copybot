@@ -222,6 +222,9 @@ test("no buyers: retries quietly with growing pauses, then writes the coin off a
     assert.equal(await t.sell(MINT, 1, "held 12 h (the scanner's limit)"), null);
     assert.equal(logs.length, 1);
     assert.match(logs[0], /no one is buying it.*writes it off after 2 hours/);
+    // The engine sees it's waiting (so it doesn't hold a slot or repeat "selling everything").
+    assert.equal(t.noBuyersState(MINT), 'wait');
+    assert.equal(t.noBuyersState('other'), null);
     // The exit check runs every 20 s: those tries are skipped without asking or logging again.
     for (let i = 0; i < 10; i++) {
       now += 20_000;
@@ -236,6 +239,7 @@ test("no buyers: retries quietly with growing pauses, then writes the coin off a
     }
     assert.equal(state.positions[MINT], undefined);
     assert.ok(Math.abs(state.realizedPnlSol + 0.1) < 1e-12);
+    assert.equal(t.noBuyersState(MINT), null);
     assert.match(logs.at(-1)!, /written off as a loss of 0.1000 SOL/);
   } finally {
     Date.now = realNow;

@@ -171,6 +171,11 @@ export class Trader {
 
   /** Coins nobody would buy last time we tried to sell: when we first noticed, how often, when to try again. */
   private noRoute = new Map<string, { since: number; tries: number; nextAt: number; loggedAt: number }>();
+  /** A coin that found no buyers last time: 'wait' until its next try, 'due' when it's time to try again. */
+  noBuyersState(mint: string): 'wait' | 'due' | null {
+    const nr = this.noRoute.get(mint);
+    return nr ? (Date.now() < nr.nextAt ? 'wait' : 'due') : null;
+  }
   /** How long a coin may have no buyers at all before it's written off in the books. */
   static readonly WRITE_OFF_AFTER_MS = 2 * 3_600_000;
 
