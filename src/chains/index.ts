@@ -1,4 +1,4 @@
-/** The chains Copybot can trade on, by id. */
+/** The chains Remora can trade on, by id. */
 import { solana } from './solana';
 import { base } from './base';
 import { chainOf, DEFAULT_CHAIN, type ChainAdapter, type ChainId } from './types';

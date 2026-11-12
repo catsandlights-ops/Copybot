@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Copybot</title>
+<title>Remora</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'><path fill='%2307031a' d='M6 0h2v1H6zM4 1h2v1H4zM7 1h1v3H7zM3 2h1v1H3zM2 3h1v1H2zM1 4h1v2H1zM6 4h1v2H6zM0 6h1v2H0zM3 6h3v1H3zM1 7h1v1H1z'/><path fill='%235fae4e' d='M6 1h1v3H6zM4 2h2v1H4zM3 3h3v1H3zM2 4h4v1H2zM2 5h4v1H2zM1 6h2v1H1z'/></svg>">
 <style>
 /* ---------- color tokens: light (default) and dark ----------
@@ -346,7 +346,7 @@ td.r { white-space: nowrap; }
 }
 
 /* =====================================================================
-   RAINBOW LAYER: the modern base above, plus Copybot's personality:
+   RAINBOW LAYER: the modern base above, plus Remora's personality:
    rainbow edge lines and title, color-coded menu and panels, pixel leaf
    logo, hearts and coins. Works in light and dark.
    ===================================================================== */
@@ -508,7 +508,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
   <aside class="side">
     <div class="brand">
       <svg width="26" height="26" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M9 20l5-5 4 4 6-8" stroke="var(--on-accent)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span>Copybot</span>
+      <span>Remora</span>
     </div>
     <button class="nav" data-page="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</button>
     <button class="nav" data-page="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/></svg>Markets</button>
@@ -618,11 +618,11 @@ function wizard(step = 0) {
   const c = S.connection, mine = S.config.wallets.length;
   const dots = WZ_STEPS.map((l, i) => `<span class="wz-dot ${i === step ? 'on' : i < step ? 'done' : ''}" title="${l}"></span>`).join('');
   const body = [
-    `<div class="wz-hero">${ICON.rainbow}</div><h2>Welcome to Copybot</h2>
-     <p>Copybot follows wallets you choose, on <b>Solana</b> and <b>Base</b>, and copies their trades within seconds, with safety checks and limits you control.</p>
+    `<div class="wz-hero">${ICON.rainbow}</div><h2>Welcome to Remora</h2>
+     <p>Remora follows wallets you choose, on <b>Solana</b> and <b>Base</b>, and copies their trades within seconds, with safety checks and limits you control.</p>
      <p class="muted">It starts in <b>paper mode</b>: every trade is simulated with real prices and nothing is spent. Setup takes about 3 minutes.</p>`,
     `<h2>Connect a fast RPC</h2>
-     <p>The RPC is Copybot's connection to Solana. The free public one is rate-limited and <b>misses trades</b>.</p>
+     <p>The RPC is Remora's connection to Solana. The free public one is rate-limited and <b>misses trades</b>.</p>
      <ol class="steps"><li>Create a free account at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>.</li><li>Copy your RPC link (<span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span>) and paste it here.</li></ol>
      <input class="input mono" id="wz-rpc" placeholder="https://mainnet.helius-rpc.com/?api-key=…" value="${c.usingPublicRpc ? '' : esc(c.rpcUrl)}" spellcheck="false" style="width:100%">
      <div class="row" style="margin-top:10px"><button class="btn" id="wz-test">Save &amp; test</button><span class="muted" id="wz-rpc-msg" style="font-size:13px">${c.usingPublicRpc ? '' : '<span class="pos">✓ A private RPC is set.</span>'}</span></div>
@@ -631,18 +631,18 @@ function wizard(step = 0) {
        <input class="input mono" id="wz-base" placeholder="https://base-mainnet.g.alchemy.com/v2/…" value="${esc(c.baseRpcUrl || '')}" spellcheck="false" style="width:100%">
        <div class="row" style="margin-top:8px"><button class="btn sm" id="wz-base-save">Save</button><span class="muted" id="wz-base-msg" style="font-size:13px">${c.baseRpcUrl ? '<span class="pos">✓ A Base link is set.</span>' : ''}</span></div></details>`,
     `<h2>Pick wallets to copy</h2>
-     <p>Copybot is only as good as the wallets it copies.${mine ? ` <b>You already copy ${mine}.</b>` : ''} New wallets start small (a trial size) and grow as they prove themselves.</p>
+     <p>Remora is only as good as the wallets it copies.${mine ? ` <b>You already copy ${mine}.</b>` : ''} New wallets start small (a trial size) and grow as they prove themselves.</p>
      <div class="wz-choices">
        <button class="wz-choice" id="wz-scout"><b>Find wallets for me</b><span>Scans tokens that pumped recently, checks who bought early and picks the best (5–15 min, runs in the background).${c.baseRpcUrl ? ' Searches Solana; Base is searched too, every other time.' : ''}</span></button>
        <div class="wz-choice"><b>I have a wallet address</b><span>Paste one or more, one per line. Solana addresses, or Base addresses starting with 0x.</span><textarea class="input mono" id="wz-addrs" rows="2" placeholder="Wallet address"></textarea><button class="btn sm" id="wz-add" style="margin-top:6px">Add</button></div>
      </div><div class="muted" id="wz-w-msg" style="font-size:13px;margin-top:8px"></div>`,
     `<h2>Running all day</h2>
-     <p>Copybot works best left on. It keeps the computer awake while the bot runs.</p>
+     <p>Remora works best left on. It keeps the computer awake while the bot runs.</p>
      <label class="row" style="gap:10px;align-items:flex-start;justify-content:flex-start;text-align:left;margin:10px 0"><label class="switch"><input type="checkbox" id="wz-resume" ${S.ui.resumeBot !== false ? 'checked' : ''}><i></i></label><span><b>Start the bot again after a crash, restart or power cut</b><br><span class="muted" style="font-size:13px">Not after you stop it yourself.</span></span></label>
-     ${S.app.desktop === false ? '' : `<label class="row" style="gap:10px;align-items:flex-start;justify-content:flex-start;text-align:left;margin:10px 0"><label class="switch"><input type="checkbox" id="wz-login" ${S.ui.startWithWindows ? 'checked' : ''}><i></i></label><span><b>Start Copybot with Windows</b><br><span class="muted" style="font-size:13px">Opens minimized when you log in.</span></span></label>`}
+     ${S.app.desktop === false ? '' : `<label class="row" style="gap:10px;align-items:flex-start;justify-content:flex-start;text-align:left;margin:10px 0"><label class="switch"><input type="checkbox" id="wz-login" ${S.ui.startWithWindows ? 'checked' : ''}><i></i></label><span><b>Start Remora with Windows</b><br><span class="muted" style="font-size:13px">Opens minimized when you log in.</span></span></label>`}
      <p class="muted">Want to check on it from your phone? <b>Settings → Phone access</b> pairs your phone in a minute (works away from home with the free Tailscale app). A backup is saved every day automatically.</p>`,
     `<div class="wz-hero">${ICON.star}</div><h2>You're ready</h2>
-     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '💡 No wallets yet: <b>Start a paper experiment</b> and Copybot picks a few active traders for you'}</li><li>✅ Paper mode: nothing is spent</li></ul>
+     <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '💡 No wallets yet: <b>Start a paper experiment</b> and Remora picks a few active traders for you'}</li><li>✅ Paper mode: nothing is spent</li></ul>
      <p class="muted">Everything starts in <b>paper mode</b> (no money). Give it a week or more. When the results are good, choose <b>Live</b> in Settings → Trading mode: a step-by-step assistant checks your results and wallet, makes a tiny test trade and starts you small.</p>
      <p class="muted">Optional: on the <b>Autopilot</b> page an AI can make the judgment calls, either Claude (paid) or a free AI running on your own PC. Read <a href="#" data-guide="getting-started" id="wz-guide">Getting started</a> for the rest.</p>`,
   ][step];
@@ -733,7 +733,7 @@ async function goLive(step = 0) {
     `<h2>Safety settings</h2><p class="muted" style="margin-top:0">The settings that protect real money. The last step can set the limits for you.</p>
      ${p.checklist.map((c) => `<div class="row" style="gap:8px;align-items:flex-start;padding:3px 0"><span class="${c.ok ? 'pos' : 'neg'}" style="font-weight:700;width:14px">${c.ok ? '✓' : '✕'}</span><div><div>${esc(c.text)}</div>${c.ok ? '' : `<div class="muted" style="font-size:12.5px">${esc(c.fix)}</div>`}</div></div>`).join('')}
      <div class="row" style="margin-top:8px"><button class="btn sm" id="gl-ns">Check connections now</button><span class="muted" id="gl-ns-msg" style="font-size:13px"></span></div>`,
-    `<h2>Trading wallets</h2><p class="muted" style="margin-top:0">Use <b>new wallets</b> holding only what you're willing to lose. Copybot never sends money anywhere except into trades.</p>
+    `<h2>Trading wallets</h2><p class="muted" style="margin-top:0">Use <b>new wallets</b> holding only what you're willing to lose. Remora never sends money anywhere except into trades.</p>
      ${keyRow('Solana', w.solana)}
      ${keyRow('Base', w.base, w.base.hasKey ? `<div style="margin-top:6px"><label class="row" style="gap:8px"><label class="switch"><input type="checkbox" id="gl-base" ${GL.baseLive ? 'checked' : ''}><i></i></label><span>Copy Base wallets for real too</span></label></div>` : w.base.used ? '<div class="muted" style="font-size:12.5px">Without a Base key, your Base wallets keep running in shadow only.</div>' : '')}
      ${!w.solana.hasKey || !w.base.hasKey ? '<div class="row" style="margin-top:8px"><button class="btn sm" id="gl-keys">Add a trading wallet (Settings)</button></div>' : ''}
@@ -741,7 +741,7 @@ async function goLive(step = 0) {
     `<h2>Test trade (recommended)</h2><p class="muted" style="margin-top:0">A real, tiny swap to a dollar coin and straight back, to prove your wallet signs and sends trades. It costs a few cents in fees.</p>
      ${w.solana.hasKey ? testBox('solana', 'Test Solana (0.01 SOL)') : '<p class="muted">No Solana wallet to test.</p>'}
      ${w.base.hasKey && GL.baseLive ? testBox('base', 'Test Base (0.0005 ETH)') : ''}`,
-    `<h2>Start small</h2><p class="muted" style="margin-top:0">For the first week, smaller trades and tighter limits, sized to your wallet. Your own settings are saved: Copybot suggests bringing them back after ${7} days and ${10} closed trades in profit.</p>
+    `<h2>Start small</h2><p class="muted" style="margin-top:0">For the first week, smaller trades and tighter limits, sized to your wallet. Your own settings are saved: Remora suggests bringing them back after ${7} days and ${10} closed trades in profit.</p>
      <label class="row" style="gap:8px;margin-bottom:8px"><label class="switch"><input type="checkbox" id="gl-starter" ${GL.starter ? 'checked' : ''}><i></i></label><span><b>Use starter limits</b></span></label>
      <div class="tbl-wrap"><table><thead><tr><th></th><th class="r">Now</th><th class="r">Starter</th></tr></thead><tbody>
        ${cmp('Per trade', cur.fixedSol, st.limits.fixedSol, ' SOL')}${cmp('Coins at once', cur.maxOpenPositions, st.limits.maxOpenPositions)}${cmp('SOL in trades at once', cur.maxTotalExposureSol || 'no cap', st.limits.maxTotalExposureSol, cur.maxTotalExposureSol ? ' SOL' : '')}${cmp('Daily loss limit', cur.dailyLossLimitSol || 'off', st.limits.dailyLossLimitSol, cur.dailyLossLimitSol ? ' SOL' : '')}${cmp('Stop-loss', cur.stopLossPct || 'off', st.limits.stopLossPct, '%')}
@@ -770,13 +770,13 @@ async function goLive(step = 0) {
   };
   document.querySelectorAll('[data-gltest]').forEach((b) => (b.onclick = async () => {
     const c = b.dataset.gltest;
-    if (!(await confirmModal({ title: 'Make a real test trade?', confirm: 'Make the test trade', body: `<p>Copybot will swap <b>${c === 'base' ? '0.0005 ETH' : '0.01 SOL'}</b> to USDC and straight back, using real money from your ${c === 'base' ? 'Base' : 'Solana'} trading wallet. Only the fees (a few cents) are spent.</p>` }))) return goLive(step);
+    if (!(await confirmModal({ title: 'Make a real test trade?', confirm: 'Make the test trade', body: `<p>Remora will swap <b>${c === 'base' ? '0.0005 ETH' : '0.01 SOL'}</b> to USDC and straight back, using real money from your ${c === 'base' ? 'Base' : 'Solana'} trading wallet. Only the fees (a few cents) are spent.</p>` }))) return goLive(step);
     GL.testing = c; goLive(step);
     GL.tests[c] = await act(() => api('POST', '/api/golive/test', { chain: c }));
     GL.testing = null; goLive(step);
   }));
   const gg = $('#gl-go'); if (gg) gg.onclick = async () => {
-    if (!(await confirmModal({ title: 'Switch to live trading?', danger: true, confirm: 'Switch to live', body: `<p>From now on Copybot trades with <b>real money</b>${GL.starter ? `, starting small (${st.limits.fixedSol} SOL per trade)` : ''}. You can switch back to paper at any time in Settings.</p>` }))) return goLive(step);
+    if (!(await confirmModal({ title: 'Switch to live trading?', danger: true, confirm: 'Switch to live', body: `<p>From now on Remora trades with <b>real money</b>${GL.starter ? `, starting small (${st.limits.fixedSol} SOL per trade)` : ''}. You can switch back to paper at any time in Settings.</p>` }))) return goLive(step);
     const r = await act(() => api('POST', '/api/golive/apply', { roles: GL.roles, starter: GL.starter, baseLive: GL.baseLive }), 'Live mode on');
     if (!r) return goLive(step);
     S.config = r.config; S.status = r.status; close(); render();
@@ -806,7 +806,7 @@ try {
 function showLocked() {
   document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px">
     <div class="card" style="max-width:440px;padding:28px;text-align:center"><h2 style="margin:0 0 8px;font-size:18px">Session expired</h2>
-    <p class="muted" style="margin:0">For security, Copybot only accepts the window it opened itself. Close this tab and start Copybot again${location.port === '4777' ? ', or use the link shown in the Copybot terminal window' : ''}.</p></div></div>`;
+    <p class="muted" style="margin:0">For security, Remora only accepts the window it opened itself. Close this tab and start Remora again${location.port === '4777' ? ', or use the link shown in the Remora terminal window' : ''}.</p></div></div>`;
 }
 
 async function api(method, path, data) {
@@ -885,7 +885,7 @@ $('#run-btn').onclick = async () => {
 // ---------------- one-press paper experiment ----------------
 async function quickStart() {
   const ok = await confirmModal({ title: 'Start a paper experiment?', confirm: 'Start experiment',
-    body: `<p>You haven't picked any wallets yet, so Copybot will pick <b>3 traders who just caught a move</b> on today's trending tokens and copy them in <b>paper mode</b>, with a pretend ${S.config.paper.startSol} SOL wallet.</p>
+    body: `<p>You haven't picked any wallets yet, so Remora will pick <b>3 traders who just caught a move</b> on today's trending tokens and copy them in <b>paper mode</b>, with a pretend ${S.config.paper.startSol} SOL wallet.</p>
       <p class="muted">Nothing is ever spent. It takes about 30 seconds to set up. These traders aren't vetted, so treat it as an experiment: check them later with <b>Check my wallets</b>, or use <b>Find wallets</b> for proven ones.</p>` });
   if (!ok) return;
   const j = await act(() => api('POST', '/api/jobs/quickstart'));
@@ -978,14 +978,14 @@ function render() {
   ({ markets: renderMarkets, dashboard: renderDashboard, wallets: renderWallets, research: renderResearch, scanner: renderScanner, strategies: renderStrategies, backtest: renderBacktest, trades: renderTrades, orders: renderOrders, autopilot: renderAutopilot, learn: renderLearn, settings: renderSettings })[S.page](el);
   const ju = S.app.justUpdated;
   if (ju && !S.updateNoticeDismissed) {
-    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Copybot was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-08">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
+    el.insertAdjacentHTML('afterbegin', `<div class="banner info"><div><b>Remora was updated to v${esc(ju.to)}.</b> Updated from ${/^\d/.test(ju.from) ? 'v' : ''}${esc(ju.from)}. Your settings, wallets and history were kept. <a href="#" data-guide="whats-new-08">See what's new →</a></div><button class="btn sm" id="upd-dismiss">Got it</button></div>`);
     $('#upd-dismiss').onclick = () => { S.updateNoticeDismissed = true; render(); };
   }
   const u = S.app.update;
   if (u.state === 'ready' || u.state === 'rejected' || u.state === 'installing') {
     el.insertAdjacentHTML('afterbegin', u.state === 'rejected'
       ? `<div class="banner danger"><div><b>Update blocked.</b> ${esc(u.message)}</div></div>`
-      : `<div class="banner info"><div><b>Copybot ${esc(u.version)} is ready.</b> ${u.state === 'installing' ? 'Installing… Copybot will reopen in a moment.' : 'Restart to install it. It takes about a minute.'}</div>${u.state === 'ready' ? '<button class="btn sm primary" id="upd-install">Restart &amp; update</button>' : '<span class="spinner"></span>'}</div>`);
+      : `<div class="banner info"><div><b>Remora ${esc(u.version)} is ready.</b> ${u.state === 'installing' ? 'Installing… Remora will reopen in a moment.' : 'Restart to install it. It takes about a minute.'}</div>${u.state === 'ready' ? '<button class="btn sm primary" id="upd-install">Restart &amp; update</button>' : '<span class="spinner"></span>'}</div>`);
     const b = $('#upd-install'); if (b) b.onclick = installUpdate;
   }
 }
@@ -1007,13 +1007,13 @@ function updateText() {
     case 'installing': return 'Installing…';
     case 'rejected': return esc(u.message);
     case 'error': return esc(u.message);
-    default: return 'Copybot checks for updates automatically.';
+    default: return 'Remora checks for updates automatically.';
   }
 }
 async function installUpdate() {
   const running = S.status?.running;
-  const ok = await confirmModal({ title: `Install Copybot ${esc(S.app.update.version)}?`, confirm: 'Restart & update',
-    body: `<p>Copybot will close, update and reopen in about a minute.${running ? ' The bot stops during the update and <b>starts again automatically</b> afterwards.' : ''} Your settings, wallets and trade history are kept.</p>` });
+  const ok = await confirmModal({ title: `Install Remora ${esc(S.app.update.version)}?`, confirm: 'Restart & update',
+    body: `<p>Remora will close, update and reopen in about a minute.${running ? ' The bot stops during the update and <b>starts again automatically</b> afterwards.' : ''} Your settings, wallets and trade history are kept.</p>` });
   if (ok) act(() => api('POST', '/api/update/install'));
 }
 
@@ -1094,7 +1094,7 @@ function renderDashboard(el) {
         <td class="r muted num">${ago(p.openedAt)}</td>
         <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button> <button class="btn sm ghost" data-writeoff="${esc(p.mint)}" title="Write off: a dead or rugged coin nobody will buy. Removes it from your books as a total loss, without selling, so its slot is free." aria-label="Write off">✕</button></td>
       </tr>`).join('')}</tbody></table></div>`
-    : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : S.config.mode === 'paper' ? 'Press <b>Start bot</b> to run a paper experiment: Copybot picks a few active traders for you. Nothing is spent.<div class="press">Press start</div>' : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn ${S.config.mode === 'paper' ? '' : 'primary'}" onclick="go('wallets')">Pick wallets myself</button>`}</div>`;
+    : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : S.config.mode === 'paper' ? 'Press <b>Start bot</b> to run a paper experiment: Remora picks a few active traders for you. Nothing is spent.<div class="press">Press start</div>' : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn ${S.config.mode === 'paper' ? '' : 'primary'}" onclick="go('wallets')">Pick wallets myself</button>`}</div>`;
 
   el.innerHTML = `${banners()}
     <div class="grid stats">
@@ -1131,7 +1131,7 @@ function renderDashboard(el) {
   const pb = $('#panic-btn'); if (pb) pb.onclick = async () => {
     const n = S.status.positions.length;
     if (!(await confirmModal({ title: 'Sell everything and stop?', danger: true, confirm: n ? `Sell all ${n} and stop` : 'Stop the bot',
-      body: `<p>${n ? `Copybot will sell <b>all ${n} open position${n === 1 ? '' : 's'}</b> at the current price, then stop the bot.` : 'There are no open positions; the bot will just stop.'}${S.config.mode === 'live' ? ' <b>These are real sells.</b>' : ''}</p><p class="muted">Anything that can't be sold (no route) stays open and is listed in the activity log.</p>` }))) return;
+      body: `<p>${n ? `Remora will sell <b>all ${n} open position${n === 1 ? '' : 's'}</b> at the current price, then stop the bot.` : 'There are no open positions; the bot will just stop.'}${S.config.mode === 'live' ? ' <b>These are real sells.</b>' : ''}</p><p class="muted">Anything that can't be sold (no route) stays open and is listed in the activity log.</p>` }))) return;
     pb.disabled = true; pb.textContent = 'Selling everything…';
     const r = await act(() => api('POST', '/api/panic'));
     if (r) toast(r.failed.length ? `Sold ${r.sold}; ${r.failed.length} couldn't be sold (see activity)` : `Sold ${r.sold} position${r.sold === 1 ? '' : 's'}. The bot is stopped.`, !!r.failed.length);
@@ -1386,7 +1386,7 @@ async function writeOffPosition(mint) {
   const live = S.config.mode === 'live';
   const ok = await confirmModal({ title: `Write off ${short(mint)}?`, danger: true, confirm: 'Write it off',
     body: `<p>For a coin that <b>can't be sold</b> (rugged, no buyers). It's removed from your positions and counted as a loss of <b>${p.costSol.toFixed(4)} SOL</b>, without selling, so its slot is free for new trades.</p>
-      <p class="muted">${live ? 'The coins stay in your wallet: if a buyer ever appears you can still sell them in a wallet app.' : 'Paper mode: nothing is sold.'} If it can still be sold, use <b>All</b> instead to get something back. Copybot also writes off coins nobody buys after 2 hours by itself.</p>` });
+      <p class="muted">${live ? 'The coins stay in your wallet: if a buyer ever appears you can still sell them in a wallet app.' : 'Paper mode: nothing is sold.'} If it can still be sold, use <b>All</b> instead to get something back. Remora also writes off coins nobody buys after 2 hours by itself.</p>` });
   if (ok) { const r = await act(() => api('POST', '/api/positions/writeoff', { mint }), 'Written off'); if (r) { S.status = r; render(); } }
 }
 
@@ -1640,7 +1640,7 @@ function scoutCard() {
     <details style="padding:0 18px 16px"><summary class="muted" style="cursor:pointer;font-size:13px">${r.reports.length === 1 ? 'The 1 wallet' : `All ${r.reports.length} wallets`} checked</summary>${analyzeTable(r.reports)}</details>`;
   return `<div class="card" style="margin-bottom:16px">
     <div class="scout-hero"><div class="orb" style="width:52px;height:52px;border-radius:16px;display:grid;place-items:center;background:var(--rainbow);color:#fff;flex:none">${ICON_SPARK}</div>
-      <div style="flex:1;min-width:260px"><h2 style="margin:0 0 4px;font-size:18px">Let Copybot find wallets for you</h2>
+      <div style="flex:1;min-width:260px"><h2 style="margin:0 0 4px;font-size:18px">Let Remora find wallets for you</h2>
         <div class="muted">It scans tokens that are moving right now (trending, new launches, top volume), finds the wallets that bought before the move, checks their real track record, and ${c.hasAnthropicKey ? 'Claude picks the most suitable ones' : 'ranks the best ones (connect Claude on the Autopilot page to have it choose)'}. ${auto ? `<b>Autopilot is on, so picks are added to your copy list automatically</b> (up to ${cfg.ai.scoutMaxPicks} per search${cfg.ai.scoutEveryHours ? `, every ${cfg.ai.scoutEveryHours} h while the bot runs` : ''}).` : 'You decide which picks to copy.'}</div>
         <div class="scout-steps"><span>1 · Moving tokens</span><span>2 · Buyers before the move</span><span>3 · Track records</span><span>4 · ${c.hasAnthropicKey ? 'Claude picks' : 'Best ranked'}</span></div></div>
       <div style="text-align:right">${run ? `<div class="row" style="gap:8px"><span class="spinner"></span><span class="muted" style="font-size:13px;max-width:280px">${esc(run.progress)}</span></div>` : `<button class="btn primary" id="scout-go">Find wallets for me</button>`}
@@ -1775,7 +1775,7 @@ function renderStrategies(el) {
   el.innerHTML = `
     <div class="card" style="margin-bottom:16px"><div class="card-b row" style="justify-content:space-between;gap:12px">
       <div><div style="font-size:17px;font-weight:650">Your strategy: ${act ? esc(list.find((s) => s.id === act).name) : lastS ? `${esc(lastS.name)} <span class="tag paper">modified</span>` : 'Custom'}</div>
-        <div class="muted" style="font-size:13px;margin-top:4px">A strategy sets how Copybot trades: which buys to copy, which tokens to skip, and when to sell. It never changes your SOL per buy, your limits or the safety checks.${act ? '' : ' Your settings don\'t match a preset exactly, so you\'re on your own mix.'}</div></div>
+        <div class="muted" style="font-size:13px;margin-top:4px">A strategy sets how Remora trades: which buys to copy, which tokens to skip, and when to sell. It never changes your SOL per buy, your limits or the safety checks.${act ? '' : ' Your settings don\'t match a preset exactly, so you\'re on your own mix.'}</div></div>
       <div class="row" style="gap:8px"><button class="btn primary" id="st-compare">Compare on my wallets</button><button class="btn ghost" onclick="openSettings('#settings-cards [data-tab=selling]')">Fine-tune in Settings</button></div>
     </div></div>
     <div class="strat-grid">${list.map(card).join('')}</div>
@@ -2168,7 +2168,7 @@ function renderOrders(el) {
   el.querySelectorAll('input,select').forEach((i) => { if (i.id !== 'of-mint') i.addEventListener('input', summary); });
   $('#of-go').onclick = async () => {
     const b = body();
-    if (live && !(await confirmModal({ title: 'Place a live order?', confirm: 'Place order', danger: true, body: '<p>When it triggers, Copybot will trade <b>real SOL</b> from your trading wallet (after the usual safety checks).</p>' }))) return;
+    if (live && !(await confirmModal({ title: 'Place a live order?', confirm: 'Place order', danger: true, body: '<p>When it triggers, Remora will trade <b>real SOL</b> from your trading wallet (after the usual safety checks).</p>' }))) return;
     const r = await act(() => api('POST', '/api/orders', b), 'Order placed');
     if (r) { S.status = r; renderChrome(); paintOrderLists(); if (!S.status.running) toast('Start the bot for your orders to run'); }
   };
@@ -2293,7 +2293,7 @@ function bindWalletActions(el) {
   el.querySelectorAll('[data-analyze-w]').forEach((b) => (b.onclick = () => startAnalyze([b.dataset.analyzeW])));
   el.querySelectorAll('[data-copy-w]').forEach((b) => (b.onclick = async () => {
     const w = b.dataset.copyW;
-    if (await confirmModal({ title: 'Copy this wallet?', confirm: 'Copy wallet', body: `<p>Copybot will start copying ${short(w)}. Tip: run <b>Analyze</b> first to check its real track record.</p>` }))
+    if (await confirmModal({ title: 'Copy this wallet?', confirm: 'Copy wallet', body: `<p>Remora will start copying ${short(w)}. Tip: run <b>Analyze</b> first to check its real track record.</p>` }))
       saveWallets([...S.config.wallets, { address: w, label: `trader-${S.config.wallets.length + 1}`, enabled: true }], 'Added to your copy list');
   }));
 }
@@ -2336,7 +2336,7 @@ function renderToken(el) {
         <a class="btn" href="https://dexscreener.com/${tc}/${esc(t.pool)}" target="_blank" rel="noopener">Dexscreener</a>
         ${tc === 'base' ? `<a class="btn" href="https://basescan.org/token/${esc(t.mint)}" target="_blank" rel="noopener">Basescan</a>` : `<a class="btn" href="https://solscan.io/token/${esc(t.mint)}" target="_blank" rel="noopener">Solscan</a>`}
       </div>
-      <div class="verdict ${t.filterVerdict ? 'no' : 'yes'}">${t.filterVerdict ? `✗ Copybot's filters would skip it: ${esc(t.filterVerdict)}` : "✓ Passes Copybot's market filters"}</div>
+      <div class="verdict ${t.filterVerdict ? 'no' : 'yes'}">${t.filterVerdict ? `✗ Remora's filters would skip it: ${esc(t.filterVerdict)}` : "✓ Passes Remora's market filters"}</div>
     </div>
     <div class="grid stats" style="margin-top:16px">
       <div class="card stat"><div class="k">Market cap</div><div class="v num">${usdC(t.marketCapUsd)}</div><div class="s">${t.pools} pool${t.pools === 1 ? '' : 's'} · ${esc(t.dex)}</div></div>
@@ -2395,7 +2395,7 @@ function renderLearn(el) {
   const cat = S.guideCat || 'all';
   const list = G.filter((x) => cat === 'all' || x.cat === cat);
   el.innerHTML = `
-    <div class="learn-hero card"><div><h2>Learn to copy trade smarter</h2><p class="muted">Short guides on how Copybot works, how to pick wallets, and how to keep your money safe.</p></div>${ICON.rainbow}</div>
+    <div class="learn-hero card"><div><h2>Learn to copy trade smarter</h2><p class="muted">Short guides on how Remora works, how to pick wallets, and how to keep your money safe.</p></div>${ICON.rainbow}</div>
     <div class="chips-row">${[['all', 'All guides', 'var(--accent)'], ...Object.entries(C).map(([k, v]) => [k, v.label, v.color])].map(([k, l, col]) => `<button class="fchip ${cat === k ? 'on' : ''}" data-gcat="${k}" style="--c:${col}">${esc(l)}</button>`).join('')}</div>
     <div class="guide-grid">${list.map(guideCard).join('')}</div>`;
   el.querySelectorAll('[data-gcat]').forEach((b) => (b.onclick = () => { S.guideCat = b.dataset.gcat; render(); }));
@@ -2441,7 +2441,7 @@ function learningCard() {
     : `<div class="muted">${L.tradesLearnedFrom < L.needed ? `Learning from your results: ${L.tradesLearnedFrom} finished trade${L.tradesLearnedFrom === 1 ? '' : 's'} so far, lessons start after ${L.needed} of a kind.` : 'Nothing is clearly losing right now, so nothing is being avoided.'}</div>`;
   const row = (b) => `<span class="chip">${esc(b.label)}: <b class="${b.avgPct >= 0 ? 'pos' : 'neg'}">${b.avgPct >= 0 ? '+' : ''}${b.avgPct.toFixed(0)}%</b> avg over ${b.n}</span>`;
   const journal = L.journal.length ? `<div class="stack" style="font-size:12.5px">${L.journal.slice(0, 6).map((j) => `<div><span class="muted">${ago(j.at)} ago</span> · ${esc(j.text)}${j.undo || j.undoStrategy ? ` <a href="#" data-undo="${j.at}">Undo</a>` : ''}</div>`).join('')}</div>` : '';
-  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Learning</h2><div class="muted" style="font-size:12.5px">Copybot keeps score of the conditions each trade was bought in (coin age, liquidity, size, market mood, time of day, chain) and avoids the kinds that have been losing <i>you</i> money over the last 2 weeks. Each lesson lasts a week, then gets a fresh test. Every day it also re-checks your exits and which strategy fits each wallet best; better ones are ${autoTxt}. Works without Claude.</div></div><span class="spacer"></span>
+  return `<div class="card" style="margin-bottom:16px"><div class="card-h"><div><h2>Learning</h2><div class="muted" style="font-size:12.5px">Remora keeps score of the conditions each trade was bought in (coin age, liquidity, size, market mood, time of day, chain) and avoids the kinds that have been losing <i>you</i> money over the last 2 weeks. Each lesson lasts a week, then gets a fresh test. Every day it also re-checks your exits and which strategy fits each wallet best; better ones are ${autoTxt}. Works without Claude.</div></div><span class="spacer"></span>
       <label class="switch" title="Learning on/off"><input type="checkbox" id="learn-on" ${on ? 'checked' : ''}><i></i></label></div>
     <div class="card-b stack" style="font-size:13px">${on ? lessons : '<div class="muted">Off: every trade is judged by your settings only.</div>'}
       ${on && (L.best.length || L.worst.length) ? `<div class="row" style="flex-wrap:wrap;gap:6px">${L.best.filter((b) => b.avgPct > 0).map(row).join('')}${L.worst.filter((b) => b.avgPct < 0).map(row).join('')}</div>` : ''}
@@ -2588,7 +2588,7 @@ function renderScanner(el) {
   const hunting = sc.findTraders && sc.tradeCoins;
   const sp = x.spotter || { solana: 0, base: 0, lastAt: null, nextAt: null, alternatesBase: false };
   const when = (t) => (!t ? '' : t <= Date.now() ? 'any moment now' : `in ${ago(Date.now() - (t - Date.now()))}`);
-  const huntLine = !hunting ? 'Off. Turn it on to have Copybot keep looking for coins and traders the whole time it runs.'
+  const huntLine = !hunting ? 'Off. Turn it on to have Remora keep looking for coins and traders the whole time it runs.'
     : !running ? 'On. Starts when the bot starts.'
     : `Coins checked ${x.at ? `${ago(x.at)} ago` : 'every minute'} · <b>${sp.solana + sp.base}</b> trader${sp.solana + sp.base === 1 ? '' : 's'} spotted catching moves${sp.base ? ` (${sp.base} on Base)` : ''}${sp.nextAt ? `, next look ${when(sp.nextAt)}` : ''} · next full wallet search ${when(x.nextTraderSearch) || 'soon'}${sp.alternatesBase ? ', alternating Solana and Base' : ''}.`;
   el.innerHTML = `
@@ -2628,7 +2628,7 @@ function renderScanner(el) {
     if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
     const v = e.target.checked;
     if (v && key === 'tradeCoins' && !(await confirmModal({ title: 'Let the scanner trade coins?', confirm: 'Turn on',
-      body: `<p>Copybot will buy coins that are rising on strong buying, on its own: <b>${sol(sc.buySol, 3)} SOL</b> each, up to <b>${sc.maxPositions}</b> at once and <b>${sol(sc.budgetSol, 2)} SOL</b> in total. Each coin has its own stop-loss (−${sc.stopLossPct}%) and goes through every safety check.</p><p>Momentum trading is risky: many coins that are rising fall back. It stops by itself after ${cfg.trial.pauseAfterLosses || 'several'} losing trades in a row.${cfg.mode === 'live' ? ' <b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : ' You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
+      body: `<p>Remora will buy coins that are rising on strong buying, on its own: <b>${sol(sc.buySol, 3)} SOL</b> each, up to <b>${sc.maxPositions}</b> at once and <b>${sol(sc.budgetSol, 2)} SOL</b> in total. Each coin has its own stop-loss (−${sc.stopLossPct}%) and goes through every safety check.</p><p>Momentum trading is risky: many coins that are rising fall back. It stops by itself after ${cfg.trial.pauseAfterLosses || 'several'} losing trades in a row.${cfg.mode === 'live' ? ' <b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : ' You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
     const res = await act(() => api('PUT', '/api/config', { ...cfg, scanner: { ...cfg.scanner, [key]: v } }), v ? on : off);
     if (res) { S.config = res.config; renderChrome(); renderScanner(el); } else e.target.checked = !v;
   };
@@ -2636,7 +2636,7 @@ function renderScanner(el) {
     if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
     const v = e.target.checked;
     if (v && !(await confirmModal({ title: 'Always hunt for opportunities?', confirm: 'Start hunting',
-      body: `<p>While the bot runs, Copybot will:</p><ul><li>check coins every ${everyTxt(sc.coinsEverySec)} and <b>buy strong ones on its own</b>: ${sol(sc.buySol, 3)} SOL each, up to ${sc.maxPositions} at once and ${sol(sc.budgetSol, 2)} SOL in total, with a −${sc.stopLossPct}% stop-loss;</li><li>spot traders who just caught a move every ${sc.spotEveryMin} minutes;</li><li>search for wallets to copy every ${Math.min(sc.traderEveryHours, 1)} h, backtest them with your settings, and add the best on a trial (¼ size first), up to ${sc.maxWallets} wallets. Losing ones are paused automatically.</li></ul><p>${cfg.mode === 'live' ? '<b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : 'You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
+      body: `<p>While the bot runs, Remora will:</p><ul><li>check coins every ${everyTxt(sc.coinsEverySec)} and <b>buy strong ones on its own</b>: ${sol(sc.buySol, 3)} SOL each, up to ${sc.maxPositions} at once and ${sol(sc.budgetSol, 2)} SOL in total, with a −${sc.stopLossPct}% stop-loss;</li><li>spot traders who just caught a move every ${sc.spotEveryMin} minutes;</li><li>search for wallets to copy every ${Math.min(sc.traderEveryHours, 1)} h, backtest them with your settings, and add the best on a trial (¼ size first), up to ${sc.maxWallets} wallets. Losing ones are paused automatically.</li></ul><p>${cfg.mode === 'live' ? '<b>You are in live mode: these are real trades.</b> Try it in paper mode first.' : 'You are in paper mode, so nothing real is spent.'}</p>` }))) { e.target.checked = false; return; }
     const scanner = { ...cfg.scanner, findTraders: v, tradeCoins: v, ...(v ? { trackSignals: true, traderEveryHours: Math.min(cfg.scanner.traderEveryHours, 1) } : {}) };
     const res = await act(() => api('PUT', '/api/config', { ...cfg, scanner }), v ? 'Hunting for opportunities' : 'Stopped hunting');
     if (res) { S.config = res.config; renderChrome(); renderScanner(el); } else e.target.checked = !v;
@@ -2778,7 +2778,7 @@ const FIELDS = [
     { k: 'safety.rugMemory', label: 'Rug memory', type: 'toggle', help: () => `When a coin rugs you (its pool drains, or it crashes within minutes), never buy it again, nor other coins from the wallet that created it.${S.status?.rugs ? ` <b>Remembered: ${S.status.rugs.coins} coin${S.status.rugs.coins === 1 ? '' : 's'}, ${S.status.rugs.creators} creator${S.status.rugs.creators === 1 ? '' : 's'}.</b>` : ''}` },
     { k: 'safety.blacklist', adv: true, label: 'Never buy these tokens', type: 'list', help: 'One token address per line.' },
   ]},
-  { title: 'Phone alerts', tab: 'connections', id: 'alerts-settings', desc: 'Get a message on Telegram or Discord when something happens, so you don\'t have to keep Copybot open.', extra: alertsSetupHtml, fields: [
+  { title: 'Phone alerts', tab: 'connections', id: 'alerts-settings', desc: 'Get a message on Telegram or Discord when something happens, so you don\'t have to keep Remora open.', extra: alertsSetupHtml, fields: [
     { k: 'alerts.trades', label: 'Trades', type: 'toggle', help: 'Every buy and sell, with profit.' },
     { k: 'alerts.errors', label: 'Problems', type: 'toggle', help: 'Errors and RPC trouble. The same problem is sent at most once every 10 minutes.' },
     { k: 'alerts.guard', label: 'Circuit breaker', type: 'toggle', help: 'When the daily loss limit or losing-streak pause stops new buys.' },
@@ -2816,10 +2816,10 @@ const FIELDS = [
     { k: 'ai.maxWallets', when: ['ai.enabled'], label: 'Max wallets copied at once', unit: 'wallets', step: 1 },
     { k: 'ai.scoutEveryHours', when: ['ai.enabled'], label: 'Search for new wallets every', unit: 'hours', step: 1, help: 'The wallet scout looks for new wallets while the bot runs and adds the best ones. 0 = only when you press "Find wallets for me".' },
     { k: 'ai.scoutMaxPicks', adv: true, when: ['ai.enabled'], label: 'New wallets per search', unit: 'wallets', step: 1 },
-    { k: 'ai.dailyBudgetUsd', when: ['ai.enabled'], label: 'Daily AI budget', unit: 'USD', help: 'What Claude may cost per day. When it runs out, Copybot uses its normal rules until tomorrow.' },
+    { k: 'ai.dailyBudgetUsd', when: ['ai.enabled'], label: 'Daily AI budget', unit: 'USD', help: 'What Claude may cost per day. When it runs out, Remora uses its normal rules until tomorrow.' },
     { k: 'ai.guidance', when: ['ai.enabled'], label: 'Your instructions for Claude', type: 'text', help: 'Optional. For example: "Be picky. Avoid tokens younger than 10 minutes."' },
   ]},
-  { title: 'Learning', tab: 'automation', desc: 'Copybot learns from your own results: it avoids the kinds of trades that have been losing lately and re-checks your exits. Details and undo on the Autopilot page.', fields: [
+  { title: 'Learning', tab: 'automation', desc: 'Remora learns from your own results: it avoids the kinds of trades that have been losing lately and re-checks your exits. Details and undo on the Autopilot page.', fields: [
     { k: 'learn.enabled', label: 'Learn from my results', type: 'toggle', help: 'Avoid the kinds of trades (coin age, liquidity, size, market mood, time of day) that lost money over the last 2 weeks. Each lesson lasts a week, then gets a fresh test.' },
     { k: 'learn.autoTuneExits', when: ['learn.enabled'], label: 'Better exit settings', type: 'select', options: [['paper', 'Switch in paper, ask in live'], ['always', 'Always switch'], ['off', 'Only suggest']] },
     { k: 'tune.weekly', adv: true, label: 'Weekly settings check', type: 'toggle', help: () => `Once a week, while the bot runs, compare these exits with 15 other setups on your wallets' last 7 days. If one clearly did better, the Dashboard suggests it; nothing changes unless you press Use. ${S.tune ? `<b>Last check ${ago(S.tune.at)} ago:</b> ${esc(S.tune.message)}` : ''} <a href="#" onclick="runTuneNow();return false">Check now</a>` },
@@ -2831,7 +2831,7 @@ const FIELDS = [
     { k: 'execution.baseMaxFeeEth', adv: true, label: 'Max Base fee per transaction', unit: 'ETH', help: 'Live trading on Base: a transaction whose network fee could go above this is refused before signing. Base fees are usually tiny (well under 0.0005 ETH).' },
     { k: 'execution.dynamicSlippage', label: 'Smart slippage', type: 'toggle', help: 'Live mode: Jupiter works out the slippage each trade needs (never above your Max slippage), so calm coins get tight fills and fast ones still go through.' },
     { k: 'execution.mevProtect', label: 'Front-running protection (Jito)', type: 'toggle', help: () => `Live mode: send trades privately through Jito so bots can't see them and buy just before you. Needs a Jito tip above.${S.config.execution.jitoTipLamports > 0 ? '' : ' <b>Set a Jito tip to use this.</b>'} If Jito doesn't take a trade, it goes the normal way.` },
-    { k: 'execution.fastStream', label: 'Fast trade detection (Helius)', type: 'toggle', help: () => `Gets the copied wallet\'s full transaction the moment it happens, instead of being told and then fetching it. Needs a Helius RPC with Enhanced WebSockets on your plan; otherwise Copybot uses the normal method automatically.${S.status?.stream ? ` <b>Status: ${esc(S.status.stream)}</b>` : ''}` },
+    { k: 'execution.fastStream', label: 'Fast trade detection (Helius)', type: 'toggle', help: () => `Gets the copied wallet\'s full transaction the moment it happens, instead of being told and then fetching it. Needs a Helius RPC with Enhanced WebSockets on your plan; otherwise Remora uses the normal method automatically.${S.status?.stream ? ` <b>Status: ${esc(S.status.stream)}</b>` : ''}` },
     { k: 'monitor.pollIntervalSec', adv: true, label: 'Backup check every', unit: 'sec', step: 1, help: 'Polling backup in case the live feed drops a trade.' },
     { k: 'monitor.exitCheckIntervalSec', adv: true, label: 'Check stop-loss / take-profit every', unit: 'sec', step: 1 },
   ]},
@@ -2932,19 +2932,19 @@ function renderSettings(el) {
             <div class="row" style="gap:10px"><button class="btn sm ghost" id="wz-again">Run setup again</button><div class="seg" id="look-seg">${[['system', 'Follow my computer'], ['light', 'Light'], ['dark', 'Dark']].map(([m, l]) => `<button data-mode-pick="${m}" class="${S.ui.mode === m ? 'on' : ''}" aria-pressed="${S.ui.mode === m}">${l}</button>`).join('')}</div></div></div>
         </div></div>
 
-      <div class="card" data-tab="app"><div class="card-h"><div><h2>Running all day</h2><div class="muted" style="font-size:12.5px">For leaving Copybot on: it keeps the computer awake while the bot runs.</div></div></div>
+      <div class="card" data-tab="app"><div class="card-h"><div><h2>Running all day</h2><div class="muted" style="font-size:12.5px">For leaving Remora on: it keeps the computer awake while the bot runs.</div></div></div>
         <div class="card-b stack">
-          <label class="row" style="gap:10px;align-items:flex-start"><label class="switch"><input type="checkbox" id="pref-resume" ${S.ui.resumeBot !== false ? 'checked' : ''}><i></i></label><span><b>Start the bot again after an unexpected stop</b><br><span class="muted" style="font-size:12.5px">If Copybot closes while the bot is running (a crash, a Windows restart, a power cut), the bot starts again when Copybot opens, in the same mode. Not after you stop it yourself.</span></span></label>
-          <label class="row" style="gap:10px;align-items:flex-start"><label class="switch"><input type="checkbox" id="pref-login" ${S.ui.startWithWindows ? 'checked' : ''} ${S.app.desktop === false ? 'disabled' : ''}><i></i></label><span><b>Start Copybot with Windows</b><br><span class="muted" style="font-size:12.5px">Opens Copybot (minimized) when you log in. Together with the switch above, the bot is back after a restart without you doing anything.${S.app.desktop === false ? ' Desktop app only.' : ''}</span></span></label>
+          <label class="row" style="gap:10px;align-items:flex-start"><label class="switch"><input type="checkbox" id="pref-resume" ${S.ui.resumeBot !== false ? 'checked' : ''}><i></i></label><span><b>Start the bot again after an unexpected stop</b><br><span class="muted" style="font-size:12.5px">If Remora closes while the bot is running (a crash, a Windows restart, a power cut), the bot starts again when Remora opens, in the same mode. Not after you stop it yourself.</span></span></label>
+          <label class="row" style="gap:10px;align-items:flex-start"><label class="switch"><input type="checkbox" id="pref-login" ${S.ui.startWithWindows ? 'checked' : ''} ${S.app.desktop === false ? 'disabled' : ''}><i></i></label><span><b>Start Remora with Windows</b><br><span class="muted" style="font-size:12.5px">Opens Remora (minimized) when you log in. Together with the switch above, the bot is back after a restart without you doing anything.${S.app.desktop === false ? ' Desktop app only.' : ''}</span></span></label>
         </div></div>
 
-      <div class="card" data-tab="app"><div class="card-h"><div><h2>App updates</h2><div class="muted" style="font-size:12.5px">${S.app.version ? `You have Copybot v${esc(S.app.version)}. ` : ''}Updates download automatically and only install when you restart. Each one is checked against Copybot's security signature first.</div></div></div>
+      <div class="card" data-tab="app"><div class="card-h"><div><h2>App updates</h2><div class="muted" style="font-size:12.5px">${S.app.version ? `You have Remora v${esc(S.app.version)}. ` : ''}Updates download automatically and only install when you restart. Each one is checked against Remora's security signature first.</div></div></div>
         <div class="card-b row" style="justify-content:space-between"><span id="upd-text">${updateText()}</span>
           <span class="row">${S.app.update.state === 'ready' ? '<button class="btn primary" id="upd-install2">Restart &amp; update</button>' : ''}<button class="btn" id="upd-check" ${S.app.update.state === 'disabled' ? 'disabled' : ''}>Check for updates</button></span></div></div>
 
       <div class="card" id="netstatus-card" data-tab="app">${netStatusHtml()}</div>
 
-      <div class="card" data-tab="app"><div class="card-h"><div><h2>Backup and restore</h2><div class="muted" style="font-size:12.5px">One file with your settings, wallets, trade history, positions, orders, scanner records and phone pairings. Use it to keep your history safe, or to move Copybot to another computer. <b>Your private key and API keys are never included</b>: re-enter them after restoring.</div></div></div>
+      <div class="card" data-tab="app"><div class="card-h"><div><h2>Backup and restore</h2><div class="muted" style="font-size:12.5px">One file with your settings, wallets, trade history, positions, orders, scanner records and phone pairings. Use it to keep your history safe, or to move Remora to another computer. <b>Your private key and API keys are never included</b>: re-enter them after restoring.</div></div></div>
         <div class="card-b row"><button class="btn primary" id="bk-save">Download backup</button><label class="btn" style="cursor:pointer">Restore from a backup…<input type="file" id="bk-file" accept=".json,application/json" hidden></label><span class="muted" id="bk-msg" style="font-size:13px"></span></div><div class="card-b muted" id="bk-auto" style="padding-top:0;font-size:13px"></div></div>
 
       <div class="card" id="remote-card" data-tab="connections">${remoteCardHtml()}</div>
@@ -2961,9 +2961,9 @@ function renderSettings(el) {
       <div class="card" id="conn" data-tab="connections"><div class="card-h"><div><h2>Connection</h2><div class="muted" style="font-size:12.5px">Stored in the <span class="mono">.env</span> file on this computer only.</div></div></div>
         <div class="field"><div><label class="l" for="c-rpc">Solana RPC URL</label><div class="h">Get a free key at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>, then paste <span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span></div></div>
           <input class="input mono" id="c-rpc" value="${esc(c.rpcUrl)}" spellcheck="false"></div>
-        <div class="field"><div><label class="l" for="c-rpc2">Backup RPC URL <span class="muted">(optional)</span></label><div class="h">Copybot switches to this one automatically if your main RPC keeps failing, and back again after 5 minutes. Use a different provider, e.g. a free <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> endpoint.${c.activeRpc === 'backup' ? ' <b class="neg">The backup is in use right now.</b>' : ''}</div></div>
+        <div class="field"><div><label class="l" for="c-rpc2">Backup RPC URL <span class="muted">(optional)</span></label><div class="h">Remora switches to this one automatically if your main RPC keeps failing, and back again after 5 minutes. Use a different provider, e.g. a free <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> endpoint.${c.activeRpc === 'backup' ? ' <b class="neg">The backup is in use right now.</b>' : ''}</div></div>
           <input class="input mono" id="c-rpc2" value="${esc(c.backupRpcUrl || '')}" placeholder="not set" spellcheck="false"></div>
-        <div class="field"><div><label class="l" for="c-baserpc">Base RPC URL <span class="muted">(optional, for Base wallets)</span></label><div class="h">Copybot uses free public Base nodes, which limit how often they can be asked. A free key from <a href="https://www.alchemy.com" target="_blank" rel="noopener">Alchemy</a> or <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> (pick the Base network) gives reliable copying, e.g. <span class="mono">https://base-mainnet.g.alchemy.com/v2/…</span></div></div>
+        <div class="field"><div><label class="l" for="c-baserpc">Base RPC URL <span class="muted">(optional, for Base wallets)</span></label><div class="h">Remora uses free public Base nodes, which limit how often they can be asked. A free key from <a href="https://www.alchemy.com" target="_blank" rel="noopener">Alchemy</a> or <a href="https://www.quicknode.com" target="_blank" rel="noopener">QuickNode</a> (pick the Base network) gives reliable copying, e.g. <span class="mono">https://base-mainnet.g.alchemy.com/v2/…</span></div></div>
           <input class="input mono" id="c-baserpc" value="${esc(c.baseRpcUrl || '')}" placeholder="not set (public nodes)" spellcheck="false"></div>
         <div class="field"><div><label class="l" for="c-jupkey">Jupiter API key <span class="muted">(optional)</span></label><div class="h">Only if you've outgrown the free tier. ${c.hasJupiterKey ? '<b>A key is saved.</b>' : ''}</div></div>
           <input class="input mono" id="c-jupkey" type="password" placeholder="${c.hasJupiterKey ? '•••••••• (saved)' : 'not set'}" autocomplete="off"></div>
@@ -3007,7 +3007,7 @@ function renderSettings(el) {
   const bkr = $('#bk-remove'); if (bkr) bkr.onclick = async () => { if (!(await confirmModal({ title: 'Remove the Base key?', danger: true, confirm: 'Remove', body: '<p>Live trading on Base stops. Your ETH stays in that wallet.</p>' }))) return; const r = await act(() => api('PUT', '/api/connection', { baseKey: '' }), 'Base key removed'); if (r) { S.connection = r; render(); } };
   const blo = $('#bl-on'); if (blo) blo.onchange = async (e) => {
     const on = e.target.checked;
-    if (on && !(await confirmModal({ title: 'Turn on live trading on Base?', danger: true, confirm: 'Turn on', body: `<p>In live mode, Copybot will spend <b>real ETH</b> from your Base wallet when your Base wallets (or the scanner's Base coins) buy.</p><p>This is new: try it with a small amount first, with a low "Max SOL in open positions". Each transaction's network fee is capped at ${S.config.execution.baseMaxFeeEth} ETH (Settings → Speed).</p>` }))) { e.target.checked = false; return; }
+    if (on && !(await confirmModal({ title: 'Turn on live trading on Base?', danger: true, confirm: 'Turn on', body: `<p>In live mode, Remora will spend <b>real ETH</b> from your Base wallet when your Base wallets (or the scanner's Base coins) buy.</p><p>This is new: try it with a small amount first, with a low "Max SOL in open positions". Each transaction's network fee is capped at ${S.config.execution.baseMaxFeeEth} ETH (Settings → Speed).</p>` }))) { e.target.checked = false; return; }
     const r = await act(() => api('PUT', '/api/config', { ...S.config, execution: { ...S.config.execution, baseLive: on } }), on ? 'Live trading on Base is on' : 'Live trading on Base is off');
     if (r) { S.config = r.config; render(); } else e.target.checked = !on;
   };
@@ -3037,7 +3037,7 @@ function renderSettings(el) {
   $('#s-reset').onclick = () => { S.dirty = false; render(); };
   $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));
   const pr = $('#pref-resume'); if (pr) pr.onchange = async () => { const r = await act(() => api('PUT', '/api/ui', { resumeBot: pr.checked }), pr.checked ? 'The bot will start again after an unexpected stop' : "The bot won't start again by itself"); if (r) S.ui = r; };
-  const pl = $('#pref-login'); if (pl) pl.onchange = async () => { const r = await act(() => api('PUT', '/api/ui', { startWithWindows: pl.checked }), pl.checked ? 'Copybot will open when you log in' : "Copybot won't open at login"); if (r) S.ui = r; };
+  const pl = $('#pref-login'); if (pl) pl.onchange = async () => { const r = await act(() => api('PUT', '/api/ui', { startWithWindows: pl.checked }), pl.checked ? 'Remora will open when you log in' : "Remora won't open at login"); if (r) S.ui = r; };
   loadAutoBackups();
   el.querySelectorAll('[data-mode-pick]').forEach((b) => (b.onclick = () => b.dataset.modePick !== S.ui.mode && setAppearance(b.dataset.modePick)));
   const ui2 = $('#upd-install2'); if (ui2) ui2.onclick = installUpdate;
@@ -3081,7 +3081,7 @@ function netStatusHtml() {
       <div style="flex:1"><div><b>${esc(r.name)}</b> <span class="muted" style="font-size:12.5px">· ${esc(r.what)}</span></div>
         <div style="font-size:13px"><span class="${r.health === 'down' ? 'neg' : r.health === 'ok' ? '' : ''}">${word[r.health]}</span>${r.ms != null ? ` <span class="muted">(${r.ms} ms)</span>` : ''} <span class="muted">· ${esc(r.detail)}</span></div>
         ${r.fix ? `<div style="font-size:13px;margin-top:2px"><b>Fix:</b> ${esc(r.fix)}</div>` : ''}</div></div>`).join('') : '';
-  return `<div class="card-h"><div><h2>Connection status</h2><div class="muted" style="font-size:12.5px">Copybot depends on several outside services. ${st ? `Checked ${ago(st.at)} ago: <b class="${st.summary.level === 'bad' ? 'neg' : st.summary.level === 'warn' ? '' : 'pos'}">${esc(st.summary.text)}</b>.` : 'Check them all at once.'} Checked again every 15 minutes while the bot runs.</div></div><span class="spacer"></span><button class="btn sm" id="ns-check" ${S.nsBusy ? 'disabled' : ''}>${S.nsBusy ? 'Checking…' : 'Check now'}</button></div>
+  return `<div class="card-h"><div><h2>Connection status</h2><div class="muted" style="font-size:12.5px">Remora depends on several outside services. ${st ? `Checked ${ago(st.at)} ago: <b class="${st.summary.level === 'bad' ? 'neg' : st.summary.level === 'warn' ? '' : 'pos'}">${esc(st.summary.text)}</b>.` : 'Check them all at once.'} Checked again every 15 minutes while the bot runs.</div></div><span class="spacer"></span><button class="btn sm" id="ns-check" ${S.nsBusy ? 'disabled' : ''}>${S.nsBusy ? 'Checking…' : 'Check now'}</button></div>
     ${rows ? `<div class="card-b" style="padding-top:0">${rows}</div>` : ''}`;
 }
 // ----- ready for live? -----
@@ -3121,7 +3121,7 @@ function bindReady() { const b = $('#ready-refresh'); if (b) b.onclick = () => {
 function loadAutoBackups() {
   api('GET', '/api/backups').then((r) => {
     const el = $('#bk-auto'); if (!el) return;
-    el.innerHTML = `<b>Automatic backups:</b> ${r.list.length ? `one a day, the last ${r.list.length} kept (newest ${esc(r.list[0].day)}, ${(r.list[0].size / 1048576).toFixed(1)} MB)` : 'the first one is made a minute after Copybot starts'}. Folder: <span class="mono">${esc(r.dir)}</span>${r.canOpen ? ' <a href="#" id="bk-open">Open</a>' : ''}. To restore one, use <i>Restore from a backup…</i>.`;
+    el.innerHTML = `<b>Automatic backups:</b> ${r.list.length ? `one a day, the last ${r.list.length} kept (newest ${esc(r.list[0].day)}, ${(r.list[0].size / 1048576).toFixed(1)} MB)` : 'the first one is made a minute after Remora starts'}. Folder: <span class="mono">${esc(r.dir)}</span>${r.canOpen ? ' <a href="#" id="bk-open">Open</a>' : ''}. To restore one, use <i>Restore from a backup…</i>.`;
     const o = $('#bk-open'); if (o) o.onclick = (e) => { e.preventDefault(); api('POST', '/api/backups/open').catch(() => {}); };
   }).catch(() => {});
 }
@@ -3141,12 +3141,12 @@ function bindBackup() {
     const f = file.files[0]; file.value = '';
     if (!f) return;
     let b;
-    try { b = JSON.parse(await f.text()); } catch { return toast("That file isn't a Copybot backup.", true); }
-    if (b?.format !== 'copybot-backup') return toast("That file isn't a Copybot backup.", true);
+    try { b = JSON.parse(await f.text()); } catch { return toast("That file isn't a Remora backup.", true); }
+    if (b?.format !== 'copybot-backup') return toast("That file isn't a Remora backup.", true);
     const n = Object.keys(b.files || {}).length;
-    if (!(await confirmModal({ title: 'Restore this backup?', danger: true, confirm: 'Restore', body: `<p>From ${b.createdAt ? new Date(b.createdAt).toLocaleString() : 'an unknown date'}${b.appVersion ? ` (Copybot v${esc(b.appVersion)})` : ''}: ${n} file${n === 1 ? '' : 's'}.</p><p>It <b>replaces</b> your current settings, wallets and history. A copy of what you have now is kept first, so this can be undone.</p>${S.status.running ? '<p class="neg"><b>Stop the bot first.</b></p>' : ''}` }))) return;
+    if (!(await confirmModal({ title: 'Restore this backup?', danger: true, confirm: 'Restore', body: `<p>From ${b.createdAt ? new Date(b.createdAt).toLocaleString() : 'an unknown date'}${b.appVersion ? ` (Remora v${esc(b.appVersion)})` : ''}: ${n} file${n === 1 ? '' : 's'}.</p><p>It <b>replaces</b> your current settings, wallets and history. A copy of what you have now is kept first, so this can be undone.</p>${S.status.running ? '<p class="neg"><b>Stop the bot first.</b></p>' : ''}` }))) return;
     const r = await act(() => fetch('/api/backup/restore', { method: 'POST', headers: { 'x-copybot-token': TOKEN || '', 'content-type': 'application/json' }, body: JSON.stringify(b) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error || `Error ${x.status}`); return j; }));
-    if (r) await confirmModal({ title: 'Backup restored', confirm: 'OK', body: `<p>${r.files} files restored. <b>Close Copybot and open it again</b> to finish.</p><p class="muted">Re-enter your private key and API keys in Settings → Connection if this is a new computer.</p>` });
+    if (r) await confirmModal({ title: 'Backup restored', confirm: 'OK', body: `<p>${r.files} files restored. <b>Close Remora and open it again</b> to finish.</p><p class="muted">Re-enter your private key and API keys in Settings → Connection if this is a new computer.</p>` });
   };
 }
 function paintNetStatus() { const el = $('#netstatus-card'); if (el) { el.innerHTML = netStatusHtml(); bindNetStatus(); } }
@@ -3159,7 +3159,7 @@ function loadRemote() { api('GET', '/api/remote').then((r) => { S.remote = r; pa
 function paintRemote() { const el = $('#remote-card'); if (el) { el.innerHTML = remoteCardHtml(); bindRemote(); } }
 function remoteCardHtml() {
   const r = S.remote;
-  const head = `<div class="card-h"><div><h2>Phone access</h2><div class="muted" style="font-size:12.5px">Check on Copybot and control it from your phone: profit, positions and activity; start and stop; sell a position; turn the scanner on and off. Settings, live mode, keys and wallets stay on this computer. <a href="#" data-guide="phone">How it works →</a></div></div><span class="spacer"></span>${r ? `<label class="switch" title="Phone access on/off"><input type="checkbox" id="rm-on" ${r.enabled ? 'checked' : ''}><i></i></label>` : ''}</div>`;
+  const head = `<div class="card-h"><div><h2>Phone access</h2><div class="muted" style="font-size:12.5px">Check on Remora and control it from your phone: profit, positions and activity; start and stop; sell a position; turn the scanner on and off. Settings, live mode, keys and wallets stay on this computer. <a href="#" data-guide="phone">How it works →</a></div></div><span class="spacer"></span>${r ? `<label class="switch" title="Phone access on/off"><input type="checkbox" id="rm-on" ${r.enabled ? 'checked' : ''}><i></i></label>` : ''}</div>`;
   if (!r) { setTimeout(loadRemote, 0); return head + '<div class="card-b muted">Loading…</div>'; }
   const ts = r.addresses.tailscale[0];
   const status = !r.enabled ? '<span class="tag paper">Off</span>'
@@ -3169,9 +3169,9 @@ function remoteCardHtml() {
   return head + `<div class="card-b stack">
     <div class="row" style="gap:8px">${status}</div>
     <ol class="steps" style="margin:0">
-      <li><b>Install Tailscale</b> on this computer and on your phone (free, <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>), and sign in with the <b>same account</b> on both. It's a private, encrypted link between your own devices, so your phone can reach Copybot from anywhere and nobody else can. ${ts ? `<span class="pos">✓ Tailscale is running on this computer (${esc(ts)}).</span>` : '<span class="muted">Not detected on this computer yet.</span>'}</li>
-      <li>Turn phone access on (top right).${r.enabled ? ' Windows may ask whether to allow Copybot on networks: choose <b>Allow</b> (private networks).' : ''}</li>
-      <li>Press <b>Pair a phone</b> and scan the QR code with your phone's camera. Then use <b>Add to Home Screen</b> to get a Copybot icon.</li>
+      <li><b>Install Tailscale</b> on this computer and on your phone (free, <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>), and sign in with the <b>same account</b> on both. It's a private, encrypted link between your own devices, so your phone can reach Remora from anywhere and nobody else can. ${ts ? `<span class="pos">✓ Tailscale is running on this computer (${esc(ts)}).</span>` : '<span class="muted">Not detected on this computer yet.</span>'}</li>
+      <li>Turn phone access on (top right).${r.enabled ? ' Windows may ask whether to allow Remora on networks: choose <b>Allow</b> (private networks).' : ''}</li>
+      <li>Press <b>Pair a phone</b> and scan the QR code with your phone's camera. Then use <b>Add to Home Screen</b> to get a Remora icon.</li>
     </ol>
     <div class="row"><button class="btn primary" id="rm-pair" ${r.listening ? '' : 'disabled'}>Pair a phone</button>
       <label class="row muted" style="gap:6px;font-size:12.5px"><input type="checkbox" id="rm-tsonly" ${r.tailscaleOnly ? 'checked' : ''}> Tailscale only (ignore home Wi-Fi)</label>
@@ -3344,7 +3344,7 @@ function connectEvents() {
   es.addEventListener('scout', (e) => { S.scout = JSON.parse(e.data); });
   es.addEventListener('remote', (e) => {
     const r = JSON.parse(e.data); S.remote = r; paintRemote();
-    if (r.paired) { if (S.pairClose) S.pairClose(); toast(`Paired: ${r.paired}. You can control Copybot from it now.`); }
+    if (r.paired) { if (S.pairClose) S.pairClose(); toast(`Paired: ${r.paired}. You can control Remora from it now.`); }
   });
   es.addEventListener('point', (e) => {
     const { mode, p } = JSON.parse(e.data);

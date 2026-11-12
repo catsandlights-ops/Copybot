@@ -119,7 +119,7 @@ async function decimalsOf(token: string): Promise<number> {
 
 // ---------------- watching wallets ----------------
 
-/** A decoded Base swap, in Copybot's usual shape (amounts converted to SOL). */
+/** A decoded Base swap, in Remora's usual shape (amounts converted to SOL). */
 async function toSwap(s: EvmSwap): Promise<Swap> {
   const decimals = await decimalsOf(s.token).catch(() => 18);
   // Their balance after the swap (at that block), to work out what share they sold.

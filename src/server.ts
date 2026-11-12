@@ -177,7 +177,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       orderCandles.set(mint, c);
       while (orderCandles.size > 40) orderCandles.delete(orderCandles.keys().next().value!);
     }
-    // Market candles for context, then the live prices Copybot has seen since (every 15 s).
+    // Market candles for context, then the live prices Remora has seen since (every 15 s).
     const live = engine.orderPrices.get(mint) ?? [];
     const lastCandle = c.pts[c.pts.length - 1]?.[0] ?? 0;
     return send(res, 200, { points: [...downsample(c.pts, 200), ...live.filter((p) => p[0] > lastCandle)] });
@@ -188,7 +188,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (!/^0x[0-9a-f]{40}$/.test(a)) throw new HttpError(400, 'Not a Base address');
     const k = await baseRpc.accountKind(a).catch(() => null);
     if (!k) return send(res, 200, { level: 'unknown', text: "Couldn't check this address right now; it was added anyway." });
-    if (k.contract) return send(res, 200, { level: 'info', text: 'This is a smart-contract wallet. Copybot copies the tokens moving in and out of it, which works.' });
+    if (k.contract) return send(res, 200, { level: 'info', text: 'This is a smart-contract wallet. Remora copies the tokens moving in and out of it, which works.' });
     if (k.sent === 0) return send(res, 200, { level: 'warn', text: "This address has never sent a transaction itself. If it's a trader's wallet, double-check it on Basescan: you may want the address that actually trades." });
     return send(res, 200, { level: 'ok', text: `A regular wallet with ${k.sent.toLocaleString()} transactions sent.` });
   }
@@ -621,7 +621,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
         return reply(async () => {
           const t = await markets.token(mint, mch);
           if (!t) return null;
-          // Would Copybot's own token filters let it buy this right now?
+          // Would Remora's own token filters let it buy this right now?
           const solUsd = await getSolUsd().catch(() => null);
           const verdict = marketSkipReason(
             { liquidityUsd: t.totalLiquidityUsd, marketCapUsd: t.marketCapUsd, createdAt: t.oldestPoolAt },
@@ -751,7 +751,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/alerts/test') {
     if (!alerts.alertsConfigured()) throw new HttpError(400, 'Set up Telegram or Discord first, then save.');
-    const errs = await alerts.sendNow('✅ Copybot alerts are working. You’ll get trades, problems and autopilot actions here.');
+    const errs = await alerts.sendNow('✅ Remora alerts are working. You’ll get trades, problems and autopilot actions here.');
     if (errs.length) throw new HttpError(502, errs.join(' · '));
     return send(res, 200, { ok: true });
   }
@@ -1046,7 +1046,7 @@ export function startServer(port = PORT, openBrowser = true): Promise<number> {
       applyRemote().catch(() => {});
       const actual = (server.address() as { port: number }).port;
       const url = `http://localhost:${actual}/?t=${TOKEN}`;
-      if (!process.env.COPYBOT_DESKTOP) console.log(`\n  Copybot is running. If the browser didn't open, go to:\n  ${url}\n  (keep this window open; press Ctrl+C to quit)\n`);
+      if (!process.env.COPYBOT_DESKTOP) console.log(`\n  Remora is running. If the browser didn't open, go to:\n  ${url}\n  (keep this window open; press Ctrl+C to quit)\n`);
       if (openBrowser) {
         const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
         exec(cmd, () => {});

@@ -1,7 +1,7 @@
-# Copybot
+# Remora
 
 **A Solana copy-trading bot with a desktop app.** Pick wallets to follow; when one of them buys or
-sells a token, Copybot can copy the trade within seconds, with safety checks, staged exits, limits
+sells a token, Remora can copy the trade within seconds, with safety checks, staged exits, limits
 you control, and an optional AI autopilot powered by Claude.
 
 [![Latest release](https://img.shields.io/github/v/release/catsandlights-ops/Copybot?label=download&color=7c3aed)](https://github.com/catsandlights-ops/Copybot/releases/latest)
@@ -11,16 +11,16 @@ you control, and an optional AI autopilot powered by Claude.
 > **It starts in paper mode:** every trade is simulated with real prices and nothing is spent.
 > Run it like that for a few days before you put real money in. Nothing here is financial advice.
 
-![Copybot dashboard (light mode)](docs/screenshots/dashboard-light.png)
+![Remora dashboard (light mode)](docs/screenshots/dashboard-light.png)
 
 ## Download
 
-**Windows:** download `Copybot-Setup-x.y.z.exe` from the
+**Windows:** download `Remora-Setup-x.y.z.exe` from the
 [latest release](https://github.com/catsandlights-ops/Copybot/releases/latest) and run it.
 The installer isn't code-signed, so Windows SmartScreen warns you: click **More info → Run anyway**.
 
-After that, Copybot **updates itself**: new versions download in the background, are checked
-against Copybot's update signature, and install when you click **Restart & update**.
+After that, Remora **updates itself**: new versions download in the background, are checked
+against Remora's update signature, and install when you click **Restart & update**.
 
 Mac and Linux: build from source (see [Building it yourself](#building-it-yourself)).
 
@@ -62,7 +62,7 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **Find my best settings:** compares 16 stop-loss/take-profit/trailing setups on the same trades, warns when the winner may be luck, and applies the one you choose.
 - **History cache:** decoded wallet transactions are saved locally, so re-analyzing or re-backtesting a wallet is fast.
 - **Backtest** (any period: last 24h/3d/7d/30d or custom dates): replay up to 5 wallets' real trades with your current settings, with an adjustable copy-delay cost (you always buy higher and sell lower than they did) and fees. Shows total profit, win rate, worst dip, a profit chart, per-wallet results, skipped trades and every trade. Exits follow their sells, and your stop-loss, take-profits and trailing stop are replayed from GeckoTerminal price candles.
-- **Wallet scout** (*Find wallets for me*): Copybot picks tokens that pumped recently, finds their early buyers (plus DexCheck top traders), checks each wallet's real record, and **Claude picks the most suitable ones** and explains why (a rule-based ranking without Claude). It searches trending, new and top-volume tokens, finds wallets that bought early or caught a recent move, and only picks wallets whose backtest with your settings made money. With the autopilot managing wallets, it runs once a day and adds its picks, up to your maximum.
+- **Wallet scout** (*Find wallets for me*): Remora picks tokens that pumped recently, finds their early buyers (plus DexCheck top traders), checks each wallet's real record, and **Claude picks the most suitable ones** and explains why (a rule-based ranking without Claude). It searches trending, new and top-volume tokens, finds wallets that bought early or caught a recent move, and only picks wallets whose backtest with your settings made money. With the autopilot managing wallets, it runs once a day and adds its picks, up to your maximum.
 
 ### Market scanner
 - **Find traders:** while the bot runs, it keeps looking at new *and older* coins that are moving, finds traders who caught the move, backtests them with your settings, and adds the best on a trial. No Claude needed.
@@ -92,7 +92,7 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **Tax export:** a year of trades with USD values (daily SOL prices) and the gain or loss on each sale (average-cost method).
 
 ### Phone access
-- **Control Copybot from your phone** at home over Wi-Fi, or anywhere with the free [Tailscale](https://tailscale.com/download) app: profit, positions, trades and activity; start and stop; sell half or all of a position; the scanner switches.
+- **Control Remora from your phone** at home over Wi-Fi, or anywhere with the free [Tailscale](https://tailscale.com/download) app: profit, positions, trades and activity; start and stop; sell half or all of a position; the scanner switches.
 - **Paired with a one-time QR code** (5 minutes, single use). Each phone has its own key, stored only as a hash, and can be removed at any time.
 - Off by default, and **only answers your home network and Tailscale**, never the open internet. A phone can't change settings, switch to live mode, or see keys and wallets.
 
@@ -117,7 +117,7 @@ Five ready-made trading styles on the **Strategies** page: **Balanced** (the def
 - **Open positions:** reviewed every 15 minutes; Claude can sell early. Your stop-loss and take-profits still run on their own.
 - **Wallets:** Claude can pause losing wallets, resize them, and add wallets found by the wallet scout or that you analyzed.
 - **It can never go past your limits** or skip a safety check. After any resize, the price is re-checked before buying.
-- Uses **your own Anthropic API key**; roughly $0.02–0.04 per decision, capped by a **daily AI budget** (default $3). When the budget is used up, or Claude is unavailable, Copybot falls back to its normal rules.
+- Uses **your own Anthropic API key**; roughly $0.02–0.04 per decision, capped by a **daily AI budget** (default $3). When the budget is used up, or Claude is unavailable, Remora falls back to its normal rules.
 - The Autopilot page logs every decision with its cost, and checks **what each skipped token did an hour later**, so you can see whether Claude's skips helped.
 
 ### Learn
@@ -127,13 +127,13 @@ Short built-in guides: getting started, connecting a fast RPC, finding wallets, 
 One theme that mixes a clean modern layout with rainbow arcade touches, in **light and dark** mode
 (or follow your computer). Switch with the sun/moon button or in Settings → Look.
 
-![Copybot dashboard (dark mode)](docs/screenshots/dashboard-dark.png)
+![Remora dashboard (dark mode)](docs/screenshots/dashboard-dark.png)
 
 ## Getting started
 
-**Fastest way to try it:** install, then press **Start bot**. In paper mode with no wallets, Copybot picks 3 traders who just caught moves on different trending tokens and starts a paper experiment with a pretend 10 SOL wallet (shown on the Dashboard, with a Reset button). Nothing is ever spent. For the full setup:
+**Fastest way to try it:** install, then press **Start bot**. In paper mode with no wallets, Remora picks 3 traders who just caught moves on different trending tokens and starts a paper experiment with a pretend 10 SOL wallet (shown on the Dashboard, with a Reset button). Nothing is ever spent. For the full setup:
 
-1. **Install** Copybot (see [Download](#download)).
+1. **Install** Remora (see [Download](#download)).
 2. **Add a fast RPC:** Settings → Connection → paste a free [Helius](https://www.helius.dev) link, then **Test connection**. The free public RPC is rate-limited and misses trades.
 3. **Find wallets** on the Find wallets page (or Markets → top traders) and **Analyze** them before copying.
 4. **Add 2–3 wallets** and press **Start bot**. You're in paper mode.
@@ -149,26 +149,26 @@ stored encrypted by Windows on your computer.
 Settings, keys, positions and trade history stay on your computer, in your user folder
 (menu **File → Open Data Folder**):
 
-- Windows: `%APPDATA%\Copybot`
-- Mac: `~/Library/Application Support/Copybot`
+- Windows: `%APPDATA%\Remora` (installs from before the rename keep using `%APPDATA%\Copybot`)
+- Mac: `~/Library/Application Support/Remora` (or `…/Copybot` for older installs)
 
 Uninstalling the app doesn't delete this folder. Paper and live positions are kept separately.
 
 ## Security
 
-How Copybot protects your wallet:
+How Remora protects your wallet:
 
-- **Every swap is verified before signing.** Jupiter builds each swap, and Copybot checks it first (`src/txguard.ts`). It may only use the expected programs (Jupiter, Token, Token-2022, Associated Token Account, Compute Budget), must not send SOL or tokens anywhere except your own accounts, and its priority fee must stay within your limit. It's then **simulated** against the live chain to confirm your balance drops by no more than the trade plus fees. Anything else is refused and logged, so a compromised API can't drain the wallet.
+- **Every swap is verified before signing.** Jupiter builds each swap, and Remora checks it first (`src/txguard.ts`). It may only use the expected programs (Jupiter, Token, Token-2022, Associated Token Account, Compute Budget), must not send SOL or tokens anywhere except your own accounts, and its priority fee must stay within your limit. It's then **simulated** against the live chain to confirm your balance drops by no more than the trade plus fees. Anything else is refused and logged, so a compromised API can't drain the wallet.
 - **Quotes are checked:** only used if they match exactly the token, amount and slippage requested.
 - **Keys are encrypted at rest.** Your trading wallet key and the Anthropic, DexCheck and Solscan API keys are encrypted with Windows DPAPI: only your Windows account on this computer can read them. The key is never shown in the app, logged or sent anywhere.
 - **The control panel is locked to the app.** It only listens on `127.0.0.1`, every request needs a random per-session token, and foreign `Host` headers are refused (blocks DNS-rebinding attacks).
 - **Hardened window.** Strict Content-Security-Policy, sandboxed Electron window with no Node access, all device permissions refused, all on-chain text escaped, and links open only to a short list of known sites.
 - **AI guardrails.** Token names are stripped before they reach Claude, everything Claude returns is validated and clamped to your limits, and Claude can only add wallets whose record was analyzed.
-- **Signed updates.** Every update must carry a valid Ed25519 signature from the Copybot release key; the app holds only the public key (`electron/update-public-key.pem`) and refuses anything else, even if GitHub or the download were compromised.
+- **Signed updates.** Every update must carry a valid Ed25519 signature from the Remora release key; the app holds only the public key (`electron/update-public-key.pem`) and refuses anything else, even if GitHub or the download were compromised.
 - **Settings have hard limits** (slippage up to 50%, priority fee up to 0.05 SOL per trade, and so on), so a typo can't wreck your balance.
 
 What you still need to do: use a **separate wallet** with a small balance, keep Windows updated,
-and only download Copybot from this repository's releases.
+and only download Remora from this repository's releases.
 
 ## Risks, honestly
 
@@ -186,7 +186,7 @@ and only download Copybot from this repository's releases.
 ```bash
 npm install
 npm run desktop      # run the desktop app without installing
-npm run dist:win     # → release/Copybot-Setup-x.y.z.exe  (Windows, or Linux with Wine)
+npm run dist:win     # → release/Remora-Setup-x.y.z.exe  (Windows, or Linux with Wine)
 npm run dist:mac     # → release/*.dmg                     (on a Mac; unsigned: right-click → Open the first time)
 npm run dist:linux   # → release/*.AppImage
 npm test             # unit tests
@@ -206,14 +206,14 @@ slow and broken replies mixed in. Nothing touches the internet or real money.
 ### Browser version and headless mode
 
 - `npm run app` starts the same app in your browser at http://localhost:4777 (or double-click
-  `Start Copybot (Windows).bat` / `Start Copybot (Mac).command`). Keep the terminal window open.
+  `Start Remora (Windows).bat` / `Start Remora (Mac).command`). Keep the terminal window open.
 - `npm start` runs the bot in the terminal using `config.json`, handy on a VPS. To use the UI on a VPS,
   keep it private and tunnel: `ssh -L 4777:localhost:4777 you@your-vps`.
 
 On a VPS (about $5/month at DigitalOcean, Vultr or Hetzner; pick US East or Frankfurt/Amsterdam):
 
 ```bash
-git clone https://github.com/catsandlights-ops/Copybot.git && cd Copybot && npm install
+git clone https://github.com/catsandlights-ops/Copybot.git && cd Remora && npm install
 npm install -g pm2
 pm2 start "npm start" --name copybot   # or "npm run app" for the UI
 pm2 save && pm2 startup                # restart after reboots

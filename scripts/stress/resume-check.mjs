@@ -74,7 +74,7 @@ try {
   if (!b.list?.length) errors.push('no daily backup after a minute');
   else {
     const j = JSON.parse(fs.readFileSync(path.join(dir, b.list[0].file), 'utf8'));
-    if (j.format !== 'copybot-backup') errors.push('the daily backup is not a Copybot backup file');
+    if (j.format !== 'copybot-backup') errors.push('the daily backup is not a Remora backup file');
     if (/PRIVATE_KEY|\.env/.test(Object.keys(j.files ?? {}).join(' '))) errors.push('the daily backup contains keys');
   }
 } catch (e) {

@@ -1,5 +1,5 @@
 /**
- * Keeping Copybot healthy when it runs all day, every day:
+ * Keeping Remora healthy when it runs all day, every day:
  *  - remember whether the bot was running, so it can start again after a crash, a power cut or a
  *    Windows restart (anything other than you stopping it);
  *  - a daily backup (settings, wallets, history; never keys), keeping the last 7;
@@ -31,7 +31,7 @@ export function readRunState(): RunState | null {
 }
 
 /**
- * Should the bot start by itself now? Only if it was running when Copybot last closed without you
+ * Should the bot start by itself now? Only if it was running when Remora last closed without you
  * stopping it, in the same mode (a switch to/from live never resumes by itself), and the setting is on.
  */
 export function shouldResume(prev: RunState | null, mode: string, enabled: boolean): boolean {

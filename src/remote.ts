@@ -1,5 +1,5 @@
 /**
- * Phone access. A second, separate door into Copybot, off until the user turns it on:
+ * Phone access. A second, separate door into Remora, off until the user turns it on:
  *   - only devices paired with a one-time QR code get in (each has its own long random key,
  *     stored here only as a hash, removable one by one);
  *   - only answers on the home network or Tailscale, never from a public internet address;
@@ -44,7 +44,7 @@ export function isTailscale(ip: string): boolean {
 /**
  * May this peer use the phone door? Home network (private IPv4 ranges, IPv6 link-local and
  * unique-local) and Tailscale, plus this computer itself. Never a public internet address, so a
- * router port-forward can't expose Copybot by accident. tailscaleOnly = Tailscale (and this computer) only.
+ * router port-forward can't expose Remora by accident. tailscaleOnly = Tailscale (and this computer) only.
  */
 export function peerAllowed(ip: string | undefined, tailscaleOnly: boolean): boolean {
   if (!ip) return false;

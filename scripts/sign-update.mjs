@@ -1,4 +1,4 @@
-// Signs an update installer so Copybot will accept it.
+// Signs an update installer so Remora will accept it.
 //   node scripts/sign-update.mjs <file>  → writes <file>.sig
 // The private key comes from the UPDATE_SIGNING_KEY environment variable (CI)
 // or signing/update-signing-key.pem (local). Never commit or share it.

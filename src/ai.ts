@@ -175,7 +175,7 @@ const plain = (s: unknown, max: number) =>
     .trim()
     .slice(0, max);
 
-const SYSTEM = `You are the trading brain of Copybot, a Solana copy-trading bot. The bot watches wallets the user chose and, when one of them trades, asks you what to do.
+const SYSTEM = `You are the trading brain of Remora, a Solana copy-trading bot. The bot watches wallets the user chose and, when one of them trades, asks you what to do.
 
 The owner's Rule #1: a profitable trade is a good trade. Prefer taking a sure profit over hoping for a bigger one, and never let a position that is clearly up turn into a loss (the bot also enforces this with a profit lock).
 
@@ -487,7 +487,7 @@ const ScoutSchema = z.object({
  */
 export async function pickWallets(cfg: Config, current: WalletView[], candidates: CandidateView[], max: number): Promise<{ picks: { address: string; sizeMultiplier: number; budgetSol: number; reason: string }[]; summary: string } | null> {
   if (max <= 0 || !candidates.length) return { picks: [], summary: 'No free slots or no candidates.' };
-  const prompt = `Copybot scanned tokens that pumped recently, found the wallets that bought them early (or were top traders on them), and analyzed each wallet's real on-chain record. Pick at most ${max} wallet(s) that are most suitable for US to copy, or none if none are good enough.
+  const prompt = `Remora scanned tokens that pumped recently, found the wallets that bought them early (or were top traders on them), and analyzed each wallet's real on-chain record. Pick at most ${max} wallet(s) that are most suitable for US to copy, or none if none are good enough.
 A suitable wallet: a real profit over a meaningful number of closed trades (10+), a decent win rate, holds long enough that a copier a few seconds behind can follow (minutes to hours, not seconds), not a high-frequency bot, buys of a size we can mirror. Being early on several pumped tokens is a strong sign; one lucky hit is not. Each candidate's backtestCopyingItWithOurSettings is what copying it would actually have made for US after the copy delay and fees: weigh it heavily, it matters more than the wallet's own profit. Avoid wallets similar to ones we copy that are losing us money.
 Our limits: max ${cfg.risk.maxTotalExposureSol} SOL in open positions in total; budgets per wallet should fit within that.
 <data>${json({ weCopyNow: current.map((w) => ({ ...w, label: clean(w.label) })), candidates: candidates.slice(0, 20) })}</data>`;
@@ -514,7 +514,7 @@ const TestSchema = z.object({ ok: z.boolean(), message: z.string() });
 export async function testAi(cfg: Config): Promise<{ ok: boolean; message: string; costUsd?: number; seconds?: number }> {
   const once = async (kind: 'test' | 'review') => {
     const t0 = Date.now();
-    const r = await ask({ kind: kind as Decision['kind'], schema: TestSchema, prompt: 'Connection test from the Copybot settings page. Reply ok=true and a one-sentence friendly hello.', effort: 'low', maxTokens: 2000, timeoutMs: kind === 'test' ? 40_000 : 120_000, cfg: { ...cfg, ai: { ...cfg.ai, guidance: '' } } });
+    const r = await ask({ kind: kind as Decision['kind'], schema: TestSchema, prompt: 'Connection test from the Remora settings page. Reply ok=true and a one-sentence friendly hello.', effort: 'low', maxTokens: 2000, timeoutMs: kind === 'test' ? 40_000 : 120_000, cfg: { ...cfg, ai: { ...cfg.ai, guidance: '' } } });
     return { r, seconds: Math.round((Date.now() - t0) / 100) / 10 };
   };
   const a = await once('test');

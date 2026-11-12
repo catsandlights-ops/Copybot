@@ -1,5 +1,5 @@
 /**
- * Connection status: is every outside service Copybot relies on working right now?
+ * Connection status: is every outside service Remora relies on working right now?
  * Each check runs at the same time with its own time limit; the result says what's wrong in
  * plain words and what fixes it.
  */

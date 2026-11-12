@@ -30,7 +30,7 @@ export const statusChecks = (): Check[] => [
   {
     id: 'jupiter', name: 'Jupiter (Solana prices and swaps)', what: 'Prices every Solana buy and sell',
     run: async () => { const q = await getQuote('So11111111111111111111111111111111111111112', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 1_000_000_000n, 50); if (!q) throw new Error('no quote'); return `1 SOL = $${(Number(q.outAmount) / 1e6).toFixed(2)}`; },
-    fixes: { limited: 'Jupiter limits free use. A Jupiter API key (Settings → Connection) raises the limit.', down: 'Jupiter may be having problems; Copybot keeps retrying.' },
+    fixes: { limited: 'Jupiter limits free use. A Jupiter API key (Settings → Connection) raises the limit.', down: 'Jupiter may be having problems; Remora keeps retrying.' },
   },
   {
     id: 'base-rpc', name: 'Base node (RPC)', what: 'Watches your Base wallets',
@@ -46,7 +46,7 @@ export const statusChecks = (): Check[] => [
     id: 'kyber', name: 'KyberSwap (Base prices)', what: 'Prices every Base buy and sell',
     enabled: usesBase,
     run: async () => { const p = await getChainAdapter('base').nativeUsd(); if (!p) throw new Error('no quote'); return `1 ETH = $${p.toFixed(0)}`; },
-    fixes: { limited: 'KyberSwap is limiting requests; Copybot retries automatically.', down: 'KyberSwap may be having problems; Base buys pause until it answers.' },
+    fixes: { limited: 'KyberSwap is limiting requests; Remora retries automatically.', down: 'KyberSwap may be having problems; Base buys pause until it answers.' },
   },
   {
     id: 'goplus', name: 'GoPlus (Base token safety)', what: 'Checks Base tokens for honeypots and taxes',

@@ -2,7 +2,7 @@ name: Release update
 
 # Publishes a signed Windows installer as a GitHub release whenever the version in
 # package.json changes on main (e.g. after `npm version patch`), or when run by hand
-# from the Actions tab. Installed copies of Copybot pick it up automatically.
+# from the Actions tab. Installed copies of Remora pick it up automatically.
 on:
   push:
     branches: [main]
@@ -37,7 +37,7 @@ jobs:
           done
           # Already published with everything the app needs? Then there's nothing to do.
           ASSETS=$(gh api "$API?per_page=100" --jq ".[] | select(.tag_name == \"v$VERSION\") | .assets[].name")
-          if grep -qx "Copybot-Setup-$VERSION.exe" <<<"$ASSETS" && grep -qx "Copybot-Setup-$VERSION.exe.sig" <<<"$ASSETS" && grep -qx "latest.yml" <<<"$ASSETS"; then
+          if grep -qx "Remora-Setup-$VERSION.exe" <<<"$ASSETS" && grep -qx "Remora-Setup-$VERSION.exe.sig" <<<"$ASSETS" && grep -qx "latest.yml" <<<"$ASSETS"; then
             echo "v$VERSION is already published, nothing to do."
             echo "skip=true" >> $GITHUB_OUTPUT
           else
@@ -102,21 +102,21 @@ jobs:
           fi
           npx electron-builder --win --publish never "${EXTRA[@]}"
 
-      # 2. Sign the installer with the Copybot update key.
+      # 2. Sign the installer with the Remora update key.
       - name: Sign update
         if: steps.check.outputs.skip != 'true'
         shell: bash
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-        run: node scripts/sign-update.mjs "release/Copybot-Setup-$VERSION.exe"
+        run: node scripts/sign-update.mjs "release/Remora-Setup-$VERSION.exe"
 
       # 3. Create ONE draft release with every file, then publish it so installed apps see it.
       - name: Publish release
         if: steps.check.outputs.skip != 'true'
         shell: bash
         run: |
-          F="release/Copybot-Setup-$VERSION.exe"
+          F="release/Remora-Setup-$VERSION.exe"
           gh release create "v$VERSION" "$F" "$F.blockmap" "$F.sig" release/latest.yml \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
-            --title "Copybot $VERSION" --notes "Signed Copybot update. Installed copies update automatically (Settings → App updates)."
+            --title "Remora $VERSION" --notes "Signed Remora update. Installed copies update automatically (Settings → App updates)."
           gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest

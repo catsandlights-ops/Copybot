@@ -35,7 +35,7 @@ test('every chain adapter fills in the whole plug', () => {
   }
 });
 
-test('Solana facts are exactly what Copybot used before chains', () => {
+test('Solana facts are exactly what Remora used before chains', () => {
   const m = getChain('solana').meta;
   assert.equal(m.native.symbol, 'SOL');
   assert.equal(m.native.decimals, 9);

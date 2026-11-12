@@ -61,7 +61,7 @@ export async function sendNow(text: string): Promise<string[]> {
     );
   }
   if (c.discord) {
-    await post(c.discord, { content: msg, allowed_mentions: { parse: [] }, username: 'Copybot' }).catch((e) => errs.push(`Discord: ${(e as Error).message === 'HTTP 404' ? 'the webhook no longer exists' : (e as Error).message}`));
+    await post(c.discord, { content: msg, allowed_mentions: { parse: [] }, username: 'Remora' }).catch((e) => errs.push(`Discord: ${(e as Error).message === 'HTTP 404' ? 'the webhook no longer exists' : (e as Error).message}`));
   }
   return errs;
 }

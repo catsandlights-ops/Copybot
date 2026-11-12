@@ -77,7 +77,7 @@ const toRawTx = (res: any): RawTx => ({
   meta: res.meta,
 });
 
-/** The node refused a batched request: Copybot goes back to one transaction per request. */
+/** The node refused a batched request: Remora goes back to one transaction per request. */
 export class BatchUnsupported extends PermanentError {} // no point retrying: fall back at once
 let batching = true;
 export const batchingOn = () => batching;

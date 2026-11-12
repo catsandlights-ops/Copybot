@@ -16,7 +16,7 @@ jobs:
       - run: npm run dist:win
       - uses: actions/upload-artifact@v5
         with:
-          name: Copybot-Windows
+          name: Remora-Windows
           path: release/*.exe
 
   mac:
@@ -32,11 +32,11 @@ jobs:
       - run: npx electron-builder --mac dir --arm64 --x64 --publish never -c.mac.identity=null
       - run: |
           for d in release/mac-arm64 release/mac; do
-            codesign --force --deep --sign - "$d/Copybot.app"
+            codesign --force --deep --sign - "$d/Remora.app"
             arch=$([ "$d" = release/mac-arm64 ] && echo AppleSilicon || echo Intel)
-            hdiutil create -volname Copybot -srcfolder "$d/Copybot.app" -ov -format UDZO "release/Copybot-$arch.dmg"
+            hdiutil create -volname Remora -srcfolder "$d/Remora.app" -ov -format UDZO "release/Remora-$arch.dmg"
           done
       - uses: actions/upload-artifact@v5
         with:
-          name: Copybot-Mac
+          name: Remora-Mac
           path: release/*.dmg

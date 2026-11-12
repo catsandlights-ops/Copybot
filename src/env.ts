@@ -76,7 +76,7 @@ export function loadKeypair(): Keypair | null {
   const enc = process.env.PRIVATE_KEY_ENC?.trim();
   if (enc) {
     const box = secretBox();
-    if (!box) throw new Error('The trading wallet key is encrypted for the desktop app. Open Copybot from the desktop app, or add the key again.');
+    if (!box) throw new Error('The trading wallet key is encrypted for the desktop app. Open Remora from the desktop app, or add the key again.');
     let pk: string;
     try {
       pk = box.decrypt(enc);
@@ -109,7 +109,7 @@ export function readSecret(name: SecretName, label: string): string | null {
   const enc = process.env[`${name}_ENC`]?.trim();
   if (enc) {
     const box = secretBox();
-    if (!box) throw new Error(`The ${label} is encrypted for the desktop app. Open Copybot from the desktop app, or add it again.`);
+    if (!box) throw new Error(`The ${label} is encrypted for the desktop app. Open Remora from the desktop app, or add it again.`);
     try {
       return box.decrypt(enc);
     } catch {

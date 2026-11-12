@@ -59,7 +59,7 @@ async function fees(): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: big
   return { maxFeePerGas: baseFee * 2n + maxPriorityFeePerGas, maxPriorityFeePerGas };
 }
 
-/** The next transaction number: what the node reports, but never one Copybot already used (nodes can lag). */
+/** The next transaction number: what the node reports, but never one Remora already used (nodes can lag). */
 export function nextNonce(pending: number, lastUsed: number | undefined): number {
   return lastUsed == null ? pending : Math.max(pending, lastUsed + 1);
 }
@@ -73,10 +73,10 @@ export function oneAtATime<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** Sent, but not confirmed in time; Copybot keeps checking in the background (see lateReceipt). */
+/** Sent, but not confirmed in time; Remora keeps checking in the background (see lateReceipt). */
 export class PendingTxError extends Error {
   constructor(readonly pendingHash: string) {
-    super(`Base transaction ${pendingHash} is sent but not confirmed yet. Copybot keeps checking and adds it to your books if it goes through.`);
+    super(`Base transaction ${pendingHash} is sent but not confirmed yet. Remora keeps checking and adds it to your books if it goes through.`);
   }
 }
 

@@ -195,7 +195,7 @@ export function learnRound() {
   L.retired = upd.retired;
   L.lastAt = now;
   for (const l of upd.expired) journal({ at: now, kind: 'retired', text: `giving ${l.label} another chance after a week; new results will decide.` });
-  for (const l of upd.added) journal({ at: now, kind: 'lesson', text: `${l.label} lost you ${Math.abs(l.avgPct).toFixed(0)}% on average over your last ${l.n} trades like it (${l.pnlSol.toFixed(3)} SOL), so Copybot avoids them for a week.` });
+  for (const l of upd.added) journal({ at: now, kind: 'lesson', text: `${l.label} lost you ${Math.abs(l.avgPct).toFixed(0)}% on average over your last ${l.n} trades like it (${l.pnlSol.toFixed(3)} SOL), so Remora avoids them for a week.` });
   saveLearning();
 }
 export function learningView() {
@@ -258,7 +258,7 @@ export async function tuneWalletStrategies(d: Awaited<ReturnType<typeof loadBack
   if (!changes.length) return;
   if (!auto) {
     for (const c of changes) engine.log(`Strategy check: ${c.text}. Change it on the Wallets page if you agree.`, 'ai');
-    alert('autopilot', `🔧 ${changes.length} wallet${changes.length > 1 ? 's' : ''} would do better with another strategy. Open Copybot → Wallets.`);
+    alert('autopilot', `🔧 ${changes.length} wallet${changes.length > 1 ? 's' : ''} would do better with another strategy. Open Remora → Wallets.`);
     return;
   }
   const next = structuredClone(engine.cfg);
@@ -366,7 +366,7 @@ export function runAutoTune(manual = false) {
         await applyExits(lastTune.best, `it beat your exits over the last week and the last 2 days: ${o.best.totalSol >= 0 ? '+' : ''}${o.best.totalSol.toFixed(3)} vs ${o.current.totalSol >= 0 ? '+' : ''}${o.current.totalSol.toFixed(3)} SOL`);
         lastTune = { ...lastTune, status: 'fine', message: `Learning switched your exits to "${lastTune.best.name}". You can undo it on the Autopilot page.`, dismissed: true };
         saveTune();
-      } else if (better) alert('autopilot', `🔧 ${lastTune.message} Open Copybot to use them.`);
+      } else if (better) alert('autopilot', `🔧 ${lastTune.message} Open Remora to use them.`);
       if (engine.cfg.learn.enabled) await tuneWalletStrategies(d, auto, progress);
       return o;
     } catch (e) {

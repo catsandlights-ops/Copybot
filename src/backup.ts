@@ -1,5 +1,5 @@
 /**
- * Backup and restore: everything that makes your Copybot yours, in one file. Secrets (your
+ * Backup and restore: everything that makes your Remora yours, in one file. Secrets (your
  * trading wallet's private key, API keys) are never included, so a backup can't leak your money.
  * The wallet-history cache isn't included either (it's large, and downloaded again when needed).
  */
@@ -9,7 +9,7 @@ import path from 'node:path';
 export const BACKUP_FORMAT = 'copybot-backup';
 export type BackupFile = { format: typeof BACKUP_FORMAT; version: 1; appVersion: string | null; createdAt: number; files: Record<string, string> };
 
-/** Only Copybot's own files: config.json and files directly in data/ (no folders, no "..", no secrets). */
+/** Only Remora's own files: config.json and files directly in data/ (no folders, no "..", no secrets). */
 export function safeBackupPath(p: unknown): p is string {
   if (typeof p !== 'string') return false;
   if (p === 'config.json') return true;
@@ -39,13 +39,13 @@ export function buildBackup(appVersion: string | null, now = Date.now()): Backup
 
 /** Check an uploaded backup before restoring anything. Returns the files to write, or an error. */
 export function checkBackup(b: any, maxBytes = 60_000_000): { files: Record<string, string> } | { error: string } {
-  if (!b || typeof b !== 'object' || b.format !== BACKUP_FORMAT) return { error: "This isn't a Copybot backup file." };
-  if (b.version !== 1) return { error: 'This backup was made by a newer Copybot. Update Copybot first, then restore it.' };
+  if (!b || typeof b !== 'object' || b.format !== BACKUP_FORMAT) return { error: "This isn't a Remora backup file." };
+  if (b.version !== 1) return { error: 'This backup was made by a newer Remora. Update Remora first, then restore it.' };
   if (!b.files || typeof b.files !== 'object') return { error: 'The backup file is damaged (no files in it).' };
   const files: Record<string, string> = {};
   let size = 0;
   for (const [p, v] of Object.entries(b.files)) {
-    if (!safeBackupPath(p)) return { error: `The backup contains a file Copybot doesn't restore (${String(p).slice(0, 60)}).` };
+    if (!safeBackupPath(p)) return { error: `The backup contains a file Remora doesn't restore (${String(p).slice(0, 60)}).` };
     if (typeof v !== 'string') return { error: `The backup file is damaged (${p}).` };
     size += v.length;
     if (size > maxBytes) return { error: 'The backup is too large to restore.' };

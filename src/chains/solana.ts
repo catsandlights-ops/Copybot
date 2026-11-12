@@ -1,5 +1,5 @@
 /**
- * Solana: the first chain adapter. A thin wrapper around Copybot's existing, tested Solana code
+ * Solana: the first chain adapter. A thin wrapper around Remora's existing, tested Solana code
  * (transaction decoding, Jupiter quotes and swaps, the transaction guard, token safety checks).
  */
 import { PublicKey } from '@solana/web3.js';

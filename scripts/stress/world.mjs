@@ -1,4 +1,4 @@
-// A made-up Solana (and Base) market for stress-testing Copybot offline: coins with moving prices (pumps,
+// A made-up Solana (and Base) market for stress-testing Remora offline: coins with moving prices (pumps,
 // dumps, rugs, coins nobody will buy), traders buying and selling every few seconds, and answers
 // in the exact formats of a Solana node, Jupiter and Dexscreener. Optional chaos: "429 Too Many
 // Requests", slow answers and broken replies. Not part of the app.

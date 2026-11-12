@@ -1,4 +1,4 @@
-// Copybot guides, shown on the Learn page. Plain HTML authored here (trusted content).
+// Remora guides, shown on the Learn page. Plain HTML authored here (trusted content).
 // Categories: start, strategy, safety, features, news
 window.GUIDE_CATS = {
   start: { label: 'Getting started', color: 'var(--r-green)' },
@@ -10,10 +10,10 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
-    id: 'whats-new-09', cat: 'news', mins: 4, title: "What's new in Copybot 0.9",
+    id: 'whats-new-09', cat: 'news', mins: 4, title: "What's new in Remora 0.9",
     teaser: 'Stress-tested, Base everywhere, a guided switch to live, a free local AI, and running all day.',
     body: `
-<p>0.9 is about trusting Copybot with real money. It was <b>stress-tested</b> against a made-up market full of rugs, refusals and crashes, and the problems that turned up were fixed.</p>
+<p>0.9 is about trusting Remora with real money. It was <b>stress-tested</b> against a made-up market full of rugs, refusals and crashes, and the problems that turned up were fixed.</p>
 <h3>Fixed by the stress tests</h3>
 <ul>
 <li><b>Late sells are followed.</b> If a wallet you copy sold and the bot saw it a little late, it used to skip it and keep holding.</li>
@@ -28,14 +28,14 @@ window.GUIDES = [
 <li><b>Per-chain limits</b> (Settings → The basics): give Solana and Base each their own share of coins and money.</li>
 <li><b>Write off</b> a dead coin (✕ next to a position) to free its slot right away.</li>
 <li><b>A free local AI:</b> the autopilot can use a model running on your own PC through Ollama, or a cheaper Claude model. See <a href="#" data-guide="autopilot">The AI autopilot</a>.</li>
-<li><b>Running all day:</b> the bot starts again by itself after a crash, Windows restart or power cut; Copybot can start with Windows; a backup is saved every day (Settings → App).</li>
+<li><b>Running all day:</b> the bot starts again by itself after a crash, Windows restart or power cut; Remora can start with Windows; a backup is saved every day (Settings → App).</li>
 <li><b>Phone page:</b> coin names, a Today card with the Solana / Base split, a Wallets tab with Pause, and "why so few trades" in Activity.</li>
 <li><b>Safety:</b> if a live Base trade ever goes through but nothing arrives in your wallet, live trading on Base switches itself off at once.</li>
 </ul>
 <p class="tip">Paper reset (Dashboard → Paper wallet → Reset) now also clears the wallet chart and signal counts, for a truly fresh experiment.</p>`,
   },
   {
-    id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
+    id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Remora 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
 <h3>New in 0.8.8</h3>
@@ -48,7 +48,7 @@ window.GUIDES = [
 </ul>
 <h3>New in 0.8.7</h3>
 <ul>
-<li><b>A strategy for each wallet, re-checked daily:</b> with Learning on, Copybot replays each wallet's last week with your settings and with every strategy, and gives it the one that clearly fits it best: only with 5+ finished trades, a real profit, a clear margin, and not worse over the last 2 days. Switched by itself in paper mode, suggested in live; every switch is in the Learning journal with Undo.</li>
+<li><b>A strategy for each wallet, re-checked daily:</b> with Learning on, Remora replays each wallet's last week with your settings and with every strategy, and gives it the one that clearly fits it best: only with 5+ finished trades, a real profit, a clear margin, and not worse over the last 2 days. Switched by itself in paper mode, suggested in live; every switch is in the Learning journal with Undo.</li>
 <li><b>See who chose each strategy:</b> the Wallets page shows each wallet's strategy and whether Learning, the wallet search or you picked it, and when.</li>
 <li><b>Gentler on your Solana node:</b> the backup check for missed trades now takes turns across your wallets, slows down when the node says it's busy, and speeds up again as it recovers. With the fast Helius stream on it only checks lightly. The Dashboard warns plainly when you copy more wallets than the free public node can handle.</li>
 <li><b>No more lost wallets:</b> if the Solana node is too busy when the bot starts, it keeps retrying in the background instead of skipping that wallet for the whole session.</li>
@@ -57,7 +57,7 @@ window.GUIDES = [
 <ul>
 <li><b>Choose your paper amount:</b> Dashboard → Paper wallet → <i>Change amount</i> (1 to 100 SOL, or any amount), keeping your results or starting fresh. Also in Settings → Basics.</li>
 <li><b>Why so few trades?</b> The Dashboard shows what your wallets did in the last hour: how many buys you copied, why the others were skipped, and the setting behind each reason (one click opens it).</li>
-<li><b>Smarter minimum buy:</b> instead of skipping every buy under 0.2 SOL, Copybot learns what each wallet usually buys and skips only its small test buys. Traders who always buy small are copied.</li>
+<li><b>Smarter minimum buy:</b> instead of skipping every buy under 0.2 SOL, Remora learns what each wallet usually buys and skips only its small test buys. Traders who always buy small are copied.</li>
 <li><b>Sells go first:</b> when a trader sells, your sell jumps ahead of any buys waiting in line.</li>
 <li><b>Honest paper results:</b> paper trades now pay an estimated network fee, like live ones.</li>
 <li><b>Better wallet searches:</b> obvious bots and inactive wallets are set aside before downloading anything, wallets are judged on their latest trades first, histories download 10 transactions at a time, a wallet that couldn't be read is retried instead of rejected, and every search ends with a one-line summary.</li>
@@ -71,9 +71,9 @@ window.GUIDES = [
 </ul>
 <h3>New in 0.8.4</h3>
 <ul>
-<li><b>Rule #1: a profitable trade is a good trade.</b> Once a trade has been up 20%, it is never allowed to end as a loss: if it falls back to +5%, Copybot sells and keeps the win. On for every wallet, the scanner, backtests and the autopilot. <a href="#" data-guide="exits">How exits work →</a></li>
-<li><b>Learning:</b> Copybot keeps score of the conditions each trade was bought in (coin age, liquidity, size, market mood, time of day, chain) and avoids the kinds that have been losing you money over the last 2 weeks. Lessons last a week, then get a fresh test, so it keeps up as the market changes. Exits are re-checked daily and only switched when they win on the past week <i>and</i> the last 2 days. Everything it learns and changes is on the Autopilot page, with Undo.</li>
-<li><b>Always hunting:</b> one switch on the Scanner page keeps Copybot looking for coins (every minute) and traders (spotted every 15 minutes, a full backtested search every 2 hours, on Solana and, with an Alchemy key, Base) the whole time it runs.</li>
+<li><b>Rule #1: a profitable trade is a good trade.</b> Once a trade has been up 20%, it is never allowed to end as a loss: if it falls back to +5%, Remora sells and keeps the win. On for every wallet, the scanner, backtests and the autopilot. <a href="#" data-guide="exits">How exits work →</a></li>
+<li><b>Learning:</b> Remora keeps score of the conditions each trade was bought in (coin age, liquidity, size, market mood, time of day, chain) and avoids the kinds that have been losing you money over the last 2 weeks. Lessons last a week, then get a fresh test, so it keeps up as the market changes. Exits are re-checked daily and only switched when they win on the past week <i>and</i> the last 2 days. Everything it learns and changes is on the Autopilot page, with Undo.</li>
+<li><b>Always hunting:</b> one switch on the Scanner page keeps Remora looking for coins (every minute) and traders (spotted every 15 minutes, a full backtested search every 2 hours, on Solana and, with an Alchemy key, Base) the whole time it runs.</li>
 </ul>
 <h3>New in 0.8.3</h3>
 <ul>
@@ -86,7 +86,7 @@ window.GUIDES = [
 <ul>
 <li><b>Base everywhere:</b> Find wallets, Analyze, backtests and the wallet check-up now work for Base wallets (add a free Alchemy Base URL in <b>Settings → Connection</b>). Markets and the coin scanner have a <b>Solana / Base</b> switch.</li>
 <li><b>Contract-wallet warning:</b> adding a Base address that is a smart contract (which can't be copied reliably) tells you so.</li>
-<li><b>Connection status</b> (Settings): a card that checks every service Copybot uses (Solana, Base, Jupiter, KyberSwap, safety checks, prices) and says in plain words what is down.</li>
+<li><b>Connection status</b> (Settings): a card that checks every service Remora uses (Solana, Base, Jupiter, KyberSwap, safety checks, prices) and says in plain words what is down.</li>
 <li><b>Backup and restore</b> (Settings): save your settings, wallets, history and orders to one file and restore them later. Your keys are never included.</li>
 <li><b>Ready for live?</b> (Settings) A report that looks at your paper results (days run, trades closed, profit factor, missed copies) and says whether going live looks sensible, shown again when you switch to Live.</li>
 <li><b>Live trading on Base</b> (off by default): add a Base trading key in <b>Settings → Trading wallet</b> and switch it on. <a href="#" data-guide="base">Read the safety notes first →</a></li>
@@ -112,12 +112,12 @@ window.GUIDES = [
 <li><b>Faster copies:</b> the safety checks before a buy now run at the same time instead of one after another, and what never changes about a coin is remembered, so the bot gets in closer to the wallet you copy. The activity log shows how long the checks took.</li>
 <li><b>Smart sizing</b> (Settings → Smart sizing): buy 1.5× when 2+ of your wallets buy the same coin within 10 minutes (and buy more once if a second wallet confirms a coin you hold); wallets that make you money get up to 1.5×, losing or hard-to-copy ones less; optionally skip a coin only one wallet bought small.</li>
 <li><b>Market mood:</b> when SOL is dropping or most trending coins are falling, buys from signals are halved or paused until it improves.</li>
-<li><b>Rug memory:</b> after a rug pull, Copybot never buys that coin again, nor coins from the wallet that created it.</li>
+<li><b>Rug memory:</b> after a rug pull, Remora never buys that coin again, nor coins from the wallet that created it.</li>
 <li><b>Weekly settings check:</b> compares your exits with other setups on the last 7 days and suggests a better one on the Dashboard (nothing changes unless you press Use).</li>
 <li><b>Live mode:</b> smart slippage per trade, and optional front-running protection that sends trades privately through Jito.</li>
 </ul>
 <h3>Panic button</h3>
-<p><b>Sell everything &amp; stop</b> on the Dashboard and on your phone. Optionally set a <b>panic limit</b> (Settings → Limits) so Copybot does it by itself if today's total loss gets too big.</p>
+<p><b>Sell everything &amp; stop</b> on the Dashboard and on your phone. Optionally set a <b>panic limit</b> (Settings → Limits) so Remora does it by itself if today's total loss gets too big.</p>
 <h3>Reports and taxes</h3>
 <p>The Trades page shows your profit by day, week or month, your best and worst trades, and results per wallet. <b>Tax export</b> gives a year of trades with USD values and the gain on every sale.</p>
 <h3>Fixes</h3>
@@ -129,19 +129,19 @@ window.GUIDES = [
 </ul>
 <h3>Under the hood</h3>
 <ul>
-<li>Groundwork for trading on more blockchains later: every trade, position, wallet and order now records which chain it's on (all Solana for now), and Settings show the dollar value of SOL amounts. Nothing changes in how Copybot trades.</li>
+<li>Groundwork for trading on more blockchains later: every trade, position, wallet and order now records which chain it's on (all Solana for now), and Settings show the dollar value of SOL amounts. Nothing changes in how Remora trades.</li>
 </ul>`,
   },
   {
     id: 'base', cat: 'features', mins: 3, title: 'Copying wallets on Base',
     teaser: 'Copy traders on Base, Coinbase\'s fast and cheap Ethereum network, alongside your Solana wallets.',
     body: `
-<p>Copybot can copy wallets on <b>Base</b> as well as Solana. Start in <b>paper mode</b>: it shows you what copying would do, with real prices, without spending anything. Live trading on Base is available but <b>off until you switch it on</b>.</p>
+<p>Remora can copy wallets on <b>Base</b> as well as Solana. Start in <b>paper mode</b>: it shows you what copying would do, with real prices, without spending anything. Live trading on Base is available but <b>off until you switch it on</b>.</p>
 <h3>Add a Base wallet</h3>
-<p>On the Wallets page, paste an address that starts with <span class="mono">0x</span>. Copybot recognises it as a Base wallet and labels it. Start the bot in paper mode, and Base and Solana wallets are copied side by side.</p>
+<p>On the Wallets page, paste an address that starts with <span class="mono">0x</span>. Remora recognises it as a Base wallet and labels it. Start the bot in paper mode, and Base and Solana wallets are copied side by side.</p>
 <h3>How it works</h3>
 <ul>
-<li><b>Watching:</b> Copybot checks Base every few seconds for your wallets' trades (a new Base block arrives every 2 seconds).</li>
+<li><b>Watching:</b> Remora checks Base every few seconds for your wallets' trades (a new Base block arrives every 2 seconds).</li>
 <li><b>Prices:</b> from KyberSwap, which finds the best route across Base exchanges.</li>
 <li><b>Safety checks:</b> every token is checked with GoPlus (honeypots, sell taxes over 10%, owners who can pause transfers, block sellers or change balances) plus the same buy-then-sell test as on Solana. Your liquidity filters and rug memory apply too.</li>
 <li><b>Your books stay in SOL:</b> Base trades are in ETH, converted to SOL at the price of the moment. So your buy size, limits, profit, charts and reports all work the same way across both chains.</li>
@@ -155,27 +155,27 @@ window.GUIDES = [
 <li>To stop busy Solana trading from crowding Base out, give Base its own share in Settings → The basics → <b>Per-chain limits</b>.</li>
 </ul>
 <h3>Live trading on Base</h3>
-<p>Use a <b>new wallet just for Copybot</b> holding only what you're willing to trade, never your main wallet. Paste its private key in <b>Settings → Trading wallet → Base</b> (it's encrypted on your computer), then turn on <b>Live trading on Base</b>. Before anything is signed, Copybot checks every transaction:</p>
+<p>Use a <b>new wallet just for Remora</b> holding only what you're willing to trade, never your main wallet. Paste its private key in <b>Settings → Trading wallet → Base</b> (it's encrypted on your computer), then turn on <b>Live trading on Base</b>. Before anything is signed, Remora checks every transaction:</p>
 <ul>
 <li>it goes only to the KyberSwap router, and pays out to <b>your</b> wallet;</li>
 <li>it sends exactly the ETH intended, and never more than your maximum network fee (Settings → Execution);</li>
 <li>when selling, it approves exactly the amount being sold, never "unlimited";</li>
 <li>it is rehearsed on Base first, and nothing is sent if the rehearsal fails.</li>
 </ul>
-<p>After each live trade Copybot reads what really arrived. If a trade ever goes through but <b>nothing arrived in your wallet</b>, live trading on Base switches itself off at once and tells you, so at most one trade is affected. Network fees are counted in your books.</p>
+<p>After each live trade Remora reads what really arrived. If a trade ever goes through but <b>nothing arrived in your wallet</b>, live trading on Base switches itself off at once and tells you, so at most one trade is affected. Network fees are counted in your books.</p>
 <p>Start with tiny amounts until you've seen a few real trades go through: the go-live assistant's test trade does a first one for a few cents.</p>`,
   },
   {
-    id: 'phone', cat: 'features', mins: 3, title: 'Control Copybot from your phone (Tailscale)',
+    id: 'phone', cat: 'features', mins: 3, title: 'Control Remora from your phone (Tailscale)',
     teaser: 'Check profit and positions, start and stop, and sell from your phone, at home or anywhere.',
     body: `
-<p>Copybot keeps running on your computer. Your phone gets a small Copybot screen that talks to it.</p>
+<p>Remora keeps running on your computer. Your phone gets a small Remora screen that talks to it.</p>
 <h3>Set it up once</h3>
 <ol>
 <li><b>Install Tailscale</b> on your computer and on your phone from <a href="https://tailscale.com/download" target="_blank" rel="noopener">tailscale.com/download</a>. It's free. Sign in with the <b>same account</b> on both. Tailscale is a private, encrypted link between your own devices: your phone can reach your computer from anywhere, and nobody else can.</li>
-<li>In Copybot, go to <b>Settings → Phone access</b> and turn it on. If Windows asks whether to allow Copybot on networks, choose <b>Allow</b>.</li>
+<li>In Remora, go to <b>Settings → Phone access</b> and turn it on. If Windows asks whether to allow Remora on networks, choose <b>Allow</b>.</li>
 <li>Press <b>Pair a phone</b> and scan the QR code with your phone's camera. Give the phone a name and press <b>Pair this phone</b>.</li>
-<li>In your phone's browser menu, choose <b>Add to Home Screen</b>. Now Copybot has its own icon.</li>
+<li>In your phone's browser menu, choose <b>Add to Home Screen</b>. Now Remora has its own icon.</li>
 </ol>
 <p>At home, your phone can also connect over the same Wi-Fi without Tailscale (pick <b>Home Wi-Fi</b> above the QR code). Away from home, keep Tailscale switched on, on the phone.</p>
 <h3>What the phone can do</h3>
@@ -189,20 +189,20 @@ window.GUIDES = [
 <h3>Staying safe</h3>
 <ul>
 <li>Each pairing QR code works <b>once</b> and only for 5 minutes. Don't share screenshots of it.</li>
-<li>Copybot only answers your home network and Tailscale. Even if your router were set up to expose it, it refuses connections from the open internet. For the strictest setup, tick <b>Tailscale only</b>.</li>
+<li>Remora only answers your home network and Tailscale. Even if your router were set up to expose it, it refuses connections from the open internet. For the strictest setup, tick <b>Tailscale only</b>.</li>
 <li>Lost a phone? Press <b>Remove</b> next to it in Settings → Phone access. It loses access immediately.</li>
-<li>Your computer has to be on, with Copybot open, for the phone to connect.</li>
+<li>Your computer has to be on, with Remora open, for the phone to connect.</li>
 </ul>`,
   },
   {
     id: 'scanner', cat: 'features', mins: 4, title: 'The market scanner: finding traders and coins',
-    teaser: 'Let Copybot look for opportunities while it runs: winning traders to copy, and rising coins to trade.',
+    teaser: 'Let Remora look for opportunities while it runs: winning traders to copy, and rising coins to trade.',
     body: `
 <p>The <b>Scanner</b> page has two switches. Both only work while the bot is running, and both stay inside your limits.</p>
 <h3>Find traders</h3>
-<p>Every few hours (6 by default) Copybot looks at coins that are moving: new launches <i>and</i> older, established coins. It finds traders who caught the move and reads their real track record. Then it <b>backtests</b> them with your settings and copy delay. Only traders whose backtest made money can be added, and they start on a <b>trial</b> at ¼ size, growing as they make you money. Any trader who loses 5 times in a row is paused.</p>
+<p>Every few hours (6 by default) Remora looks at coins that are moving: new launches <i>and</i> older, established coins. It finds traders who caught the move and reads their real track record. Then it <b>backtests</b> them with your settings and copy delay. Only traders whose backtest made money can be added, and they start on a <b>trial</b> at ¼ size, growing as they make you money. Any trader who loses 5 times in a row is paused.</p>
 <h3>Trade coins</h3>
-<p>About once a minute Copybot checks trending, new and high-volume coins and looks for one that is <b>rising the right way</b>:</p>
+<p>About once a minute Remora checks trending, new and high-volume coins and looks for one that is <b>rising the right way</b>:</p>
 <ul>
 <li>up over the last hour, but hasn't already run (not a coin that is up 300% today);</li>
 <li>more buyers than sellers in the last hour;</li>
@@ -215,15 +215,15 @@ window.GUIDES = [
 <p>Momentum trading is risky. Many coins that are rising fall back, so expect plenty of small losses and hope for bigger wins. <b>Run it in paper mode first</b> and watch its profit on the Scanner page. It stops buying coins by itself after 5 losing trades in a row (the same rule that pauses a losing wallet).</p>`,
   },
   {
-    id: 'whats-new-07', cat: 'news', mins: 4, title: "What's new in Copybot 0.7",
+    id: 'whats-new-07', cat: 'news', mins: 4, title: "What's new in Remora 0.7",
     teaser: 'Ready-made strategies, smarter wallet picking, a wallet check-up, better backtests and a profit chart.',
     body: `
-<p>Copybot 0.7 is about trading smarter: picking better wallets, trading them the right way, and knowing which ones to drop.</p>
+<p>Remora 0.7 is about trading smarter: picking better wallets, trading them the right way, and knowing which ones to drop.</p>
 <h3>Strategies</h3>
 <ul>
 <li><b>Five ready-made strategies</b> on the new <b>Strategies</b> page: Balanced, Sniper, Whale follower, Momentum and Conservative. Each shows exactly which settings it changes before you switch, and never touches your SOL per buy, limits or safety checks.</li>
 <li><b>A strategy per wallet:</b> press <b>Strategy</b> next to a wallet to give it its own, like Sniper for a fast flipper and Whale follower for a patient big buyer.</li>
-<li><b>Compare strategies:</b> replay the wallets you copy with all five side by side and use the winner. If every strategy loses money, Copybot tells you the wallet is the problem.</li>
+<li><b>Compare strategies:</b> replay the wallets you copy with all five side by side and use the winner. If every strategy loses money, Remora tells you the wallet is the problem.</li>
 </ul>
 <h3>Picking and keeping good wallets</h3>
 <ul>
@@ -241,17 +241,17 @@ window.GUIDES = [
 </ul>
 <h3>Also new</h3>
 <ul>
-<li><b>One-press paper experiment:</b> press <b>Start bot</b> with no wallets in paper mode and Copybot picks 3 traders who just caught moves on different tokens, and starts copying them with a pretend <b>10 SOL paper wallet</b>. Nothing is spent.</li>
+<li><b>One-press paper experiment:</b> press <b>Start bot</b> with no wallets in paper mode and Remora picks 3 traders who just caught moves on different tokens, and starts copying them with a pretend <b>10 SOL paper wallet</b>. Nothing is spent.</li>
 <li><b>Paper wallet:</b> the Dashboard shows your paper balance; paper buys stop when it runs out, and <b>Reset</b> starts a fresh experiment (old results are kept in the data folder).</li>
 <li><b>Profit chart</b> on the Dashboard: your real results over 24 hours, 7 days, 30 days or all time.</li>
 </ul>
 <p class="tip">Start with <b>Check my wallets</b>. If a wallet is losing you money, no strategy will fix it: pause it and let the scout find a better one.</p>`,
   },
   {
-    id: 'whats-new-06', cat: 'news', mins: 4, title: "What's new in Copybot 0.6",
+    id: 'whats-new-06', cat: 'news', mins: 4, title: "What's new in Remora 0.6",
     teaser: 'The wallet scout, backtesting, rug protection, phone alerts, faster trades and much more.',
     body: `
-<p>Finding good wallets was the hardest part of copy trading. Now Copybot can do it for you.</p>
+<p>Finding good wallets was the hardest part of copy trading. Now Remora can do it for you.</p>
 <h3>The wallet scout</h3>
 <ol>
 <li>It picks Solana tokens that <b>pumped recently</b> (up 30%+ in a day, a few hours to a week old, with real liquidity).</li>
@@ -264,7 +264,7 @@ window.GUIDES = [
 <p>The new <b>Backtest</b> page answers "what would copying these wallets have made?" It replays up to 5 wallets' real trades with your current settings, buying a little higher and selling a little lower than they did (you always trade after them). You get the total profit, win rate, worst dip, a chart and every trade. There's a <b>Backtest</b> button next to wallets on the Wallets and Find wallets pages too.</p>
 <p class="tip">A wallet that made money for itself can still lose money for you, because you buy after it. Backtest before you copy.</p>
 <h3>Solscan holder check</h3>
-<p>Add a Solscan API key (Settings → Connection) and Copybot checks who owns each token before buying. It skips tokens that one wallet, or a small group, controls. Claude sees the same numbers when it decides. Change the limits in Settings → Token filters.</p>
+<p>Add a Solscan API key (Settings → Connection) and Remora checks who owns each token before buying. It skips tokens that one wallet, or a small group, controls. Claude sees the same numbers when it decides. Change the limits in Settings → Token filters.</p>
 <h3>With the autopilot</h3>
 <p>If the autopilot manages your wallets, the scout runs by itself once a day while the bot is running and <b>adds its picks to your copy list</b> (2 per search, never more than your maximum). Change this in Settings → Autopilot.</p>
 <p class="tip">Most wallets that catch one pump don't keep winning, so some searches find nothing good. That's the scout doing its job.</p>
@@ -282,21 +282,21 @@ window.GUIDES = [
 </ul>
 <h3>Speed and reliability</h3>
 <ul>
-<li><b>Backup RPC:</b> add a second RPC in Settings → Connection and Copybot switches over automatically if your main one fails.</li>
+<li><b>Backup RPC:</b> add a second RPC in Settings → Connection and Remora switches over automatically if your main one fails.</li>
 <li><b>Jito tips</b> (Settings → Speed): in live mode, pay a small tip so trades land sooner when the network is busy.</li>
-<li><b>Fast trade detection</b> with a Helius RPC that includes Enhanced WebSockets: Copybot sees the copied trade without an extra lookup.</li>
+<li><b>Fast trade detection</b> with a Helius RPC that includes Enhanced WebSockets: Remora sees the copied trade without an extra lookup.</li>
 </ul>
 <p>New installs also get a short <b>setup guide</b> on first launch (you can run it again from Settings → Look).</p>`,
   },
   {
-    id: 'whats-new-05', cat: 'news', mins: 3, title: "What's new in Copybot 0.5",
+    id: 'whats-new-05', cat: 'news', mins: 3, title: "What's new in Remora 0.5",
     teaser: 'Smart exits, token filters, a circuit breaker, a wallet scoreboard, the Markets hub, the AI autopilot and a new look.',
     body: `
-<p>Copybot 0.5 is the biggest update so far. Here's everything that changed.</p>
+<p>Remora 0.5 is the biggest update so far. Here's everything that changed.</p>
 <h3>Trading</h3>
 <ul>
-<li><b>Staged exits.</b> At 2x Copybot takes your cost back, then takes profit at +300% and +900%, and a trailing stop protects the rest. See <a href="#" data-guide="exits">How exits work</a>.</li>
-<li><b>Don't chase.</b> If the price is already more than 15% above what the copied wallet paid, Copybot skips the copy.</li>
+<li><b>Staged exits.</b> At 2x Remora takes your cost back, then takes profit at +300% and +900%, and a trailing stop protects the rest. See <a href="#" data-guide="exits">How exits work</a>.</li>
+<li><b>Don't chase.</b> If the price is already more than 15% above what the copied wallet paid, Remora skips the copy.</li>
 <li><b>Token filters.</b> Minimum liquidity, maximum buy size compared to the pool, plus optional market-cap and token-age limits.</li>
 <li><b>Circuit breaker.</b> No new buys after a 0.3 SOL loss in a day, and a 60-minute pause after 4 losing trades in a row (trades that lose under 2% count as break-even).</li>
 <li><b>Wallet scoreboard.</b> Your own profit and win rate from each wallet you copy, with a per-wallet size and budget.</li>
@@ -308,19 +308,19 @@ window.GUIDES = [
 <li><b>Learn:</b> the guides you're reading now.</li>
 </ul>
 <h3>Look</h3>
-<p>One new theme that mixes the clean modern layout with rainbow colors, in <b>light and dark</b>. Switch it in Settings → Look, or with the sun/moon button at the top. Copybot also has a new leaf icon.</p>
+<p>One new theme that mixes the clean modern layout with rainbow colors, in <b>light and dark</b>. Switch it in Settings → Look, or with the sun/moon button at the top. Remora also has a new leaf icon.</p>
 <p class="tip">Your old "sell everything at +150%" setting was switched off so the new staged exits can work. You can turn it back on in Settings → Selling.</p>`,
   },
   {
-    id: 'getting-started', cat: 'start', mins: 4, title: 'Getting started with Copybot',
+    id: 'getting-started', cat: 'start', mins: 4, title: 'Getting started with Remora',
     teaser: 'From install to your first paper trade in five steps.',
     body: `
-<p>Copybot watches wallets you choose, on <b>Solana</b> and <b>Base</b>. When one of them buys or sells a token, Copybot can copy the trade within seconds.</p>
+<p>Remora watches wallets you choose, on <b>Solana</b> and <b>Base</b>. When one of them buys or sells a token, Remora can copy the trade within seconds.</p>
 <ol class="big">
 <li><b>Add a fast connection.</b> Settings → Connection → paste a free Helius RPC link. See <a href="#" data-guide="rpc">Connect a fast RPC</a>. The free public connection misses trades.</li>
 <li><b>Find wallets worth copying.</b> Use <b>Find wallets</b> or the top traders in <b>Markets</b>, then check each one's record with <b>Analyze</b>. See <a href="#" data-guide="finding-wallets">Finding wallets worth copying</a>.</li>
 <li><b>Add 2–3 wallets</b> on the Wallets page. Spreading across a few traders means one bad week doesn't sink you.</li>
-<li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices, using a pretend 10 SOL wallet, and never spends money. No wallets yet? Press Start anyway and Copybot picks a few active traders for a quick experiment.</li>
+<li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices, using a pretend 10 SOL wallet, and never spends money. No wallets yet? Press Start anyway and Remora picks a few active traders for a quick experiment.</li>
 <li><b>Review after a few days.</b> The Wallets scoreboard shows which wallets actually made <i>you</i> money. Pause the ones that didn't. Settings → <b>Ready for live?</b> says which ones have proven themselves.</li>
 </ol>
 <p>Want Base too? Add a free Alchemy link in Settings → Connection and paste Base wallets (they start with <span class="mono">0x</span>). See <a href="#" data-guide="base">Copying wallets on Base</a>.</p>
@@ -330,13 +330,13 @@ window.GUIDES = [
     id: 'rpc', cat: 'start', mins: 2, title: 'Connect a fast RPC (Helius)',
     teaser: "Why the free public connection misses trades, and how to fix it in two minutes.",
     body: `
-<p>An <b>RPC</b> is Copybot's connection to the Solana blockchain. Every trade it sees and every price it checks goes through it.</p>
+<p>An <b>RPC</b> is Remora's connection to the Solana blockchain. Every trade it sees and every price it checks goes through it.</p>
 <p>The free public RPC is shared by everyone and heavily rate-limited. You'll see "RPC is rate-limiting the bot" in Live activity, and some trades get missed.</p>
 <h3>Set up Helius (free)</h3>
 <ol>
 <li>Go to <b>helius.dev</b> and create a free account.</li>
 <li>Copy your RPC link. It looks like <code>https://mainnet.helius-rpc.com/?api-key=…</code></li>
-<li>In Copybot: <b>Settings → Connection</b>, paste it, then <b>Save connection</b> and <b>Test connection</b>.</li>
+<li>In Remora: <b>Settings → Connection</b>, paste it, then <b>Save connection</b> and <b>Test connection</b>.</li>
 </ol>
 <p>You should see green checkmarks, and the sidebar will say <b>Private RPC</b>.</p>`,
   },
@@ -348,7 +348,7 @@ window.GUIDES = [
 <h3>Where to look</h3>
 <ul>
 <li><b>Backtest first:</b> before copying a wallet, run it on the Backtest page. It shows what copying it would have made <i>for you</i>, after the price you lose by trading later.</li>
-<li><b>Find wallets → Find wallets for me:</b> the easiest way. Copybot picks tokens that pumped recently, finds their early buyers, checks each wallet's record, and Claude (or the rules) picks the best ones.</li>
+<li><b>Find wallets → Find wallets for me:</b> the easiest way. Remora picks tokens that pumped recently, finds their early buyers, checks each wallet's record, and Claude (or the rules) picks the best ones.</li>
 <li><b>Find wallets → Discover early buyers:</b> paste 3–5 tokens that pumped recently. Wallets that were early on <i>several</i> of them rank highest.</li>
 <li><b>Markets → Top traders</b> for a token (needs a free DexCheck key), with a <b>Copy</b> button.</li>
 </ul>
@@ -369,19 +369,19 @@ window.GUIDES = [
   },
   {
     id: 'exits', cat: 'strategy', mins: 4, title: 'How exits work: take back cost, take-profits, trailing stop',
-    teaser: 'Copybot sells in stages so you lock in wins without missing the big runs.',
+    teaser: 'Remora sells in stages so you lock in wins without missing the big runs.',
     body: `
-<p><b>Rule #1: a profitable trade is a good trade.</b> Once a trade has been up 20%, Copybot never lets it end as a loss: if it falls back to +5% (enough to cover fees), it sells everything and keeps the win. Both numbers are in <b>Settings → Selling</b>; open positions show 🔒 once their profit is locked.</p>
-<p>Selling everything at one target means you either sell too early or give it all back. Copybot sells in steps instead. All percentages are gains over <b>your</b> entry price (+100% = 2x).</p>
+<p><b>Rule #1: a profitable trade is a good trade.</b> Once a trade has been up 20%, Remora never lets it end as a loss: if it falls back to +5% (enough to cover fees), it sells everything and keeps the win. Both numbers are in <b>Settings → Selling</b>; open positions show 🔒 once their profit is locked.</p>
+<p>Selling everything at one target means you either sell too early or give it all back. Remora sells in steps instead. All percentages are gains over <b>your</b> entry price (+100% = 2x).</p>
 <ol class="big">
-<li><b>Take back my cost (+100%).</b> At 2x, Copybot sells just enough to get your original SOL back, which is half the position. The rest is "free".</li>
+<li><b>Take back my cost (+100%).</b> At 2x, Remora sells just enough to get your original SOL back, which is half the position. The rest is "free".</li>
 <li><b>Take-profit 1 (+300%):</b> sell 50% of what's left.</li>
 <li><b>Take-profit 2 (+900%):</b> sell 50% of what's left again.</li>
-<li><b>Trailing stop.</b> Once a token has been up 50%, Copybot remembers its highest value. If it then falls 30% from that peak, it sells everything.</li>
-<li><b>Stop-loss (−40%):</b> if a position falls 40% from your entry, Copybot sells everything.</li>
+<li><b>Trailing stop.</b> Once a token has been up 50%, Remora remembers its highest value. If it then falls 30% from that peak, it sells everything.</li>
+<li><b>Stop-loss (−40%):</b> if a position falls 40% from your entry, Remora sells everything.</li>
 </ol>
 <h3>Example</h3>
-<p>You buy for 0.05 SOL. It goes to 2x: Copybot sells 0.05 SOL worth and you're back to even. It runs to 5x and then drops: the trailing stop sells the rest around 3.5x. You kept a big part of the run, with no risk after the first step.</p>
+<p>You buy for 0.05 SOL. It goes to 2x: Remora sells 0.05 SOL worth and you're back to even. It runs to 5x and then drops: the trailing stop sells the rest around 3.5x. You kept a big part of the run, with no risk after the first step.</p>
 <p>The Dashboard's <b>Exit plan</b> column shows ✓ next to steps that are done, and where the trailing stop will sell. Every step is adjustable in <b>Settings → Selling</b>; set a step to 0 to turn it off.</p>`,
   },
   {
@@ -396,7 +396,7 @@ window.GUIDES = [
 <li><b>Per-wallet Budget.</b> Caps how much SOL a single wallet's trades can tie up.</li>
 <li><b>Per-chain limits.</b> Give Solana and Base each their own share of the coins and money (for example Base: 2 of 5 coins), so a busy chain can't crowd out the other. 0 = no cap of its own.</li>
 </ul>
-<p>A coin nobody will buy any more (rugged) doesn't take a slot or count toward these limits while Copybot keeps trying to sell it; after 2 hours it's written off. You can write it off yourself straight away with the ✕ next to the position.</p>
+<p>A coin nobody will buy any more (rugged) doesn't take a slot or count toward these limits while Remora keeps trying to sell it; after 2 hours it's written off. You can write it off yourself straight away with the ✕ next to the position.</p>
 <h3>The circuit breaker</h3>
 <p>Two automatic brakes protect you on a bad day (Settings → Limits):</p>
 <ul>
@@ -408,7 +408,7 @@ window.GUIDES = [
   },
   {
     id: 'safety-checks', cat: 'safety', mins: 5, title: 'The safety checks, explained',
-    teaser: "Everything Copybot checks before it buys, and before it signs anything.",
+    teaser: "Everything Remora checks before it buys, and before it signs anything.",
     body: `
 <p>Before every buy, a token has to pass all of these:</p>
 <ul>
@@ -420,7 +420,7 @@ window.GUIDES = [
 <li><b>Limits and budgets:</b> max positions, max SOL in trades, per-wallet budgets, and the circuit breaker.</li>
 </ul>
 <h3>Before signing a live trade</h3>
-<p>Copybot checks every swap transaction <b>before</b> your wallet signs it:</p>
+<p>Remora checks every swap transaction <b>before</b> your wallet signs it:</p>
 <ul>
 <li>It may only use the expected programs.</li>
 <li>It can't send SOL or tokens anywhere except your own accounts.</li>
@@ -432,11 +432,11 @@ window.GUIDES = [
   },
   {
     id: 'going-live', cat: 'safety', mins: 3, title: 'Going live safely',
-    teaser: 'The checklist before you let Copybot spend real SOL.',
+    teaser: 'The checklist before you let Remora spend real SOL.',
     body: `
 <ol class="big">
 <li><b>Paper trade first,</b> for at least a few days, and check that the Wallets scoreboard is positive.</li>
-<li><b>Use a brand-new wallet</b> just for Copybot (in Phantom: add a new account), funded only with money you can afford to lose.</li>
+<li><b>Use a brand-new wallet</b> just for Remora (in Phantom: add a new account), funded only with money you can afford to lose.</li>
 <li><b>Add a fast RPC.</b> Live trading on the free connection misses exits too, not just entries.</li>
 <li><b>Paste the key</b> in Settings → Trading wallet. On Windows it's encrypted so only your user account can read it. It never leaves your PC.</li>
 <li><b>Switch Settings → Trading mode to Live.</b> The <b>go-live assistant</b> opens and walks you through it:
@@ -468,7 +468,7 @@ window.GUIDES = [
 <li>Copy a wallet whose track record wasn't checked first.</li>
 </ul>
 <h3>Cost</h3>
-<p><b>Claude:</b> you use your own Anthropic API key (from console.anthropic.com) and pay per decision. Pick the model: <b>Opus 5.5</b> (smartest, roughly $0.02–0.04 a decision), <b>Sonnet 5.5</b> (about half that) or <b>Haiku 5.5</b> (about 1/40 of Opus). A <b>daily AI budget</b> (Settings → Autopilot) caps the spend; when it's used up, Copybot falls back to its normal rules.</p>
+<p><b>Claude:</b> you use your own Anthropic API key (from console.anthropic.com) and pay per decision. Pick the model: <b>Opus 5.5</b> (smartest, roughly $0.02–0.04 a decision), <b>Sonnet 5.5</b> (about half that) or <b>Haiku 5.5</b> (about 1/40 of Opus). A <b>daily AI budget</b> (Settings → Autopilot) caps the spend; when it's used up, Remora falls back to its normal rules.</p>
 <h3>A free local AI (Ollama)</h3>
 <ol>
 <li>Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a> and open it.</li>
@@ -487,7 +487,7 @@ window.GUIDES = [
 <ul>
 <li><b>Overview:</b> BTC, ETH and SOL prices and their 24-hour change.</li>
 <li><b>Trending and New pools:</b> the hottest Solana pools right now, and brand-new launches. Click any token to see details.</li>
-<li><b>Token details:</b> price chart, liquidity, market cap, volume, buys vs sells and age. These are the same numbers Copybot's filters use.</li>
+<li><b>Token details:</b> price chart, liquidity, market cap, volume, buys vs sells and age. These are the same numbers Remora's filters use.</li>
 <li><b>Watchlist:</b> star a token to keep it on your list.</li>
 <li><b>News:</b> headlines from Blockworks, CoinDesk, The Block and Decrypt. Click one to read it in your browser.</li>
 <li><b>Whales and top traders</b> (optional): add a free DexCheck API key in Settings to see big trades and the best traders on a token, with buttons to Analyze or Copy them.</li>
@@ -499,7 +499,7 @@ window.GUIDES = [
     teaser: 'Liquidity, slippage, market cap, bonding curve, honeypot and more.',
     body: `
 <dl class="gloss">
-<dt>SOL</dt><dd>Solana's coin. Copybot buys and sells tokens with SOL.</dd>
+<dt>SOL</dt><dd>Solana's coin. Remora buys and sells tokens with SOL.</dd>
 <dt>Token / mint</dt><dd>A coin on Solana. Its "mint address" is its unique ID.</dd>
 <dt>Liquidity</dt><dd>How much money sits in a token's trading pool. More liquidity means you can buy and sell without moving the price much.</dd>
 <dt>Slippage</dt><dd>The difference between the price you expected and the price you got. Thin pools mean big slippage.</dd>
@@ -510,7 +510,7 @@ window.GUIDES = [
 <dt>P&amp;L</dt><dd>Profit and loss. "Realized" means from sells you've made; "open" means if you sold now.</dd>
 <dt>Stop-loss / take-profit</dt><dd>Automatic sells when a position falls or rises by a set amount.</dd>
 <dt>Trailing stop</dt><dd>A stop-loss that moves up as the price rises, to protect gains.</dd>
-<dt>RPC</dt><dd>Copybot's connection to the blockchain.</dd>
+<dt>RPC</dt><dd>Remora's connection to the blockchain.</dd>
 <dt>Paper trading</dt><dd>Simulated trading with real prices and no real money.</dd>
 </dl>`,
   },

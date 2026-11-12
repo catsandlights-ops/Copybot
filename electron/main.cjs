@@ -1,4 +1,4 @@
-// Copybot desktop app: runs the bot + control panel inside an Electron window.
+// Remora desktop app: runs the bot + control panel inside an Electron window.
 const { app, BrowserWindow, shell, dialog, Menu, powerSaveBlocker, nativeTheme, safeStorage, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -21,6 +21,16 @@ let quitting = false;
 let serverMod = null;
 const startedAtLogin = process.argv.includes('--minimized');
 
+// Remora was called Copybot. An existing install keeps using its data folder (%APPDATA%\Copybot):
+// your settings and history are there, and Windows' key for your encrypted trading keys too, so
+// nothing is moved. New installs use %APPDATA%\Remora. Decided before anything opens that folder.
+try {
+  const legacy = path.join(app.getPath('appData'), 'Copybot');
+  if (fs.existsSync(path.join(legacy, 'config.json')) || fs.existsSync(path.join(legacy, 'data'))) app.setPath('userData', legacy);
+} catch {
+  /* the default folder is fine */
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -30,7 +40,7 @@ if (!app.requestSingleInstanceLock()) {
     win.focus();
   });
   app.whenReady().then(boot).catch((e) => {
-    dialog.showErrorBox('Copybot could not start', String(e?.stack || e));
+    dialog.showErrorBox('Remora could not start', String(e?.stack || e));
     app.exit(1);
   });
 }
@@ -46,7 +56,8 @@ function openExternal(url) {
 
 async function boot() {
   // Settings, keys and trade history live in the per-user app data folder:
-  //   Windows: %APPDATA%\Copybot   macOS: ~/Library/Application Support/Copybot
+  //   Windows: %APPDATA%\Remora (or %APPDATA%\Copybot for installs from before the rename)
+  //   macOS: ~/Library/Application Support/Remora (or …/Copybot)
   const dataDir = app.getPath('userData');
   fs.mkdirSync(dataDir, { recursive: true });
   process.chdir(dataDir);
@@ -66,7 +77,7 @@ async function boot() {
   process.env.COPYBOT_DESKTOP = '1';
   process.env.COPYBOT_VERSION = app.getVersion();
   process.env.COPYBOT_UI = path.join(BASE, 'ui', 'index.html');
-  // Settings → App → "Start with Windows": a login entry that opens Copybot minimized.
+  // Settings → App → "Start with Windows": a login entry that opens Remora minimized.
   globalThis.__copybotDesktop = {
     setStartAtLogin: (on) => {
       try {
@@ -130,7 +141,7 @@ function onStatus() {
     powerSaveBlocker.stop(sleepBlocker);
     sleepBlocker = null;
   }
-  if (win) win.setTitle(engine.running ? `Copybot — running (${engine.cfg.mode})` : 'Copybot');
+  if (win) win.setTitle(engine.running ? `Remora — running (${engine.cfg.mode})` : 'Remora');
 }
 
 function createWindow(startUrl) {
@@ -139,7 +150,7 @@ function createWindow(startUrl) {
     height: 860,
     minWidth: 860,
     minHeight: 560,
-    title: 'Copybot',
+    title: 'Remora',
     show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0e1014' : '#f5f6f8',
     icon: path.join(BASE, 'build', 'icon.png'),
@@ -174,7 +185,7 @@ function createWindow(startUrl) {
       defaultId: 0,
       cancelId: 0,
       message: 'The bot is still running',
-      detail: 'Quitting stops copy trading. Open positions stay in your wallet, but stop-loss, take-profit and copied sells will not run while Copybot is closed.',
+      detail: 'Quitting stops copy trading. Open positions stay in your wallet, but stop-loss, take-profit and copied sells will not run while Remora is closed.',
     });
     if (response === 1) {
       quitting = true;

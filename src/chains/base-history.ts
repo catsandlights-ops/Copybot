@@ -104,7 +104,7 @@ export function swapsFromTransfers(transfers: AlchemyTransfer[], walletIn: strin
   return out;
 }
 
-/** Copybot's usual swap shape (amounts converted to SOL at today's ETH price). */
+/** Remora's usual swap shape (amounts converted to SOL at today's ETH price). */
 export function toSwaps(hs: HistSwap[], wallet: string, solPerEth: number): Swap[] {
   return hs
     .filter((h) => h.quote !== 'unknown')

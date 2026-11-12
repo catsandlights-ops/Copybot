@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#7c3aed">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Copybot">
+<meta name="apple-mobile-web-app-title" content="Remora">
 <meta name="referrer" content="no-referrer">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg">
 <link rel="apple-touch-icon" href="/icon.svg">
-<title>Copybot</title>
+<title>Remora</title>
 <style>
 :root { --bg: #f6f4fb; --panel: #fff; --panel-2: #f0edf8; --text: #1b1530; --muted: #6d6787; --border: #e6e1f2; --accent: #7c3aed; --green: #15803d; --green-bg: #dcfce7; --red: #dc2626; --red-bg: #fee2e2; --amber: #b45309; --amber-bg: #fef3c7; }
 @media (prefers-color-scheme: dark) { :root { --bg: #0f0b1e; --panel: #1a1530; --panel-2: #241d40; --text: #f2eefc; --muted: #a39cc0; --border: #2f2752; --accent: #a78bfa; --green: #4ade80; --green-bg: #14532d55; --red: #f87171; --red-bg: #7f1d1d55; --amber: #fbbf24; --amber-bg: #78350f55; } }
@@ -125,14 +125,14 @@ function line(pts, cls2, base) {
 // ---------------- pairing ----------------
 function showUnpaired(why) {
   stopPolling();
-  $('#app').innerHTML = `<header><h1>Copybot</h1></header><div class="card center">
+  $('#app').innerHTML = `<header><h1>Remora</h1></header><div class="card center">
     <h2 style="text-transform:none;font-size:18px;color:var(--text)">This phone isn't paired</h2>
     <p class="muted">${esc(why || '')}</p>
-    <p>On your computer, open Copybot → <b>Settings → Phone access</b>, press <b>Pair a phone</b>, and scan the QR code with this phone's camera.</p></div>`;
+    <p>On your computer, open Remora → <b>Settings → Phone access</b>, press <b>Pair a phone</b>, and scan the QR code with this phone's camera.</p></div>`;
 }
 
 function showPair(code) {
-  $('#app').innerHTML = `<header><h1>Pair with Copybot</h1></header><div class="card">
+  $('#app').innerHTML = `<header><h1>Pair with Remora</h1></header><div class="card">
     <p>Give this phone a name so you can recognise it on your computer:</p>
     <input type="text" id="pname" maxlength="40" value="My phone" autocomplete="off">
     <button class="primary wide" id="pgo">Pair this phone</button>
@@ -173,8 +173,8 @@ function render() {
   const actHtml = a ? `<div style="font-size:14px;margin-bottom:8px"><b>Last hour:</b> ${a.seen} buy signal${a.seen === 1 ? '' : 's'} seen, ${a.copied} copied.${a.skips && a.skips.length ? `<div class="muted" style="font-size:13px;margin-top:4px">Skipped because ${a.skips.slice(0, 3).map((x) => `${esc(x.group)} (${x.n})`).join(', ')}.</div>` : ''}</div>` : '';
   const logHtml = actHtml + S.logs.slice().reverse().map((l) => `<div class="log ${esc(l.level)}"><time>${hhmm(l.t)}</time>${esc(l.msg)}</div>`).join('') || '<div class="muted">Nothing yet.</div>';
   $('#app').innerHTML = `
-    <header><h1>Copybot</h1><span class="badge ${live ? 'live' : ''}">${live ? 'LIVE' : 'Paper'}</span><span class="badge ${S.running ? 'on' : ''}">${S.running ? `Running · ${ago(S.startedAt)}` : 'Stopped'}</span></header>
-    ${offline ? '<div class="banner err">Can\'t reach Copybot. Is your computer on, Copybot open, and (away from home) Tailscale on, on both devices?</div>' : ''}
+    <header><h1>Remora</h1><span class="badge ${live ? 'live' : ''}">${live ? 'LIVE' : 'Paper'}</span><span class="badge ${S.running ? 'on' : ''}">${S.running ? `Running · ${ago(S.startedAt)}` : 'Stopped'}</span></header>
+    ${offline ? '<div class="banner err">Can\'t reach Remora. Is your computer on, Remora open, and (away from home) Tailscale on, on both devices?</div>' : ''}
     ${S.connection ? `<div class="banner ${S.connection.level === 'bad' ? 'err' : ''}">${esc(S.connection.text)}. Check Settings → Connections on the computer.</div>` : ''}
     ${S.paperLive ? `<div class="banner info"><b>Paper vs live:</b> ${esc(S.paperLive)}</div>` : ''}
     ${S.ramp ? `<div class="banner ${S.ramp.due ? '' : 'info'}">${esc(S.ramp.text)}${S.ramp.due ? ' Bring them back on the computer (Settings → Trading mode).' : ''}</div>` : ''}
@@ -200,7 +200,7 @@ function render() {
     ${S.orders && S.orders.length ? `<div class="card"><h2>Open orders</h2>${S.orders.map((o) => `<div class="pos-item"><div style="font-size:14px">${esc(o.text)}</div>${o.note ? `<div class="muted" style="font-size:12.5px">${esc(o.note)}</div>` : ''}<button class="sm" data-cancel="${esc(o.id)}" style="margin-top:6px">Cancel</button></div>`).join('')}</div>` : ''}
     <div class="tabs">${[['positions', `Positions (${S.positions.length})`], ['wallets', 'Wallets'], ['trades', 'Trades'], ['activity', 'Activity']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div class="card">${tab === 'positions' ? posHtml : tab === 'wallets' ? walletsHtml : tab === 'trades' ? tradesHtml : logHtml}</div>
-    <div class="row between muted" style="font-size:12.5px;margin-top:18px"><span>Copybot${S.version ? ' v' + esc(S.version) : ''} · updates every few seconds</span><button class="sm" id="unpair">Unpair</button></div>`;
+    <div class="row between muted" style="font-size:12.5px;margin-top:18px"><span>Remora${S.version ? ' v' + esc(S.version) : ''} · updates every few seconds</span><button class="sm" id="unpair">Unpair</button></div>`;
   bind();
 }
 
@@ -246,7 +246,7 @@ async function action(fn, ok) {
 
 async function refresh() {
   try { S = await call('GET', '/r/state'); offline = false; render(); }
-  catch (e) { if (!store.get()) return; offline = true; if (S) render(); else $('#app').innerHTML = `<header><h1>Copybot</h1></header><div class="banner err">Can't reach Copybot. Is your computer on, Copybot open, and (away from home) Tailscale on, on both devices?</div>`; }
+  catch (e) { if (!store.get()) return; offline = true; if (S) render(); else $('#app').innerHTML = `<header><h1>Remora</h1></header><div class="banner err">Can't reach Remora. Is your computer on, Remora open, and (away from home) Tailscale on, on both devices?</div>`; }
 }
 function stopPolling() { clearInterval(timer); timer = null; }
 function start() {

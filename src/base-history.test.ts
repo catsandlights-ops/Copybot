@@ -41,7 +41,7 @@ test('swapsFromTransfers: WETH quotes, unseen ETH proceeds, older buys outside t
   assert.deepEqual([s[1].side, s[1].quote, s[1].tokenPre], ['sell', 'unknown', 80n]);
 });
 
-test('toSwaps: Copybot swap shape, ETH converted to SOL, unknown proceeds dropped', () => {
+test('toSwaps: Remora swap shape, ETH converted to SOL, unknown proceeds dropped', () => {
   const hs = swapsFromTransfers([eth('0xa', 1, W, ROUTER, 10n ** 17n), erc('0xa', 1, TOKEN, POOL, W, 7n, 9), erc('0xb', 2, TOKEN, W, POOL, 7n, 9)], W, WETH, STABLES);
   const sw = toSwaps(hs, W, 25);
   assert.equal(sw.length, 1);

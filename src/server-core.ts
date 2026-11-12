@@ -25,7 +25,7 @@ export const STATIC: Record<string, [string, string]> = {
 
 // ---------- display preferences (light/dark). Kept apart from config.json so changing them never restarts the bot ----------
 export const MODES = ['system', 'light', 'dark'] as const;
-/** resumeBot: start the bot again after an unexpected stop. startWithWindows: open Copybot when you log in (desktop app). */
+/** resumeBot: start the bot again after an unexpected stop. startWithWindows: open Remora when you log in (desktop app). */
 export type UiPrefs = { mode: (typeof MODES)[number]; setupDone: boolean; resumeBot: boolean; startWithWindows: boolean };
 export function loadUiPrefs(): UiPrefs {
   // Existing installs (a config already there) skip the first-run setup.
@@ -342,10 +342,10 @@ export function userStopped() {
 engine.on('guard', (msg: string) => {
   if (/Selling everything and stopping/.test(msg)) userStopped();
 });
-/** At startup: start the bot again if it was running when Copybot closed without you stopping it. */
+/** At startup: start the bot again if it was running when Remora closed without you stopping it. */
 export function resumeIfItWasRunning() {
   if (!shouldResume(readRunState(), engine.cfg.mode, uiPrefs.resumeBot)) return;
-  engine.log(`Copybot closed while the bot was running (a crash, a restart or a power cut), so the bot is starting again (${engine.cfg.mode} mode). Turn this off in Settings → App.`, 'system');
+  engine.log(`Remora closed while the bot was running (a crash, a restart or a power cut), so the bot is starting again (${engine.cfg.mode} mode). Turn this off in Settings → App.`, 'system');
   engine.start().catch((e) => engine.log(`Could not start the bot again: ${e.message}`, 'error'));
 }
 
@@ -356,7 +356,7 @@ function unexpected(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
   console.error('unexpected error:', e);
   try {
-    engine.log(`Unexpected error (Copybot kept running): ${msg}`, 'error');
+    engine.log(`Unexpected error (Remora kept running): ${msg}`, 'error');
   } catch {
     /* logging must never throw here */
   }

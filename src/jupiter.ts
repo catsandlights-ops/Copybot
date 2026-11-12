@@ -75,7 +75,7 @@ export type SwapOpts = { dynamicSlippage?: boolean; mevProtect?: boolean; onNote
 /** Sent, but the node was too busy to tell whether it landed before it expired; followed up later (see trader). */
 export class SolPendingError extends Error {
   constructor(readonly pendingHash: string) {
-    super(`Solana transaction ${pendingHash} was sent, but the network was too busy to confirm it. Copybot keeps checking and adds it to your books if it went through.`);
+    super(`Solana transaction ${pendingHash} was sent, but the network was too busy to confirm it. Remora keeps checking and adds it to your books if it went through.`);
   }
 }
 

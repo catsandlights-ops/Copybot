@@ -80,12 +80,12 @@ export class BotEngine extends EventEmitter {
     if (/^Base RPC/.test(msg)) {
       if (Date.now() - this.lastBaseWarn < 60_000) return;
       this.lastBaseWarn = Date.now();
-      return this.log(`The Base network node is busy or limiting Copybot (${msg.replace(/^Base RPC:? ?/, '')}), so some Base trades may be missed. A free Base RPC from Alchemy or QuickNode (Settings → Connection) fixes this.`, 'warn');
+      return this.log(`The Base network node is busy or limiting Remora (${msg.replace(/^Base RPC:? ?/, '')}), so some Base trades may be missed. A free Base RPC from Alchemy or QuickNode (Settings → Connection) fixes this.`, 'warn');
     }
     if (/Jupiter is busy/.test(msg)) {
       if (Date.now() - this.lastJupWarn < 60_000) return;
       this.lastJupWarn = Date.now();
-      return this.log('Jupiter (the swap service) is busy right now, so some price checks and trades are delayed. Copybot keeps retrying; a Jupiter API key (Settings → Connection) raises the limit.', 'warn');
+      return this.log('Jupiter (the swap service) is busy right now, so some price checks and trades are delayed. Remora keeps retrying; a Jupiter API key (Settings → Connection) raises the limit.', 'warn');
     }
     if (/429|rate|Too Many/i.test(msg)) {
       if (Date.now() - this.lastRateWarn < 60_000) return;
@@ -96,7 +96,7 @@ export class BotEngine extends EventEmitter {
     if (/in JSON at position|Unexpected (end of JSON|token)|is not valid JSON|Bad control character/i.test(msg)) {
       if (Date.now() - this.lastBrokenWarn < 60_000) return;
       this.lastBrokenWarn = Date.now();
-      return this.log('A service sent a garbled reply (a network hiccup), so a check was skipped; Copybot tries again on its own.', 'warn');
+      return this.log('A service sent a garbled reply (a network hiccup), so a check was skipped; Remora tries again on its own.', 'warn');
     }
     this.log(`Error: ${msg}`, 'error');
   }
@@ -253,7 +253,7 @@ export class BotEngine extends EventEmitter {
       }
     })();
     this.pollSlow = 1;
-    // Trades that were sent while Copybot last stopped: book the ones that went through.
+    // Trades that were sent while Remora last stopped: book the ones that went through.
     if (this.cfg.mode === 'live') void this.trader.recoverInflight().catch((e) => this.logError(e));
     this.pollerLoop(gen);
     this.exitLoop(gen);

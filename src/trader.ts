@@ -147,7 +147,7 @@ export class Trader {
         const r = await this.fill(e.sig, chain, { tokenRaw: BigInt(e.quoted.tokenRaw), sol: e.quoted.sol });
         this.bookRecovered(e, r, chain);
         recovered++;
-      } else this.hooks.log(`A ${e.side} of ${short(e.mint)} that was being sent when Copybot stopped never went through, so nothing changed.`, 'system');
+      } else this.hooks.log(`A ${e.side} of ${short(e.mint)} that was being sent when Remora stopped never went through, so nothing changed.`, 'system');
       this.clearInflight(e.sig);
     }
     return recovered;
@@ -175,7 +175,7 @@ export class Trader {
       }
       this.record({ t: now, chain: chain.meta.id, mode: this.cfg.mode, side: 'sell', mint: e.mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason: e.reason ?? 'recovered', sources: [...(p?.sources ?? [])], sig: r.sig });
     }
-    this.hooks.log(`Recovered a ${e.side} of ${short(e.mint)} that went through while Copybot was stopping; it's in your books now.`, 'warn');
+    this.hooks.log(`Recovered a ${e.side} of ${short(e.mint)} that went through while Remora was stopping; it's in your books now.`, 'warn');
   }
 
   /**
@@ -218,7 +218,7 @@ export class Trader {
     }
     if (now - nr.loggedAt >= 3_600_000) {
       nr.loggedAt = now;
-      this.hooks.log(`SELL ${short(p.mint)} can't happen right now: no one is buying it (no route; ${reason}). Copybot keeps trying every few minutes and writes it off after 2 hours.`, 'warn');
+      this.hooks.log(`SELL ${short(p.mint)} can't happen right now: no one is buying it (no route; ${reason}). Remora keeps trying every few minutes and writes it off after 2 hours.`, 'warn');
     }
     return null;
   }
@@ -228,7 +228,7 @@ export class Trader {
 
   private async swap(q: Quote, chain: ChainAdapter = this.chain, late?: { onFill: (r: Fill) => void } & Trip): Promise<Fill> {
     const toToken = q.outputMint !== chain.meta.native.wrapped;
-    // Amounts in the chain's own coin, converted to SOL (Copybot's books are in SOL).
+    // Amounts in the chain's own coin, converted to SOL (Remora's books are in SOL).
     const native = Number(toToken ? q.inAmount : q.outAmount) / 10 ** chain.meta.native.decimals;
     const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: await chain.nativeToSol(native) };
     // Paper trades pay an estimated network fee too, so paper results aren't rosier than live ones.

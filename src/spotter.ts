@@ -1,7 +1,7 @@
 import type { ChainId } from './chains/types';
 
 /**
- * The spotter: between full wallet searches, Copybot keeps noting traders who just caught a move
+ * The spotter: between full wallet searches, Remora keeps noting traders who just caught a move
  * (cheap: market data only). The next full search checks them first, backtests them, and only
  * then may copy them. Traders spotted on several coins rank higher.
  */

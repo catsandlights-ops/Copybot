@@ -11,7 +11,7 @@ import { chainIds, DEFAULT_CHAIN, getChain, type ChainId } from './chains';
 import { readSecret } from './env';
 import { sleep } from './util';
 
-const UA = 'Copybot (+https://github.com/catsandlights-ops/Copybot)';
+const UA = 'Remora';
 
 /** A chain's facts (network ids, native coin, main USD pool). */
 const M = (chain: ChainId) => getChain(chain).meta;
@@ -85,7 +85,7 @@ const image = (v: unknown): string | null => {
     return null;
   }
 };
-// Any address format of a chain Copybot knows (each chain's adapter defines its own).
+// Any address format of a chain Remora knows (each chain's adapter defines its own).
 const addr = (v: unknown): string | null => (chainIds().some((c) => getChain(c).meta.isAddress(v)) ? ((v as string).startsWith('0x') ? (v as string).toLowerCase() : (v as string)) : null);
 
 // ---------------- overview: BTC / ETH / SOL ----------------

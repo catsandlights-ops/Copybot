@@ -2,7 +2,7 @@
 //
 // Flow: check (at startup + every 4h) → download in the background → verify OUR
 // Ed25519 signature on the downloaded installer → show "Restart to update" in the app.
-// Nothing is ever installed without a valid signature from the Copybot signing key,
+// Nothing is ever installed without a valid signature from the Remora signing key,
 // even if the update server or the GitHub account were compromised.
 const { app } = require('electron');
 const { autoUpdater } = require('electron-updater');
@@ -127,7 +127,7 @@ function init({ onStateChange, log }) {
         setState({ state: 'rejected', version: info.version, message: `Update ${info.version} was rejected because its security signature is invalid. It was not installed.` });
       } else {
         // Couldn't check (offline, GitHub hiccup…). Fail safe: don't install, try again later.
-        setState({ state: 'error', version: info.version, message: `Update ${info.version} couldn't be verified right now, so it wasn't installed. Copybot will try again in 10 minutes.`, detail: String(e.message).slice(0, 200) });
+        setState({ state: 'error', version: info.version, message: `Update ${info.version} couldn't be verified right now, so it wasn't installed. Remora will try again in 10 minutes.`, detail: String(e.message).slice(0, 200) });
         setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10 * 60 * 1000);
       }
     }
@@ -155,7 +155,7 @@ async function install(beforeQuit) {
   }
   setState({ state: 'installing', version: verifiedFile.version });
   await beforeQuit();
-  autoUpdater.quitAndInstall(true, true); // silent install, reopen Copybot afterwards
+  autoUpdater.quitAndInstall(true, true); // silent install, reopen Remora afterwards
 }
 
 module.exports = { init, checkNow, install, getState: () => state, _test: { signatureUrl, verifyDownload, readDownload, BadSignature } };

@@ -20,7 +20,7 @@ export const STRATEGIES: Strategy[] = [
   {
     id: 'balanced',
     name: 'Balanced',
-    tagline: "Copybot's standard settings: take your cost back at 2x, take profits in steps, trailing stop.",
+    tagline: "Remora's standard settings: take your cost back at 2x, take profits in steps, trailing stop.",
     bestFor: 'Most people, and a good starting point.',
     risk: 'Medium',
     patch: {

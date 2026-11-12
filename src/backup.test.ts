@@ -40,8 +40,8 @@ test('backup, check and restore round trip; never includes secrets; keeps a safe
 test('checkBackup refuses other files, bad paths, damaged JSON and newer versions', () => {
   const base = { format: 'copybot-backup', version: 1, appVersion: '0.8.2', createdAt: 1, files: { 'config.json': '{}' } };
   assert.ok('files' in checkBackup(base));
-  assert.match((checkBackup({ hello: 1 }) as any).error, /isn't a Copybot backup/);
-  assert.match((checkBackup({ ...base, version: 2 }) as any).error, /newer Copybot/);
+  assert.match((checkBackup({ hello: 1 }) as any).error, /isn't a Remora backup/);
+  assert.match((checkBackup({ ...base, version: 2 }) as any).error, /newer Remora/);
   assert.match((checkBackup({ ...base, files: { ...base.files, '.env': 'x' } }) as any).error, /doesn't restore/);
   assert.match((checkBackup({ ...base, files: { ...base.files, 'data/../../evil': 'x' } }) as any).error, /doesn't restore/);
   assert.match((checkBackup({ ...base, files: { 'config.json': '{nope' } }) as any).error, /damaged/);

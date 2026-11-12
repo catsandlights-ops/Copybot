@@ -1,5 +1,5 @@
 /**
- * The common plug every blockchain fits into. Copybot's trading rules, strategies, exits, orders,
+ * The common plug every blockchain fits into. Remora's trading rules, strategies, exits, orders,
  * charts and reports don't care which chain they run on; everything that does lives behind this.
  *
  * Today there is one chain (Solana). Adding one (e.g. Base) means writing one more adapter that
@@ -12,7 +12,7 @@ import type { Quote } from '../jupiter';
 import type { CheckResult } from '../safety';
 import type { RawTx } from '../util';
 
-/** Chains Copybot knows. New ones are added here as their adapters are written. */
+/** Chains Remora knows. New ones are added here as their adapters are written. */
 export type ChainId = 'solana' | 'base';
 export const DEFAULT_CHAIN: ChainId = 'solana';
 
@@ -53,7 +53,7 @@ export interface ChainAdapter {
   /** Who created a token, for rug memory (optional: not every chain makes this cheap). */
   tokenCreator?(ctx: ChainContext, token: string): Promise<string | null>;
   /**
-   * Copybot keeps its books in SOL. Amounts on other chains are converted at the current price
+   * Remora keeps its books in SOL. Amounts on other chains are converted at the current price
    * when they happen (identity on Solana).
    */
   nativeToSol(amount: number): Promise<number>;

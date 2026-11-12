@@ -28,7 +28,7 @@ export const PHONE_HEADERS = {
   'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: 'self'; manifest-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
 export const PHONE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#7c3aed"/><path d="M18 40c8-20 22-22 30-24-2 8-4 22-24 30-3 1-6-2-6-6z" fill="#a8e07a"/><path d="M22 44l14-14" stroke="#3f7a3a" stroke-width="4" stroke-linecap="round"/></svg>`;
-export const PHONE_MANIFEST = JSON.stringify({ name: 'Copybot', short_name: 'Copybot', start_url: '/', display: 'standalone', background_color: '#0f0b1e', theme_color: '#7c3aed', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] });
+export const PHONE_MANIFEST = JSON.stringify({ name: 'Remora', short_name: 'Remora', start_url: '/', display: 'standalone', background_color: '#0f0b1e', theme_color: '#7c3aed', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] });
 
 export function remoteView() {
   return {
@@ -117,7 +117,7 @@ export async function handleRemote(req: http.IncomingMessage, res: http.ServerRe
   if (!url.pathname.startsWith('/r/')) return send(res, 404, { error: 'not found' });
 
   const device = remote.findDevice(remoteCfg, req.headers['x-copybot-device'] as string | undefined);
-  if (!device) return send(res, 401, { error: 'This phone is not paired (or was removed). Pair it again from Copybot on your computer: Settings → Phone access.' });
+  if (!device) return send(res, 401, { error: 'This phone is not paired (or was removed). Pair it again from Remora on your computer: Settings → Phone access.' });
   device.lastSeen = Date.now();
   if (Date.now() - lastSeenSave > 5 * 60_000) {
     lastSeenSave = Date.now();

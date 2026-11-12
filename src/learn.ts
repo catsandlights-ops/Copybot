@@ -1,5 +1,5 @@
 /**
- * Learning: Copybot keeps score of the conditions every trade was bought in (coin age, liquidity,
+ * Learning: Remora keeps score of the conditions every trade was bought in (coin age, liquidity,
  * market cap, market mood, time of day, chain, where the buy came from) and learns which of them
  * have been losing money for YOU lately. A lesson blocks those buys for a week, then is retired:
  * the next trades of that kind are a fresh test, and only new results can bring the lesson back.
