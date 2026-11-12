@@ -10,7 +10,7 @@ import { downsample, since } from './series';
 import { userStopped, UI_FILE, SECURITY_HEADERS, engine, broadcast, HttpError, readTrades, readBody, send, applyChange, trialAndResume } from './server-core';
 import { scannerView } from './server-scanner';
 import { lastStatus, portfolioSeries } from './server-status';
-import { readGoLive } from './server-golive';
+import { paperLiveReport, readGoLive } from './server-golive';
 import { rampAdvice } from './golive';
 import { walletRecords } from './rules';
 import { localDayStart, phoneWalletId, phoneWallets, todayByChain } from './phone';
@@ -259,6 +259,7 @@ export function phoneState() {
     walletList: phoneWallets(engine.cfg.wallets, walletRecords(all, s.mode), s.shadow),
     today: todayByChain(all, s.mode, localDayStart(Date.now())),
     activity: s.activity,
+    paperLive: s.mode === 'live' ? paperLiveReport().text : null,
     ramp: s.mode === 'live' ? rampAdvice(rec, all.filter((t: any) => t.mode === 'live' && t.side === 'sell'), Date.now()) : null,
     connection: lastStatus && lastStatus.summary.level !== 'ok' ? lastStatus.summary : null,
     baseBalance: baseBalance(),

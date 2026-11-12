@@ -47,6 +47,9 @@ test('Base trades confirmed late are booked when they go through; dropped ones c
     assert.equal(state.positions[TOKEN].amountRaw, '1000');
     assert.equal(state.positions[TOKEN].costSol, 0.01);
     assert.equal(trades.length, 1);
+    // It carries its paper twin (the quote it was sent with, plus paper's fee estimate) for "paper vs live".
+    assert.equal(trades[0].paperRaw, '990');
+    assert.ok(trades[0].paperSol > 0.01, 'quote 0.001 ETH = 0.01 SOL, plus the paper fee');
     assert.match(logs.at(-1)!, /confirmed late/);
 
     // Sell: pending -> a second sell of the same coin waits instead of sending again.
@@ -311,6 +314,14 @@ test('Base tripwire: a live trade that pays nothing to your wallet stops Base; a
     };
     await t.buy(TOKEN, 18, q, 'wallet-a', undefined, base);
     assert.deepEqual(tripped, ['base'], 'no second alarm for an unreadable trade');
+    // A live trade that fails for good is logged: paper would have booked it.
+    Object.assign(base, { executeSwap: async () => { throw new Error('slippage exceeded'); } });
+    await assert.rejects(t.buy(TOKEN, 18, q, 'wallet-a', undefined, base), /slippage/);
+    const f = fs.readFileSync('data/live-failures.jsonl', 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.equal(f.length, 1);
+    assert.equal(f[0].chain, 'base');
+    assert.equal(f[0].side, 'buy');
+    assert.match(f[0].error, /slippage/);
   } finally {
     for (const [k, d] of Object.entries(saved)) Object.defineProperty(base, k, d);
     process.chdir(prev);

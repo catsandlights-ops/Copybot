@@ -176,6 +176,7 @@ function render() {
     <header><h1>Copybot</h1><span class="badge ${live ? 'live' : ''}">${live ? 'LIVE' : 'Paper'}</span><span class="badge ${S.running ? 'on' : ''}">${S.running ? `Running · ${ago(S.startedAt)}` : 'Stopped'}</span></header>
     ${offline ? '<div class="banner err">Can\'t reach Copybot. Is your computer on, Copybot open, and (away from home) Tailscale on, on both devices?</div>' : ''}
     ${S.connection ? `<div class="banner ${S.connection.level === 'bad' ? 'err' : ''}">${esc(S.connection.text)}. Check Settings → Connections on the computer.</div>` : ''}
+    ${S.paperLive ? `<div class="banner info"><b>Paper vs live:</b> ${esc(S.paperLive)}</div>` : ''}
     ${S.ramp ? `<div class="banner ${S.ramp.due ? '' : 'info'}">${esc(S.ramp.text)}${S.ramp.due ? ' Bring them back on the computer (Settings → Trading mode).' : ''}</div>` : ''}
     ${g.blocked ? `<div class="banner">New buys paused: ${esc(g.blocked)} <button class="sm" id="resume" style="margin-top:6px">Resume buying today</button></div>` : ''}
     <button class="wide ${S.running ? 'stop' : 'primary'}" id="runbtn" ${busy ? 'disabled' : ''}>${S.running ? 'Stop bot' : `Start bot${live ? ' (LIVE)' : ''}`}</button>

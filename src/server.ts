@@ -51,7 +51,7 @@ import { UI_FILE, STATIC, MODES, uiPrefs, TOKEN, SECURITY_HEADERS, updater, upda
 import { lastWalletReview, walletReviewBusy, aiCandidates, runWalletReview, lastScout, measuredCopyGap, startScout } from './server-scout';
 import { lastScannerTest, ENTRY_NAMES, scannerTestSummary, runScannerTest, scannerView } from './server-scanner';
 import { HEALTH_FILE, HealthRow, lastHealth, backtestSpec, loadBacktestData, resetPaper, learning, currentLearning, saveLearning, journal, learnRound, learningView, applyExits, lastTune, saveTune, runAutoTune, setLastTune, setLastHealth } from './server-learning';
-import { GOLIVE_FILE, goLiveTesting, readGoLive, goLivePlan, readinessReport, setGoLiveTesting } from './server-golive';
+import { GOLIVE_FILE, goLiveTesting, readGoLive, goLivePlan, readinessReport, setGoLiveTesting, paperLiveReport } from './server-golive';
 import { lastStatus, checkStatus, portfolioSeries, orderCandles } from './server-status';
 import { remoteCfg, pairing, remoteServer, remoteView, applyRemote } from './server-phone';
 export { engine, setUpdateState, TOKEN, userStopped } from './server-core';
@@ -199,6 +199,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   // ---------- the go-live assistant ----------
   if (route === 'GET /api/golive') return send(res, 200, await goLivePlan());
+  if (route === 'GET /api/paperlive') return send(res, 200, paperLiveReport());
   if (route === 'GET /api/golive/ramp') {
     const rec = readGoLive();
     return send(res, 200, { record: rec, ramp: rampAdvice(rec, readTrades(1e9).filter((t: any) => t.mode === 'live' && t.side === 'sell'), Date.now()) });

@@ -1,4 +1,6 @@
 /** The "Ready for live?" report and the go-live assistant. */
+import { paperVsLive } from './paperlive';
+import { LIVE_FAILURES } from './trader';
 import fs from 'node:fs';
 import { ORDER_SOURCE, SCANNER_SOURCE } from './config';
 import { chainOf } from './chains';
@@ -78,3 +80,20 @@ export function readinessReport() {
 }
 
 export const setGoLiveTesting = (v: boolean) => (goLiveTesting = v);
+
+/** Paper vs live: every live trade against what paper would have booked, plus failed live trades. */
+export function paperLiveReport() {
+  let failures: { t: number; chain?: string; side: string }[] = [];
+  try {
+    failures = fs.readFileSync(LIVE_FAILURES, 'utf8').split('\n').filter(Boolean).slice(-1000).flatMap((l) => {
+      try {
+        return [JSON.parse(l)];
+      } catch {
+        return [];
+      }
+    });
+  } catch {
+    /* none yet */
+  }
+  return paperVsLive(readTrades(1e9), failures);
+}

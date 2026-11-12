@@ -253,7 +253,12 @@ export const base: ChainAdapter = {
     if (!tx.status) throw new Error('the transaction was reverted');
     let s = decodeEvmSwap(tx, owner, WETH, STABLES);
     if (!s) s = decodeEvmSwap(tx, owner, WETH, STABLES, await baseRpc.nativeDelta(owner, tx.blockNumber, tx.fee ?? 0n));
-    return s && s.quote === 'native' ? { tokenRaw: s.tokenRaw, native: Number(s.quoteRaw) / 1e18 } : null;
+    if (!s || s.quote !== 'native') return null;
+    // The network fee you paid for it counts too (Solana's fills already include theirs): a buy cost
+    // that much more, a sell brought in that much less.
+    const fee = tx.from.toLowerCase() === owner.toLowerCase() ? Number(tx.fee ?? 0n) / 1e18 : 0;
+    const eth = Number(s.quoteRaw) / 1e18;
+    return { tokenRaw: s.tokenRaw, native: s.side === 'buy' ? eth + fee : Math.max(0, eth - fee) };
   },
   async settleLate(hash) {
     const { lateReceipt } = await import('./base-live');

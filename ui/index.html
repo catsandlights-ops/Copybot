@@ -1048,6 +1048,17 @@ function chainShares() {
     return `${c === 'base' ? 'Base' : 'Solana'} ${mine.length}${pc[c].maxPositions > 0 ? `/${pc[c].maxPositions}` : ''}${pc[c].maxSol > 0 ? ` · ${solIn.toFixed(2)}/${pc[c].maxSol} SOL` : ''}`;
   }).join(' &nbsp;·&nbsp; ')}</div>`;
 }
+/** Live mode: how real trades compare with what paper mode would have booked. */
+function loadPaperLive() {
+  api('GET', '/api/paperlive').then((r) => {
+    const el = $('#pvl-card'); if (!el) return;
+    const pct = (p) => (p == null ? '—' : `${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(1)}%`);
+    const row = (c) => `<tr><td><b>${c.chain === 'base' ? 'Base' : 'Solana'}</b></td><td class="r num">${c.trades}</td><td class="r num ${c.buyWorsePct > 0.5 ? 'neg' : ''}">${pct(c.buyWorsePct)}</td><td class="r num ${c.sellWorsePct > 0.5 ? 'neg' : ''}">${pct(c.sellWorsePct)}</td><td class="r num ${c.failed ? 'neg' : ''}">${c.failed}</td><td class="r num ${cls(-c.gapSol)}">${c.gapSol >= 0 ? '−' : '+'}${Math.abs(c.gapSol).toFixed(4)} SOL</td></tr>`;
+    el.innerHTML = `<div class="card-h"><div><h2>Paper vs live</h2><div class="muted" style="font-size:12.5px">Every live trade compared with what paper mode would have booked for it (the same price quote, with paper's fee estimate). It tells you how far to trust paper results.</div></div></div>
+      <div class="card-b stack"><div class="banner ${r.total && r.total.trades >= 10 && (r.total.gapPct ?? 0) > 4 ? 'warn' : 'info'}" style="margin:0"><div>${esc(r.text)}</div></div>
+      ${r.chains.length ? `<div class="tbl-wrap"><table><thead><tr><th>Chain</th><th class="r">Live trades</th><th class="r" title="How much more a buy cost than paper's price">Buys cost more</th><th class="r" title="How much less a sell brought in than paper's price">Sells got less</th><th class="r" title="Live trades that failed; paper would have booked them">Failed</th><th class="r" title="What live trading cost you compared with paper">vs paper</th></tr></thead><tbody>${r.chains.map(row).join('')}</tbody></table></div>` : ''}</div>`;
+  }).catch(() => {});
+}
 function renderDashboard(el) {
   const st = S.status, cfg = S.config;
   const n = st.positions.length;
@@ -1091,11 +1102,13 @@ function renderDashboard(el) {
     ${pnlChart()}
     <div class="grid two">
       <div class="card"><div class="card-h"><h2>Open positions</h2><span class="spacer"></span>${n ? '<button class="btn sm ghost" id="refresh-pos">Refresh prices</button>' : ''}${n || S.status.running ? `<button class="btn sm stop" id="panic-btn" ${S.status.panicking ? 'disabled' : ''} title="Sell every open position and stop the bot">${S.status.panicking ? 'Selling everything…' : 'Sell everything &amp; stop'}</button>` : ''}</div>${positions}</div>
+      ${cfg.mode === 'live' ? '<div class="card" id="pvl-card"></div>' : ''}
       <div class="card"><div class="card-h"><h2>Live activity</h2><span class="spacer"></span><span class="muted" style="font-size:12px">${st.running ? 'watching…' : ''}</span></div>
         <div class="feed" id="feed">${feedHtml()}</div></div>
     </div>`;
   el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
   el.querySelectorAll('[data-writeoff]').forEach((b) => (b.onclick = () => writeOffPosition(b.dataset.writeoff)));
+  if (cfg.mode === 'live') loadPaperLive();
   el.querySelectorAll('[data-pchart]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); openPositionChart(a.dataset.pchart); }));
   bindPortfolio();
   const pr = $('#paper-reset'); if (pr) pr.onclick = (e) => { e.preventDefault(); resetPaper(); };

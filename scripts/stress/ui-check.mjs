@@ -115,6 +115,11 @@ else {
   if (cfg.mode !== 'live') errors.push(`after the switch the mode is ${cfg.mode}`);
   if (!(cfg.buy?.fixedSol <= 0.25)) errors.push(`starter limits not applied (per trade ${cfg.buy?.fixedSol})`);
   if (!fs.existsSync(path.join(dir, 'data/golive.json'))) errors.push('the normal limits were not saved');
+  // Live now: the Dashboard shows "Paper vs live".
+  await page.click('.nav[data-page="dashboard"]');
+  await page.waitForTimeout(1500);
+  const pvl = await page.textContent('#pvl-card').catch(() => '');
+  if (!/Paper vs live/.test(pvl) || !/No live trades yet/.test(pvl)) errors.push(`no "Paper vs live" card in live mode (${pvl.slice(0, 80)})`);
   await page.evaluate(() => window.openSettings?.('#mode-card'));
   await page.waitForTimeout(1200);
   if (!(await page.$('#gl-restore'))) errors.push('no "bring back my normal limits" button in live mode');

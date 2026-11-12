@@ -28,12 +28,20 @@ export type Trade = {
   gapPct?: number; // copy gap vs the copied wallet's own fill (positive = we did worse)
   lagSec?: number; // seconds between their trade and ours
   entry?: import('./learn').Entry; // sells: the conditions the position was bought in (for learning)
+  /** Live only: what paper mode would have booked for this trade (the quote just before sending, with paper's fee), for "paper vs live". */
+  paperSol?: number;
+  paperRaw?: string;
 };
+
+/** Live trades that failed for good (paper would have booked them), for "paper vs live". */
+export const LIVE_FAILURES = 'data/live-failures.jsonl';
+/** A live trade's paper twin, kept on its record. */
+const twin = (r: Fill) => (r.sig !== 'PAPER' && r.paper ? { paperSol: Math.round(r.paper.sol * 1e9) / 1e9, paperRaw: r.paper.tokenRaw.toString() } : {});
 
 /** The copied wallet's own fill, to measure how much copying late cost us. */
 export type CopyRef = { theirSol: number; theirRaw: bigint; at: number | null };
 
-type Fill = { sig: string; tokenRaw: bigint; sol: number };
+type Fill = { sig: string; tokenRaw: bigint; sol: number; paper?: { sol: number; tokenRaw: bigint } };
 /** What a live trade needs to be booked if the app stops before it's recorded. */
 type Trip = { mint: string; side: 'buy' | 'sell'; decimals: number; source?: string; reason?: string };
 export type InFlight = Trip & { sig: string; chain: string; quoted: { tokenRaw: string; sol: number }; at: number };
@@ -223,11 +231,10 @@ export class Trader {
     // Amounts in the chain's own coin, converted to SOL (Copybot's books are in SOL).
     const native = Number(toToken ? q.inAmount : q.outAmount) / 10 ** chain.meta.native.decimals;
     const quoted = { tokenRaw: BigInt(toToken ? q.outAmount : q.inAmount), sol: await chain.nativeToSol(native) };
-    if (!this.live) {
-      // Paper trades pay an estimated network fee too, so paper results aren't rosier than live ones.
-      const fee = await this.paperFeeSol(chain);
-      return { sig: 'PAPER', tokenRaw: quoted.tokenRaw, sol: toToken ? quoted.sol + fee : Math.max(0, quoted.sol - fee) };
-    }
+    // Paper trades pay an estimated network fee too, so paper results aren't rosier than live ones.
+    const fee = await this.paperFeeSol(chain);
+    const paper = { tokenRaw: quoted.tokenRaw, sol: toToken ? quoted.sol + fee : Math.max(0, quoted.sol - fee) };
+    if (!this.live) return { sig: 'PAPER', ...paper };
     if (!chain.liveTrading) throw new Error(`Live trading on ${chain.meta.name} is off (paper mode only).`);
     const kp = this.kp!;
     const x = this.cfg.execution;
@@ -242,20 +249,24 @@ export class Trader {
       sig = await chain.executeSwap({ conn: this.conn, kp, cfg: this.cfg }, q, { dynamicSlippage: x.dynamicSlippage, mevProtect: x.mevProtect, onNote: (m) => this.hooks.log(m, 'warn'), onSent });
     } catch (e) {
       const hash = (e as { pendingHash?: string }).pendingHash;
-      if (hash && late && chain.settleLate) this.watchLate(hash, chain, quoted, late);
-      else if (sent) this.clearInflight(sent); // failed for good: nothing to book
+      if (hash && late && chain.settleLate) this.watchLate(hash, chain, quoted, late, paper);
+      else {
+        if (sent) this.clearInflight(sent); // failed for good: nothing to book
+        // Paper would have booked this one: count it for "paper vs live".
+        if (late) appendJsonl(LIVE_FAILURES, { t: Date.now(), chain: chain.meta.id, side: late.side, mint: late.mint, error: String((e as Error)?.message ?? e).slice(0, 160) });
+      }
       throw e;
     }
-    return this.fill(sig, chain, quoted);
+    return { ...(await this.fill(sig, chain, quoted)), paper };
   }
 
   /** Follow a trade that was sent but not confirmed in time, and book it if it goes through. */
-  private watchLate(hash: string, chain: ChainAdapter, quoted: { tokenRaw: bigint; sol: number }, late: { onFill: (r: Fill) => void } & Trip) {
+  private watchLate(hash: string, chain: ChainAdapter, quoted: { tokenRaw: bigint; sol: number }, late: { onFill: (r: Fill) => void } & Trip, paper?: Fill['paper']) {
     if (late.side === 'sell') this.lateSells.add(late.mint);
     void chain.settleLate!(hash)
       .then(async (ok) => {
         if (!ok) return this.hooks.log(`The ${late.side} of ${short(late.mint)} (${short(hash)}) never went through, so nothing changed.`, 'warn');
-        late.onFill(await this.fill(hash, chain, quoted));
+        late.onFill({ ...(await this.fill(hash, chain, quoted)), paper });
       })
       .catch((e) => this.hooks.log(`Couldn't follow up the ${late.side} of ${short(late.mint)} (${short(hash)}): ${(e as Error).message}. Check it on ${chain.meta.name}'s explorer.`, 'warn'))
       .finally(() => {
@@ -304,7 +315,7 @@ export class Trader {
       if (!p.sources.includes(source)) p.sources.push(source);
       this.state.positions[mint] = p;
       const g = late ? {} : this.gap('buy', ref, r.sol, r.tokenRaw);
-      this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'buy', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source, sig: r.sig, ...g });
+      this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'buy', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), source, sig: r.sig, ...g, ...twin(r) });
       const note = g.gapPct !== undefined ? `, ${g.gapPct >= 0 ? `${g.gapPct.toFixed(1)}% above` : `${(-g.gapPct).toFixed(1)}% below`} their price${g.lagSec !== undefined ? `, ${g.lagSec}s after them` : ''}` : '';
       this.hooks.log(`BUY ${short(mint)} for ${r.sol.toFixed(4)} SOL (${source === SCANNER_SOURCE ? 'market scanner' : source === ORDER_SOURCE ? 'your order' : `copying ${this.hooks.name(source)}${note}`})${late ? ' — confirmed late, now in your positions' : ''}`, 'buy');
     };
@@ -348,7 +359,7 @@ export class Trader {
         pos.costSol -= costPortion;
         if ((all && !late) || BigInt(pos.amountRaw) === 0n) delete this.state.positions[mint];
       }
-      this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sources: [...p.sources], ...(p.entry ? { entry: p.entry } : {}), sig: r.sig, ...(late ? {} : this.gap('sell', ref, r.sol, r.tokenRaw)) });
+      this.record({ t: Date.now(), chain: chain.meta.id, mode: this.cfg.mode, side: 'sell', mint, sol: r.sol, tokenRaw: r.tokenRaw.toString(), pnl, reason, sources: [...p.sources], ...(p.entry ? { entry: p.entry } : {}), sig: r.sig, ...(late ? {} : this.gap('sell', ref, r.sol, r.tokenRaw)), ...twin(r) });
       this.hooks.log(`SELL ${short(mint)} ${(soldFrac * 100).toFixed(0)}% for ${r.sol.toFixed(4)} SOL, PnL ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} (${reason})${late ? ' — confirmed late' : ''}`, 'sell');
       return pnl;
     };
