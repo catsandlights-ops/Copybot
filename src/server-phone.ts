@@ -7,7 +7,7 @@ import * as remote from './remote';
 import { describeOrder } from './orders';
 import { chainOf } from './chains';
 import { downsample, since } from './series';
-import { UI_FILE, SECURITY_HEADERS, engine, broadcast, HttpError, readTrades, readBody, send, applyChange, trialAndResume } from './server-core';
+import { userStopped, UI_FILE, SECURITY_HEADERS, engine, broadcast, HttpError, readTrades, readBody, send, applyChange, trialAndResume } from './server-core';
 import { scannerView } from './server-scanner';
 import { lastStatus, portfolioSeries } from './server-status';
 import { readGoLive } from './server-golive';
@@ -135,6 +135,7 @@ export async function handleRemote(req: http.IncomingMessage, res: http.ServerRe
   }
   if (route === 'POST /r/stop') {
     await engine.stop();
+    userStopped();
     from('stopped the bot');
     return send(res, 200, phoneState());
   }

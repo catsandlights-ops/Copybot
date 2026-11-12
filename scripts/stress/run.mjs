@@ -51,7 +51,7 @@ function startApp() {
   return new Promise((resolve) => {
     starts++;
     token = null;
-    const child = spawn(process.execPath, [path.join(root, 'dist/server.mjs')], {
+    const child = spawn(process.execPath, [process.env.STRESS_APP || path.join(root, 'dist/server.mjs')], {
       cwd: dir,
       env: { ...process.env, NO_OPEN: '1', PORT: String(port), RPC_URL: `http://127.0.0.1:${worldPort}/rpc`, BASE_RPC_URL: `http://127.0.0.1:${worldPort}/evm`, STRESS_WORLD_PORT: String(worldPort), NODE_OPTIONS: `--import ${path.join(here, 'intercept.mjs')}` },
       stdio: ['ignore', 'pipe', 'pipe'],

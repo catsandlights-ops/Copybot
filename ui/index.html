@@ -2859,6 +2859,12 @@ function renderSettings(el) {
             <div class="row" style="gap:10px"><button class="btn sm ghost" id="wz-again">Run setup again</button><div class="seg" id="look-seg">${[['system', 'Follow my computer'], ['light', 'Light'], ['dark', 'Dark']].map(([m, l]) => `<button data-mode-pick="${m}" class="${S.ui.mode === m ? 'on' : ''}" aria-pressed="${S.ui.mode === m}">${l}</button>`).join('')}</div></div></div>
         </div></div>
 
+      <div class="card" data-tab="app"><div class="card-h"><div><h2>Running all day</h2><div class="muted" style="font-size:12.5px">For leaving Copybot on: it keeps the computer awake while the bot runs.</div></div></div>
+        <div class="card-b stack">
+          <label class="row" style="gap:10px;align-items:flex-start"><label class="switch"><input type="checkbox" id="pref-resume" ${S.ui.resumeBot !== false ? 'checked' : ''}><i></i></label><span><b>Start the bot again after an unexpected stop</b><br><span class="muted" style="font-size:12.5px">If Copybot closes while the bot is running (a crash, a Windows restart, a power cut), the bot starts again when Copybot opens, in the same mode. Not after you stop it yourself.</span></span></label>
+          <label class="row" style="gap:10px;align-items:flex-start"><label class="switch"><input type="checkbox" id="pref-login" ${S.ui.startWithWindows ? 'checked' : ''} ${S.app.desktop === false ? 'disabled' : ''}><i></i></label><span><b>Start Copybot with Windows</b><br><span class="muted" style="font-size:12.5px">Opens Copybot (minimized) when you log in. Together with the switch above, the bot is back after a restart without you doing anything.${S.app.desktop === false ? ' Desktop app only.' : ''}</span></span></label>
+        </div></div>
+
       <div class="card" data-tab="app"><div class="card-h"><div><h2>App updates</h2><div class="muted" style="font-size:12.5px">${S.app.version ? `You have Copybot v${esc(S.app.version)}. ` : ''}Updates download automatically and only install when you restart. Each one is checked against Copybot's security signature first.</div></div></div>
         <div class="card-b row" style="justify-content:space-between"><span id="upd-text">${updateText()}</span>
           <span class="row">${S.app.update.state === 'ready' ? '<button class="btn primary" id="upd-install2">Restart &amp; update</button>' : ''}<button class="btn" id="upd-check" ${S.app.update.state === 'disabled' ? 'disabled' : ''}>Check for updates</button></span></div></div>
@@ -2866,7 +2872,7 @@ function renderSettings(el) {
       <div class="card" id="netstatus-card" data-tab="app">${netStatusHtml()}</div>
 
       <div class="card" data-tab="app"><div class="card-h"><div><h2>Backup and restore</h2><div class="muted" style="font-size:12.5px">One file with your settings, wallets, trade history, positions, orders, scanner records and phone pairings. Use it to keep your history safe, or to move Copybot to another computer. <b>Your private key and API keys are never included</b>: re-enter them after restoring.</div></div></div>
-        <div class="card-b row"><button class="btn primary" id="bk-save">Download backup</button><label class="btn" style="cursor:pointer">Restore from a backup…<input type="file" id="bk-file" accept=".json,application/json" hidden></label><span class="muted" id="bk-msg" style="font-size:13px"></span></div></div>
+        <div class="card-b row"><button class="btn primary" id="bk-save">Download backup</button><label class="btn" style="cursor:pointer">Restore from a backup…<input type="file" id="bk-file" accept=".json,application/json" hidden></label><span class="muted" id="bk-msg" style="font-size:13px"></span></div><div class="card-b muted" id="bk-auto" style="padding-top:0;font-size:13px"></div></div>
 
       <div class="card" id="remote-card" data-tab="connections">${remoteCardHtml()}</div>
 
@@ -2957,6 +2963,9 @@ function renderSettings(el) {
   applySettingsView();
   $('#s-reset').onclick = () => { S.dirty = false; render(); };
   $('#upd-check').onclick = () => act(() => api('POST', '/api/update/check'));
+  const pr = $('#pref-resume'); if (pr) pr.onchange = async () => { const r = await act(() => api('PUT', '/api/ui', { resumeBot: pr.checked }), pr.checked ? 'The bot will start again after an unexpected stop' : "The bot won't start again by itself"); if (r) S.ui = r; };
+  const pl = $('#pref-login'); if (pl) pl.onchange = async () => { const r = await act(() => api('PUT', '/api/ui', { startWithWindows: pl.checked }), pl.checked ? 'Copybot will open when you log in' : "Copybot won't open at login"); if (r) S.ui = r; };
+  loadAutoBackups();
   el.querySelectorAll('[data-mode-pick]').forEach((b) => (b.onclick = () => b.dataset.modePick !== S.ui.mode && setAppearance(b.dataset.modePick)));
   const ui2 = $('#upd-install2'); if (ui2) ui2.onclick = installUpdate;
   $('#s-save').onclick = saveSettings;
@@ -3035,6 +3044,14 @@ function readyHtml() {
 }
 function bindReady() { const b = $('#ready-refresh'); if (b) b.onclick = () => { S.ready = null; const el = $('#ready-card'); el.innerHTML = readyHtml(); }; }
 
+/** The daily automatic backups: when the last one was made, and a button to open the folder. */
+function loadAutoBackups() {
+  api('GET', '/api/backups').then((r) => {
+    const el = $('#bk-auto'); if (!el) return;
+    el.innerHTML = `<b>Automatic backups:</b> ${r.list.length ? `one a day, the last ${r.list.length} kept (newest ${esc(r.list[0].day)}, ${(r.list[0].size / 1048576).toFixed(1)} MB)` : 'the first one is made a minute after Copybot starts'}. Folder: <span class="mono">${esc(r.dir)}</span>${r.canOpen ? ' <a href="#" id="bk-open">Open</a>' : ''}. To restore one, use <i>Restore from a backup…</i>.`;
+    const o = $('#bk-open'); if (o) o.onclick = (e) => { e.preventDefault(); api('POST', '/api/backups/open').catch(() => {}); };
+  }).catch(() => {});
+}
 function bindBackup() {
   const save = $('#bk-save'); if (save) save.onclick = async () => {
     try {

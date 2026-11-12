@@ -1,4 +1,6 @@
 /** Shared by the control panel's parts: the engine, live updates to the page, background jobs, HTTP helpers. */
+import { dailyBackup, ErrorBurst, readRunState, saveRunState, shouldResume, trimOldCopies } from './upkeep';
+import { buildBackup } from './backup';
 import { writeAtomic } from './util';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -23,15 +25,16 @@ export const STATIC: Record<string, [string, string]> = {
 
 // ---------- display preferences (light/dark). Kept apart from config.json so changing them never restarts the bot ----------
 export const MODES = ['system', 'light', 'dark'] as const;
-export type UiPrefs = { mode: (typeof MODES)[number]; setupDone: boolean };
+/** resumeBot: start the bot again after an unexpected stop. startWithWindows: open Copybot when you log in (desktop app). */
+export type UiPrefs = { mode: (typeof MODES)[number]; setupDone: boolean; resumeBot: boolean; startWithWindows: boolean };
 export function loadUiPrefs(): UiPrefs {
   // Existing installs (a config already there) skip the first-run setup.
   const setupDefault = fs.existsSync('config.json');
   try {
     const j = JSON.parse(fs.readFileSync('data/ui.json', 'utf8')); // older versions stored a "theme" instead of "mode"
-    return { mode: MODES.includes(j.mode) ? j.mode : 'system', setupDone: typeof j.setupDone === 'boolean' ? j.setupDone : setupDefault };
+    return { mode: MODES.includes(j.mode) ? j.mode : 'system', setupDone: typeof j.setupDone === 'boolean' ? j.setupDone : setupDefault, resumeBot: j.resumeBot !== false, startWithWindows: j.startWithWindows === true };
   } catch {
-    return { mode: 'system', setupDone: setupDefault };
+    return { mode: 'system', setupDone: setupDefault, resumeBot: true, startWithWindows: false };
   }
 }
 export let uiPrefs = loadUiPrefs();
@@ -321,3 +324,64 @@ export async function solPerUnit(mint: string, raw: bigint, slippageBps: number)
 
 /** For the routes: the module's own variables can only be changed from here. */
 export const setUiPrefs = (v: typeof uiPrefs) => (uiPrefs = v);
+
+// ---------- running all day: resume after unexpected stops, survive stray errors, daily backups ----------
+/** The bot is running: remember it (and in which mode), so an unexpected stop can be recovered from. */
+let savedRun = readRunState();
+engine.on('status', () => {
+  if (engine.running && (!savedRun?.running || savedRun.mode !== engine.cfg.mode)) {
+    saveRunState(true, engine.cfg.mode);
+    savedRun = readRunState();
+  }
+});
+/** You stopped the bot (Stop, Sell everything, the phone, Stop and quit): it stays stopped next time too. */
+export function userStopped() {
+  saveRunState(false, engine.cfg.mode);
+  savedRun = readRunState();
+}
+engine.on('guard', (msg: string) => {
+  if (/Selling everything and stopping/.test(msg)) userStopped();
+});
+/** At startup: start the bot again if it was running when Copybot closed without you stopping it. */
+export function resumeIfItWasRunning() {
+  if (!shouldResume(readRunState(), engine.cfg.mode, uiPrefs.resumeBot)) return;
+  engine.log(`Copybot closed while the bot was running (a crash, a restart or a power cut), so the bot is starting again (${engine.cfg.mode} mode). Turn this off in Settings → App.`, 'system');
+  engine.start().catch((e) => engine.log(`Could not start the bot again: ${e.message}`, 'error'));
+}
+
+// One unexpected error shouldn't take the whole app down; a flood of them means something is badly wrong.
+const burst = new ErrorBurst(20, 60_000);
+let burstStopping = false;
+function unexpected(e: unknown) {
+  const msg = e instanceof Error ? e.message : String(e);
+  console.error('unexpected error:', e);
+  try {
+    engine.log(`Unexpected error (Copybot kept running): ${msg}`, 'error');
+  } catch {
+    /* logging must never throw here */
+  }
+  if (burst.hit() && engine.running && !burstStopping) {
+    burstStopping = true;
+    engine.log('Too many unexpected errors in a minute: the bot is stopping to be safe. Open positions stay open; start it again when the problem is fixed.', 'error');
+    engine
+      .stop()
+      .then(userStopped)
+      .catch(() => {})
+      .finally(() => (burstStopping = false));
+  }
+}
+if (!process.listenerCount('uncaughtException')) process.on('uncaughtException', unexpected);
+if (!process.listenerCount('unhandledRejection')) process.on('unhandledRejection', unexpected);
+
+/** Once a day: a backup of settings, wallets and history (never keys), the last 7 kept; old copies trimmed. */
+export function upkeep() {
+  try {
+    const wrote = dailyBackup(() => buildBackup(process.env.COPYBOT_VERSION ?? null));
+    if (wrote) engine.log(`Daily backup saved (${wrote}). The last 7 are kept.`, 'system');
+    trimOldCopies();
+  } catch (e) {
+    engine.log(`Daily backup failed: ${(e as Error).message}`, 'warn');
+  }
+}
+setTimeout(upkeep, 60_000).unref();
+setInterval(upkeep, 3_600_000).unref();

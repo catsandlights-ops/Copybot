@@ -773,11 +773,13 @@ export class BotEngine extends EventEmitter {
   private rememberRug(mint: string, why: string) {
     if (!this.cfg.safety.rugMemory) return;
     if (!this.rugs.mints.includes(mint)) this.rugs.mints.push(mint);
+    if (this.rugs.mints.length > 5000) this.rugs.mints = this.rugs.mints.slice(-5000); // the newest 5,000 are plenty
     this.saveRugs();
     (this.chain.tokenCreator ? this.chain.tokenCreator(this.ctx(), mint) : Promise.resolve(null))
       .then((c) => {
         if (c && !this.rugs.creators.includes(c)) {
           this.rugs.creators.push(c);
+          if (this.rugs.creators.length > 5000) this.rugs.creators = this.rugs.creators.slice(-5000);
           this.saveRugs();
           this.log(`Rug memory: won't buy ${short(mint)} again, nor other coins made by ${short(c)} (${why}).`, 'system');
         } else this.log(`Rug memory: won't buy ${short(mint)} again (${why}).`, 'system');

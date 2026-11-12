@@ -9,6 +9,7 @@
  */
 
 import { writeAtomic } from './util';
+import { BACKUP_DIR, listBackups } from './upkeep';
 import http from 'node:http';
 import { Connection } from '@solana/web3.js';
 import fs from 'node:fs';
@@ -46,14 +47,14 @@ import { tradesCsv } from './csv';
 import * as alerts from './alerts';
 import { restartShadow, SHADOW } from './shadow';
 import { pickTokens, pumpBuyers } from './scout';
-import { UI_FILE, STATIC, MODES, uiPrefs, TOKEN, SECURITY_HEADERS, updater, updateState, justUpdated, engine, clients, broadcast, jobs, addJob, HttpError, readTrades, connectionInfo, isTokenAddress, WATCHLIST, readWatchlist, readBody, send, addressList, tokenOk, applyChange, trialAndResume, setUiPrefs } from './server-core';
+import { UI_FILE, STATIC, MODES, uiPrefs, TOKEN, SECURITY_HEADERS, updater, updateState, justUpdated, engine, clients, broadcast, jobs, addJob, HttpError, readTrades, connectionInfo, isTokenAddress, WATCHLIST, readWatchlist, readBody, send, addressList, tokenOk, applyChange, trialAndResume, setUiPrefs, userStopped, resumeIfItWasRunning } from './server-core';
 import { lastWalletReview, walletReviewBusy, aiCandidates, runWalletReview, lastScout, measuredCopyGap, startScout } from './server-scout';
 import { lastScannerTest, ENTRY_NAMES, scannerTestSummary, runScannerTest, scannerView } from './server-scanner';
 import { HEALTH_FILE, HealthRow, lastHealth, backtestSpec, loadBacktestData, resetPaper, learning, currentLearning, saveLearning, journal, learnRound, learningView, applyExits, lastTune, saveTune, runAutoTune, setLastTune, setLastHealth } from './server-learning';
 import { GOLIVE_FILE, goLiveTesting, readGoLive, goLivePlan, readinessReport, setGoLiveTesting } from './server-golive';
 import { lastStatus, checkStatus, portfolioSeries, orderCandles } from './server-status';
 import { remoteCfg, pairing, remoteServer, remoteView, applyRemote } from './server-phone';
-export { engine, setUpdateState, TOKEN } from './server-core';
+export { engine, setUpdateState, TOKEN, userStopped } from './server-core';
 
 const PORT = Number(process.env.PORT || 4777);
 const HOST = '127.0.0.1';
@@ -261,6 +262,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/json' });
     return res.end(JSON.stringify(b));
   }
+  if (route === 'GET /api/backups') {
+    return send(res, 200, { dir: path.resolve(BACKUP_DIR), list: listBackups(), canOpen: !!(globalThis as any).__copybotDesktop?.openFolder });
+  }
+  if (route === 'POST /api/backups/open') {
+    const open = (globalThis as any).__copybotDesktop?.openFolder;
+    if (!open) throw new HttpError(400, 'Only in the desktop app.');
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    open(BACKUP_DIR);
+    return send(res, 200, { ok: true });
+  }
   if (route === 'POST /api/backup/restore') {
     if (engine.running) throw new HttpError(409, 'Stop the bot first, then restore.');
     const c = checkBackup(await readBody(req, 64_000_000));
@@ -286,7 +297,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       netstatus: lastStatus,
       strategies: STRATEGIES,
       health: lastHealth,
-      app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated },
+      app: { version: process.env.COPYBOT_VERSION ?? null, update: updateState, justUpdated, desktop: !!process.env.COPYBOT_DESKTOP },
       chain: { id: engine.chain.meta.id, name: engine.chain.meta.name, symbol: engine.chain.meta.native.symbol, usd: await engine.chain.nativeUsd().catch(() => null) },
       ui: uiPrefs,
     });
@@ -455,6 +466,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (route === 'POST /api/stop') {
     await engine.stop();
+    userStopped();
     return send(res, 200, engine.snapshot());
   }
 
@@ -654,7 +666,10 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const b = await readBody(req);
     if (b.mode !== undefined && !MODES.includes(b.mode)) throw new HttpError(400, 'Unknown appearance');
     if (b.setupDone !== undefined && typeof b.setupDone !== 'boolean') throw new HttpError(400, 'Invalid setupDone');
-    setUiPrefs({ mode: b.mode ?? uiPrefs.mode, setupDone: b.setupDone ?? uiPrefs.setupDone });
+    for (const k of ['resumeBot', 'startWithWindows'] as const) if (b[k] !== undefined && typeof b[k] !== 'boolean') throw new HttpError(400, `Invalid ${k}`);
+    setUiPrefs({ mode: b.mode ?? uiPrefs.mode, setupDone: b.setupDone ?? uiPrefs.setupDone, resumeBot: b.resumeBot ?? uiPrefs.resumeBot, startWithWindows: b.startWithWindows ?? uiPrefs.startWithWindows });
+    // The desktop app opens itself at login (Windows: a startup entry); the browser version can't.
+    if (b.startWithWindows !== undefined) (globalThis as any).__copybotDesktop?.setStartAtLogin?.(uiPrefs.startWithWindows);
     fs.mkdirSync('data', { recursive: true });
     writeAtomic('data/ui.json', JSON.stringify(uiPrefs));
     broadcast('ui', uiPrefs);
@@ -1029,6 +1044,7 @@ export function startServer(port = PORT, openBrowser = true): Promise<number> {
         const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
         exec(cmd, () => {});
       }
+      resumeIfItWasRunning();
       resolve(actual);
     });
   });
@@ -1039,6 +1055,7 @@ if (!process.env.COPYBOT_DESKTOP) {
   startServer(PORT, !process.env.NO_OPEN);
   process.on('SIGINT', async () => {
     await engine.stop();
+    userStopped(); // you quit it on purpose
     process.exit(0);
   });
 }

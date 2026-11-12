@@ -18,6 +18,8 @@ let engine = null;
 let appUrl = '';
 let sleepBlocker = null;
 let quitting = false;
+let serverMod = null;
+const startedAtLogin = process.argv.includes('--minimized');
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -64,8 +66,20 @@ async function boot() {
   process.env.COPYBOT_DESKTOP = '1';
   process.env.COPYBOT_VERSION = app.getVersion();
   process.env.COPYBOT_UI = path.join(BASE, 'ui', 'index.html');
+  // Settings → App → "Start with Windows": a login entry that opens Copybot minimized.
+  globalThis.__copybotDesktop = {
+    setStartAtLogin: (on) => {
+      try {
+        app.setLoginItemSettings({ openAtLogin: !!on, args: ['--minimized'] });
+      } catch {
+        /* not supported here */
+      }
+    },
+    openFolder: (p) => shell.openPath(path.resolve(dataDir, p)),
+  };
   const server = await import(pathToFileURL(path.join(BASE, 'dist', 'server.mjs')).href);
   engine = server.engine;
+  serverMod = server;
   const port = await server.startServer(0, false);
   appUrl = `http://127.0.0.1:${port}`;
 
@@ -131,7 +145,12 @@ function createWindow(startUrl) {
     icon: path.join(BASE, 'build', 'icon.png'),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, webviewTag: false, spellcheck: false },
   });
-  win.once('ready-to-show', () => win.show());
+  // Opened by Windows at login: start minimized to the taskbar instead of popping up.
+  win.once('ready-to-show', () => {
+    if (!startedAtLogin) return win.show();
+    win.showInactive();
+    win.minimize();
+  });
   win.loadURL(startUrl);
 
   // Links open in the normal browser (known sites only); the window never navigates away.
@@ -160,6 +179,7 @@ function createWindow(startUrl) {
     if (response === 1) {
       quitting = true;
       await engine.stop();
+      serverMod?.userStopped?.(); // you stopped it: don't start it again by itself next time
       app.quit();
     }
   });
