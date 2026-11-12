@@ -27,8 +27,15 @@ export const PHONE_HEADERS = {
   ...SECURITY_HEADERS,
   'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: 'self'; manifest-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
 };
-export const PHONE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#7c3aed"/><path d="M18 40c8-20 22-22 30-24-2 8-4 22-24 30-3 1-6-2-6-6z" fill="#a8e07a"/><path d="M22 44l14-14" stroke="#3f7a3a" stroke-width="4" stroke-linecap="round"/></svg>`;
-export const PHONE_MANIFEST = JSON.stringify({ name: 'Remora', short_name: 'Remora', start_url: '/', display: 'standalone', background_color: '#0f0b1e', theme_color: '#7c3aed', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] });
+/** The home-screen icon: the pixel remora (ui/icon.svg, drawn by scripts/make-icon.py). */
+export const PHONE_ICON = (() => {
+  try {
+    return fs.readFileSync(path.join(path.dirname(UI_FILE), 'icon.svg'), 'utf8');
+  } catch {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#261a54"/></svg>';
+  }
+})();
+export const PHONE_MANIFEST = JSON.stringify({ name: 'Remora', short_name: 'Remora', start_url: '/', display: 'standalone', background_color: '#0f0b1e', theme_color: '#261a54', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] });
 
 export function remoteView() {
   return {
