@@ -248,7 +248,9 @@ export const base: ChainAdapter = {
   },
   async readFill(hash, owner) {
     const tx = await baseRpc.fullTx(hash, new Map());
-    if (!tx) return null;
+    // Not found yet, or reverted: "couldn't read" (null would mean "went through, nothing for you").
+    if (!tx) throw new Error('receipt not found');
+    if (!tx.status) throw new Error('the transaction was reverted');
     let s = decodeEvmSwap(tx, owner, WETH, STABLES);
     if (!s) s = decodeEvmSwap(tx, owner, WETH, STABLES, await baseRpc.nativeDelta(owner, tx.blockNumber, tx.fee ?? 0n));
     return s && s.quote === 'native' ? { tokenRaw: s.tokenRaw, native: Number(s.quoteRaw) / 1e18 } : null;

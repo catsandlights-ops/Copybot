@@ -143,8 +143,23 @@ export class BotEngine extends EventEmitter {
         setTimeout(() => this.valuePositions(), 1500); // price new positions right away
       },
       name: (w) => this.labels.get(w) ?? short(w),
+      suspicious: (chainId) => this.tripChain(chainId),
     });
     this.setLabels();
+  }
+
+  /** A live trade on a chain didn't pay out to your wallet: switch live trading there off at once (and keep it off). */
+  private tripChain(chainId: string) {
+    if (chainId !== 'base') return; // Solana swaps are verified and simulated before signing
+    setBaseLive(false);
+    this.cfg.execution.baseLive = false;
+    try {
+      saveConfig(this.cfg);
+    } catch {
+      /* it's off in memory either way */
+    }
+    this.emit('guard', 'Live trading on Base was switched off: a trade went through but nothing arrived in your wallet. Check it on Basescan before turning it back on.');
+    this.emit('config', this.cfg);
   }
 
   private setLabels() {

@@ -41,7 +41,8 @@ export type InFlight = Trip & { sig: string; chain: string; quoted: { tokenRaw: 
 export const PAPER_FEE_SOL = 0.0002;
 export const PAPER_FEE_BASE_ETH = 0.00002;
 
-export type TraderHooks = { log: (msg: string, level?: string) => void; trade: (t: Trade) => void; name: (wallet: string) => string };
+/** suspicious: a live trade went through but nothing arrived in your wallet (possible tampering): stop trading on that chain. */
+export type TraderHooks = { log: (msg: string, level?: string) => void; trade: (t: Trade) => void; name: (wallet: string) => string; suspicious?: (chain: string, sig: string) => void };
 
 /**
  * Executes trades. Paper mode uses Jupiter's quoted amounts and sends nothing.
@@ -272,7 +273,13 @@ export class Trader {
     // What really happened, from the confirmed transaction (falls back to the quote).
     if (chain.readFill) {
       const owner = chain.liveOwner?.();
-      const fill = owner ? await chain.readFill(sig, owner).catch(() => null) : null;
+      // undefined = couldn't read it (a busy node): fall back to the quote. null = read it, and
+      // nothing was swapped for your wallet: the trade didn't do what was intended. Stop and say so.
+      const fill = owner ? await chain.readFill(sig, owner).catch(() => undefined) : undefined;
+      if (fill === null) {
+        this.hooks.log(`The ${chain.meta.name} trade ${short(sig)} went through, but nothing arrived in your wallet. Live trading on ${chain.meta.name} is switched off until you check it (${chain.meta.explorer.tx(sig)}).`, 'error');
+        this.hooks.suspicious?.(chain.meta.id, sig);
+      }
       return fill ? { sig, tokenRaw: fill.tokenRaw, sol: await chain.nativeToSol(fill.native) } : { sig, ...quoted };
     }
     const tx = await getTx(sig);

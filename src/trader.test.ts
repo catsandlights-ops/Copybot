@@ -274,3 +274,41 @@ test('writeOff: a dead coin leaves the books as a total loss, recorded, its slot
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('Base tripwire: a live trade that pays nothing to your wallet stops Base; an unreadable one does not', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-trip-'));
+  const prev = process.cwd();
+  const saved = Object.getOwnPropertyDescriptors(base);
+  try {
+    process.chdir(dir);
+    fs.mkdirSync('data');
+    let fill: () => Promise<any> = async () => null; // read it: nothing arrived for you
+    Object.defineProperty(base, 'liveTrading', { get: () => true, configurable: true });
+    Object.assign(base, {
+      liveOwner: () => '0x1111111111111111111111111111111111111111',
+      executeSwap: async () => '0xabc',
+      readFill: () => fill(),
+      nativeToSol: async (n: number) => n * 10,
+    });
+    const cfg = sanitizeConfig({ mode: 'live' }, false);
+    cfg.mode = 'live';
+    const state = { positions: {}, realizedPnlSol: 0 } as any;
+    const logs: string[] = [];
+    const tripped: string[] = [];
+    const t = new Trader(null as any, cfg, state, Keypair.generate(), { log: (m) => logs.push(m), trade: () => {}, name: (w) => w, suspicious: (c) => tripped.push(c) });
+    const q = { inputMint: WETH, outputMint: TOKEN, inAmount: '1000000000000000', outAmount: '990' } as any;
+    await t.buy(TOKEN, 18, q, 'wallet-a', undefined, base);
+    assert.deepEqual(tripped, ['base']);
+    assert.ok(logs.some((l) => /nothing arrived in your wallet/.test(l)));
+    // A busy node (the read fails): no alarm, the quote is booked as before.
+    fill = async () => {
+      throw new Error('busy');
+    };
+    await t.buy(TOKEN, 18, q, 'wallet-a', undefined, base);
+    assert.deepEqual(tripped, ['base'], 'no second alarm for an unreadable trade');
+  } finally {
+    for (const [k, d] of Object.entries(saved)) Object.defineProperty(base, k, d);
+    process.chdir(prev);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
