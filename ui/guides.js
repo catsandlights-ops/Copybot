@@ -10,6 +10,31 @@ window.GUIDE_CATS = {
 
 window.GUIDES = [
   {
+    id: 'whats-new-09', cat: 'news', mins: 4, title: "What's new in Copybot 0.9",
+    teaser: 'Stress-tested, Base everywhere, a guided switch to live, a free local AI, and running all day.',
+    body: `
+<p>0.9 is about trusting Copybot with real money. It was <b>stress-tested</b> against a made-up market full of rugs, refusals and crashes, and the problems that turned up were fixed.</p>
+<h3>Fixed by the stress tests</h3>
+<ul>
+<li><b>Late sells are followed.</b> If a wallet you copy sold and the bot saw it a little late, it used to skip it and keep holding.</li>
+<li><b>Dead coins don't block trading.</b> A rugged coin nobody will buy no longer takes a slot or counts toward your money limit while it waits to be written off, and doesn't flood the log.</li>
+<li><b>Gentler back-off</b> when the Solana node refuses requests, so copying doesn't slow to a crawl.</li>
+</ul>
+<h3>New</h3>
+<ul>
+<li><b>Go-live assistant:</b> choosing Live walks you through your paper results, safety settings, trading wallets, a tiny real test trade and smaller starter limits. See <a href="#" data-guide="going-live">Going live safely</a>.</li>
+<li><b>Paper vs live</b> (Dashboard, live mode): every real trade compared with what paper mode would have booked, so you know how far to trust paper results.</li>
+<li><b>Base everywhere:</b> shadow copying, the daily strategy and exit checks, orders, the watchlist and early-buyer search all work for Base. Base network fees now count in your books.</li>
+<li><b>Per-chain limits</b> (Settings → The basics): give Solana and Base each their own share of coins and money.</li>
+<li><b>Write off</b> a dead coin (✕ next to a position) to free its slot right away.</li>
+<li><b>A free local AI:</b> the autopilot can use a model running on your own PC through Ollama, or a cheaper Claude model. See <a href="#" data-guide="autopilot">The AI autopilot</a>.</li>
+<li><b>Running all day:</b> the bot starts again by itself after a crash, Windows restart or power cut; Copybot can start with Windows; a backup is saved every day (Settings → App).</li>
+<li><b>Phone page:</b> coin names, a Today card with the Solana / Base split, a Wallets tab with Pause, and "why so few trades" in Activity.</li>
+<li><b>Safety:</b> if a live Base trade ever goes through but nothing arrives in your wallet, live trading on Base switches itself off at once.</li>
+</ul>
+<p class="tip">Paper reset (Dashboard → Paper wallet → Reset) now also clears the wallet chart and signal counts, for a truly fresh experiment.</p>`,
+  },
+  {
     id: 'whats-new-08', cat: 'news', mins: 3, title: "What's new in Copybot 0.8",
     teaser: 'Phone access, a market scanner, live graphs, your own limit and DCA orders, a panic button, and profit reports with a tax export.',
     body: `
@@ -126,6 +151,8 @@ window.GUIDES = [
 <li>The free public Base nodes limit how often they can be asked. For reliable copying, add a free Base RPC from Alchemy or QuickNode in <b>Settings → Connection</b>.</li>
 <li>Find wallets, Analyze, backtests and the wallet check-up read Base history through Alchemy: add your free Alchemy Base URL in <b>Settings → Connection</b>.</li>
 <li>Some Base traders use smart-contract wallets: copy the address that actually holds the tokens (it's the one shown on Basescan as receiving them).</li>
+<li>Everything works for Base wallets as for Solana: shadow copying, orders, the watchlist, the daily strategy check and the wallet search (including early buyers).</li>
+<li>To stop busy Solana trading from crowding Base out, give Base its own share in Settings → The basics → <b>Per-chain limits</b>.</li>
 </ul>
 <h3>Live trading on Base</h3>
 <p>Use a <b>new wallet just for Copybot</b> holding only what you're willing to trade, never your main wallet. Paste its private key in <b>Settings → Trading wallet → Base</b> (it's encrypted on your computer), then turn on <b>Live trading on Base</b>. Before anything is signed, Copybot checks every transaction:</p>
@@ -135,7 +162,8 @@ window.GUIDES = [
 <li>when selling, it approves exactly the amount being sold, never "unlimited";</li>
 <li>it is rehearsed on Base first, and nothing is sent if the rehearsal fails.</li>
 </ul>
-<p>Start with tiny amounts until you've seen a few real trades go through.</p>`,
+<p>After each live trade Copybot reads what really arrived. If a trade ever goes through but <b>nothing arrived in your wallet</b>, live trading on Base switches itself off at once and tells you, so at most one trade is affected. Network fees are counted in your books.</p>
+<p>Start with tiny amounts until you've seen a few real trades go through: the go-live assistant's test trade does a first one for a few cents.</p>`,
   },
   {
     id: 'phone', cat: 'features', mins: 3, title: 'Control Copybot from your phone (Tailscale)',
@@ -152,11 +180,12 @@ window.GUIDES = [
 <p>At home, your phone can also connect over the same Wi-Fi without Tailscale (pick <b>Home Wi-Fi</b> above the QR code). Away from home, keep Tailscale switched on, on the phone.</p>
 <h3>What the phone can do</h3>
 <ul>
-<li>See your profit, open positions, trades and live activity.</li>
-<li>Start and stop the bot, sell half or all of a position, and resume buying after the daily loss limit.</li>
+<li>See your profit (with a Today card split by chain), open positions with coin names, trades and live activity, including <b>why trades were skipped</b> in the last hour.</li>
+<li>See every wallet's status: copying, on trial, in shadow (with its progress) or paused, and its profit.</li>
+<li>Start and stop the bot, sell half or all of a position, <b>write off</b> a dead coin, <b>pause</b> a wallet, and resume buying after the daily loss limit.</li>
 <li>Turn the market scanner's two switches on and off.</li>
 </ul>
-<p>It <b>can't</b> change settings, switch between paper and live, or see or change keys and wallets. Those stay on the computer, so a lost phone can't empty your wallet.</p>
+<p>It <b>can't</b> turn a wallet back on, change settings, switch between paper and live, or see or change keys and wallet addresses. Those stay on the computer, so a lost phone can't empty your wallet.</p>
 <h3>Staying safe</h3>
 <ul>
 <li>Each pairing QR code works <b>once</b> and only for 5 minutes. Don't share screenshots of it.</li>
@@ -286,14 +315,15 @@ window.GUIDES = [
     id: 'getting-started', cat: 'start', mins: 4, title: 'Getting started with Copybot',
     teaser: 'From install to your first paper trade in five steps.',
     body: `
-<p>Copybot watches Solana wallets you choose. When one of them buys or sells a token, Copybot can copy the trade within seconds.</p>
+<p>Copybot watches wallets you choose, on <b>Solana</b> and <b>Base</b>. When one of them buys or sells a token, Copybot can copy the trade within seconds.</p>
 <ol class="big">
 <li><b>Add a fast connection.</b> Settings → Connection → paste a free Helius RPC link. See <a href="#" data-guide="rpc">Connect a fast RPC</a>. The free public connection misses trades.</li>
 <li><b>Find wallets worth copying.</b> Use <b>Find wallets</b> or the top traders in <b>Markets</b>, then check each one's record with <b>Analyze</b>. See <a href="#" data-guide="finding-wallets">Finding wallets worth copying</a>.</li>
 <li><b>Add 2–3 wallets</b> on the Wallets page. Spreading across a few traders means one bad week doesn't sink you.</li>
 <li><b>Start in paper mode.</b> Press <b>Start bot</b>. Paper mode simulates every trade with real prices, using a pretend 10 SOL wallet, and never spends money. No wallets yet? Press Start anyway and Copybot picks a few active traders for a quick experiment.</li>
-<li><b>Review after a few days.</b> The Wallets scoreboard shows which wallets actually made <i>you</i> money. Pause the ones that didn't.</li>
+<li><b>Review after a few days.</b> The Wallets scoreboard shows which wallets actually made <i>you</i> money. Pause the ones that didn't. Settings → <b>Ready for live?</b> says which ones have proven themselves.</li>
 </ol>
+<p>Want Base too? Add a free Alchemy link in Settings → Connection and paste Base wallets (they start with <span class="mono">0x</span>). See <a href="#" data-guide="base">Copying wallets on Base</a>.</p>
 <p class="tip">Only go live after paper mode has been profitable for a while, and only with money you can afford to lose. See <a href="#" data-guide="going-live">Going live safely</a>.</p>`,
   },
   {
@@ -364,11 +394,13 @@ window.GUIDES = [
 <li><b>Cap the total.</b> "Max SOL in open positions" limits how much can be in trades at once.</li>
 <li><b>Per-wallet Size ×.</b> On the Wallets page you can copy your best wallet at 1.5× and a riskier one at 0.5×.</li>
 <li><b>Per-wallet Budget.</b> Caps how much SOL a single wallet's trades can tie up.</li>
+<li><b>Per-chain limits.</b> Give Solana and Base each their own share of the coins and money (for example Base: 2 of 5 coins), so a busy chain can't crowd out the other. 0 = no cap of its own.</li>
 </ul>
+<p>A coin nobody will buy any more (rugged) doesn't take a slot or count toward these limits while Copybot keeps trying to sell it; after 2 hours it's written off. You can write it off yourself straight away with the ✕ next to the position.</p>
 <h3>The circuit breaker</h3>
 <p>Two automatic brakes protect you on a bad day (Settings → Limits):</p>
 <ul>
-<li><b>Daily loss limit (0.3 SOL):</b> no new buys for the rest of the day.</li>
+<li><b>Daily loss limit (0.75 SOL by default):</b> no new buys for the rest of the day.</li>
 <li><b>Losing streak (4 in a row):</b> a 60-minute cool-down.</li>
 </ul>
 <p>Sells, stop-losses and take-profits always keep running. You can override it with <b>Resume buying</b> on the Dashboard.</p>
@@ -419,10 +451,10 @@ window.GUIDES = [
 <p class="tip">Your own limits are saved. After 7 days and 10 closed live trades in profit, Settings → Trading mode suggests bringing them back (one click). You can also bring them back sooner, or switch to paper any time.</p>`,
   },
   {
-    id: 'autopilot', cat: 'features', mins: 5, title: 'The AI autopilot (Claude)',
-    teaser: 'What Claude decides, what it can never do, what it costs, and how to judge it.',
+    id: 'autopilot', cat: 'features', mins: 6, title: 'The AI autopilot (Claude or a free local AI)',
+    teaser: 'What the AI decides, what it can never do, what it costs (or not), and how to judge it.',
     body: `
-<p>The autopilot lets <b>Claude</b>, Anthropic's AI model, make the trading decisions:</p>
+<p>The autopilot lets an AI make the judgment calls: <b>Claude</b>, Anthropic's model (paid), or a <b>free model running on your own PC</b> through Ollama. Choose on the Autopilot page under <b>Which AI</b>.</p>
 <ul>
 <li><b>Buys:</b> for each copy signal that passes the safety checks, Claude decides <i>buy or skip</i> and how much, and explains why.</li>
 <li><b>Open positions:</b> every few minutes it reviews them and can sell early or hold.</li>
@@ -436,10 +468,17 @@ window.GUIDES = [
 <li>Copy a wallet whose track record wasn't checked first.</li>
 </ul>
 <h3>Cost</h3>
-<p>You use your own Anthropic API key (from console.anthropic.com) and pay Anthropic per decision, roughly <b>$0.02–0.04</b> each with Claude Opus 5.5. A <b>daily AI budget</b> (Settings → Autopilot) caps the spend. When it's used up, Copybot falls back to its normal rules.</p>
+<p><b>Claude:</b> you use your own Anthropic API key (from console.anthropic.com) and pay per decision. Pick the model: <b>Opus 5.5</b> (smartest, roughly $0.02–0.04 a decision), <b>Sonnet 5.5</b> (about half that) or <b>Haiku 5.5</b> (about 1/40 of Opus). A <b>daily AI budget</b> (Settings → Autopilot) caps the spend; when it's used up, Copybot falls back to its normal rules.</p>
+<h3>A free local AI (Ollama)</h3>
+<ol>
+<li>Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com</a> and open it.</li>
+<li>Download two models in a terminal (Windows: PowerShell). With a 12 GB graphics card such as an RTX 3060: <span class="mono">ollama pull qwen2.5:7b</span> (fast) and <span class="mono">ollama pull qwen2.5:14b</span> (smarter), or newer models of a similar size.</li>
+<li>On the Autopilot page choose <b>Local AI</b>, pick the <b>fast model</b> (for buy decisions, which must come back within 20 seconds) and the <b>smart model</b> (for reviews and the wallet search), then press <b>Test connection</b> to see how fast each answers.</li>
+</ol>
+<p>Nothing leaves your PC and it costs nothing. A small model makes more mistakes: anything it answers that isn't exactly a sensible decision is ignored, and the bot's normal rules decide instead.</p>
 <h3>Is it working?</h3>
 <p>The Autopilot page tracks every decision. For buys Claude <i>skipped</i>, it records what they would have made an hour later, so you can see whether its skips helped. Judge it in paper mode first.</p>
-<p class="tip">No AI can reliably predict meme coins. Treat the autopilot as an experiment, and let the numbers decide whether it stays on.</p>`,
+<p class="tip">No AI can reliably predict meme coins, local or not. Treat the autopilot as an experiment, and let the numbers decide whether it stays on.</p>`,
   },
   {
     id: 'markets', cat: 'features', mins: 3, title: 'Using the Markets hub',
