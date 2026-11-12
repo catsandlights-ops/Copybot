@@ -50,15 +50,24 @@ export function createWorld(o = {}) {
   const solCoins = coins.filter((c) => c.chain !== 'base');
   const baseCoins = coins.filter((c) => c.chain === 'base');
   const coinBy = new Map(coins.map((c) => [c.mint, c]));
+  // A dead coin is replaced by a newly launched one, so long runs never run out of coins to trade.
+  let launched = coins.length;
+  const launch = (old) => {
+    const c = { ...(old.chain === 'base' ? { mint: evmAddr(), pool: evmAddr(), chain: 'base' } : { mint: key() }), symbol: `${old.chain === 'base' ? 'B' : 'C'}${launched++}`, decimals: old.decimals, price: 1e-7 * Math.exp(rnd() * 6), liquidityUsd: 5_000 + rnd() * 200_000, createdAt: now(), rugged: false, noRoute: false, events: [], hist: [] };
+    coins.push(c);
+    (c.chain === 'base' ? baseCoins : solCoins).push(c);
+    coinBy.set(c.mint, c);
+    stats.launches = (stats.launches ?? 0) + 1;
+  };
   const tick = () => {
     const t = now();
-    for (const c of coins) {
+    for (const c of [...coins]) {
       if (c.rugged) continue;
       c.price *= Math.exp((rnd() - 0.5) * 0.04);
       if (rnd() < 0.002) { c.price *= 1.5 + rnd() * 1.5; stats.pumps++; }
       if (rnd() < 0.002) { c.price *= 0.3 + rnd() * 0.4; stats.dumps++; }
-      if (rnd() < opt.rugChance) { c.rugged = true; c.liquidityUsd = 0; c.price *= 0.01; stats.rugs++; }
-      if (rnd() < opt.rugChance / 2) c.noRoute = true; // nobody will buy it anymore
+      if (rnd() < opt.rugChance) { c.rugged = true; c.liquidityUsd = 0; c.price *= 0.01; stats.rugs++; launch(c); }
+      if (!c.noRoute && rnd() < opt.rugChance / 2) { c.noRoute = true; launch(c); } // nobody will buy it anymore
       c.hist.push([t, c.price]);
       while (c.hist.length && c.hist[0][0] < t - 3_600_000) c.hist.shift();
       while (c.events.length && c.events[0][0] < t - 300_000) c.events.shift();
