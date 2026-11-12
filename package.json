@@ -19,7 +19,8 @@
     "test:fuzz": "npm run bundle && node scripts/stress/fuzz-api.mjs",
     "test:stress": "npm run bundle && node scripts/stress/run.mjs 3 --kill-every=1",
     "test:ui": "npm run bundle && node scripts/stress/ui-check.mjs",
-    "test:all": "npm test && npm run test:fuzz && npm run test:stress && npm run test:ui"
+    "test:phone": "npm run bundle && node scripts/stress/phone-check.mjs",
+    "test:all": "npm test && npm run test:fuzz && npm run test:stress && npm run test:ui && npm run test:phone"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

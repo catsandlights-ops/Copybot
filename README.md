@@ -194,6 +194,7 @@ npm run test:fuzz    # junk sent to every app endpoint: nothing may error out or
 npm run test:stress  # 3 minutes of trading in a made-up market (Solana + Base), crashed at random,
                      #   with the books checked every 30 s (longer: node scripts/stress/run.mjs 20)
 npm run test:ui      # opens every page in a headless browser, walks the go-live assistant
+npm run test:phone   # pairs a simulated iPhone, opens every tab of the phone page, pauses a wallet
 ```
 
 The end-to-end checks (`scripts/stress/`) run the real app against a made-up market (`world.mjs`):

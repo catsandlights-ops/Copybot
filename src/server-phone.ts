@@ -9,7 +9,13 @@ import { chainOf } from './chains';
 import { downsample, since } from './series';
 import { UI_FILE, SECURITY_HEADERS, engine, broadcast, HttpError, readTrades, readBody, send, applyChange, trialAndResume } from './server-core';
 import { scannerView } from './server-scanner';
-import { portfolioSeries } from './server-status';
+import { lastStatus, portfolioSeries } from './server-status';
+import { readGoLive } from './server-golive';
+import { rampAdvice } from './golive';
+import { walletRecords } from './rules';
+import { localDayStart, phoneWalletId, phoneWallets, todayByChain } from './phone';
+import * as markets from './markets';
+import { getChain } from './chains';
 
 // ---------- phone access (a separate door; see remote.ts) ----------
 export let remoteCfg = remote.loadRemote();
@@ -169,6 +175,17 @@ export async function handleRemote(req: http.IncomingMessage, res: http.ServerRe
     from(`market scanner: find traders ${next.scanner.findTraders ? 'on' : 'off'}, trade coins ${next.scanner.tradeCoins ? 'on' : 'off'}`);
     return send(res, 200, phoneState());
   }
+  if (route === 'POST /r/wallet/pause') {
+    // Pausing only lowers risk, so the phone may do it; turning a wallet back on is done on the computer.
+    const b = await readBody(req);
+    const next = structuredClone(engine.cfg);
+    const w = next.wallets.find((x) => x.enabled && phoneWalletId(x.address) === b.id);
+    if (!w) throw new HttpError(404, 'That wallet is not being copied.');
+    Object.assign(w, { enabled: false, pausedReason: `paused from ${device.name}` });
+    await applyChange(() => saveConfig(next));
+    from(`paused ${w.label}`);
+    return send(res, 200, phoneState());
+  }
   if (route === 'POST /r/unpair') {
     remoteCfg.devices = remoteCfg.devices.filter((d) => d.id !== device.id);
     remote.saveRemote(remoteCfg);
@@ -179,11 +196,44 @@ export async function handleRemote(req: http.IncomingMessage, res: http.ServerRe
   return send(res, 404, { error: 'not found' });
 }
 
+// Coin names for the phone (looked up in the background, a few seconds behind at most).
+const symbols = new Map<string, string>();
+let symbolsAt = 0;
+function coinNames(mints: string[]) {
+  const missing = [...new Set(mints)].filter((m) => !symbols.has(m));
+  if (missing.length && Date.now() - symbolsAt > 15_000) {
+    symbolsAt = Date.now();
+    markets
+      .tokensAnyChain(missing.slice(0, 30))
+      .then((list) => {
+        for (const t of list as { mint: string; symbol?: string }[]) if (t?.mint) symbols.set(t.mint, t.symbol && t.symbol !== '?' ? t.symbol : '');
+        if (symbols.size > 2000) symbols.clear();
+      })
+      .catch(() => {});
+  }
+  return (m: string) => symbols.get(m) || null;
+}
+// The Base trading wallet's ETH balance (live mode), refreshed at most once a minute.
+let baseBal: { at: number; eth: number | null } = { at: 0, eth: null };
+function baseBalance(): number | null {
+  const c = getChain('base');
+  const owner = engine.cfg.mode === 'live' && engine.cfg.execution.baseLive ? c.liveOwner?.() : null;
+  if (!owner) return null;
+  if (Date.now() - baseBal.at > 60_000) {
+    baseBal.at = Date.now();
+    c.balance({ conn: null as never, kp: null, cfg: engine.cfg }, owner).then((eth) => (baseBal = { at: Date.now(), eth })).catch(() => {});
+  }
+  return baseBal.eth;
+}
+
 /** What the phone sees: no keys, no wallet addresses, no settings beyond the scanner switches. */
 export function phoneState() {
   const s = engine.snapshot();
   const sc = engine.cfg.scanner;
   const scan = scannerView();
+  const all = readTrades(1e9);
+  const name = coinNames([...s.positions.map((p: any) => p.mint), ...all.slice(0, 20).map((t: any) => t.mint)]);
+  const rec = readGoLive();
   return {
     version: process.env.COPYBOT_VERSION ?? null,
     running: s.running,
@@ -199,13 +249,19 @@ export function phoneState() {
     panicking: s.panicking,
     orders: engine.orders.filter((o) => o.status === 'active').map((o) => ({ id: o.id, text: describeOrder(o), note: o.note ?? null })),
     wallets: engine.cfg.wallets.filter((w) => w.enabled).length,
-    positions: s.positions.map((p: any) => ({ mint: p.mint, from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt, trail: downsample(p.trail ?? [], 30) })),
+    walletList: phoneWallets(engine.cfg.wallets, walletRecords(all, s.mode), s.shadow),
+    today: todayByChain(all, s.mode, localDayStart(Date.now())),
+    activity: s.activity,
+    ramp: s.mode === 'live' ? rampAdvice(rec, all.filter((t: any) => t.mode === 'live' && t.side === 'sell'), Date.now()) : null,
+    connection: lastStatus && lastStatus.summary.level !== 'ok' ? lastStatus.summary : null,
+    baseBalance: baseBalance(),
+    positions: s.positions.map((p: any) => ({ mint: p.mint, symbol: name(p.mint), chain: chainOf(p), from: p.label, costSol: p.costSol, valueSol: p.valueSol ?? null, pnlPct: p.pnlPct ?? null, openedAt: p.openedAt, trail: downsample(p.trail ?? [], 30) })),
     series: downsample(since(portfolioSeries(s.mode), Date.now() - 86_400_000), 120),
     logs: engine.logs.slice(-40).map((l) => ({ t: l.t, level: l.level, msg: l.msg })),
-    trades: readTrades()
+    trades: all
       .filter((t: any) => t.mode === s.mode)
       .slice(0, 20)
-      .map((t: any) => ({ t: t.t, side: t.side, mint: t.mint, sol: t.sol, pnl: t.pnl ?? null, reason: t.reason ?? null })),
+      .map((t: any) => ({ t: t.t, side: t.side, mint: t.mint, symbol: name(t.mint), chain: t.chain ?? (/^0x/.test(t.mint) ? 'base' : 'solana'), sol: t.sol, pnl: t.pnl ?? null, reason: t.reason ?? null })),
     scanner: { findTraders: sc.findTraders, tradeCoins: sc.tradeCoins, record: scan.record, signals: scan.signals.slice(0, 3).map((x) => ({ symbol: x.symbol, why: x.why })) },
   };
 }

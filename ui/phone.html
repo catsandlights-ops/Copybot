@@ -60,6 +60,15 @@ input[type=text] { font: inherit; width: 100%; padding: 12px; border-radius: 12p
 .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
 .tabs button { flex: 1; min-height: 36px; padding: 6px; font-size: 14px; }
 .tabs button.on { background: var(--accent); color: #fff; }
+.chip { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); vertical-align: middle; }
+.chip.base { background: #1d4ed822; color: #3b82f6; }
+.chip.copying { background: var(--green-bg); color: var(--green); }
+.chip.shadow, .chip.trial { background: var(--panel-2); color: var(--accent); }
+.chip.paused { background: var(--amber-bg); color: var(--amber); }
+.banner.info { background: var(--panel-2); color: var(--text); }
+a.coin { color: var(--text); text-decoration: none; font-weight: 600; }
+.bar { height: 6px; border-radius: 6px; background: var(--panel-2); overflow: hidden; margin: 4px 0 2px; }
+.bar i { display: block; height: 100%; background: var(--accent); }
 </style>
 </head>
 <body>
@@ -81,6 +90,8 @@ const cls = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
 const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 function ago(t) { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? `${Math.floor(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m` : `${Math.floor(s / 86400)}d`; }
 const $ = (s) => document.querySelector(s);
+const isBase = (x) => x && (x.chain === 'base' || /^0x/.test(x.mint || ''));
+const coin = (x) => `<a class="coin" href="https://dexscreener.com/${isBase(x) ? 'base' : 'solana'}/${esc(x.mint)}" target="_blank" rel="noopener">${x.symbol ? esc(x.symbol) : `<span class="mono">${short(x.mint)}</span>`}</a>${isBase(x) ? ' <span class="chip base">Base</span>' : ''}`;
 let S = null, tab = 'positions', busy = false, offline = false, timer = null;
 
 function toast(msg, err) {
@@ -125,7 +136,7 @@ function showPair(code) {
     <p>Give this phone a name so you can recognise it on your computer:</p>
     <input type="text" id="pname" maxlength="40" value="My phone" autocomplete="off">
     <button class="primary wide" id="pgo">Pair this phone</button>
-    <p class="muted" style="font-size:13px;margin-bottom:0">This phone will be able to see your profit and positions, start and stop the bot, sell positions and switch the market scanner. It can't change settings, keys or wallets.</p></div>`;
+    <p class="muted" style="font-size:13px;margin-bottom:0">This phone will be able to see your profit, positions and wallets, start and stop the bot, sell positions, pause a wallet and switch the market scanner. It can't change settings or keys, or add wallets.</p></div>`;
   $('#pgo').onclick = async () => {
     $('#pgo').disabled = true;
     try {
@@ -147,15 +158,25 @@ function render() {
   const g = S.guard || {};
   const sc = S.scanner;
   const posHtml = S.positions.length ? S.positions.map((p) => `<div class="pos-item">
-      <div class="row between"><span class="mono">${short(p.mint)}</span><span class="row" style="gap:10px">${line(p.trail, 'spark', 1)}<b class="${cls(p.pnlPct)}">${pct(p.pnlPct)}</b></span></div>
+      <div class="row between"><span>${coin(p)}</span><span class="row" style="gap:10px">${line(p.trail, 'spark', 1)}<b class="${cls(p.pnlPct)}">${pct(p.pnlPct)}</b></span></div>
       <div class="row between muted" style="font-size:13px"><span>${esc((p.from || []).join(', '))} · ${ago(p.openedAt)}</span><span>${p.costSol.toFixed(3)} → ${p.valueSol == null ? '—' : p.valueSol.toFixed(3)} SOL</span></div>
       <div class="row" style="margin-top:8px"><button class="sm" data-sell="${esc(p.mint)}" data-f="0.5">Sell 50%</button><button class="sm stop" data-sell="${esc(p.mint)}" data-f="1">Sell all</button></div></div>`).join('')
     : '<div class="muted">No open positions.</div>';
-  const tradesHtml = S.trades.length ? S.trades.map((t) => `<div class="log"><time>${hhmm(t.t)}</time><b class="${t.side === 'buy' ? '' : cls(t.pnl)}">${t.side === 'buy' ? 'BUY' : 'SELL'}</b> <span class="mono">${short(t.mint)}</span> ${t.sol.toFixed(3)} SOL${t.side === 'sell' && t.pnl != null ? ` · <span class="${cls(t.pnl)}">${sol(t.pnl, 4)}</span>` : ''}${t.reason ? `<div class="muted">${esc(t.reason)}</div>` : ''}</div>`).join('') : '<div class="muted">No trades yet.</div>';
-  const logHtml = S.logs.slice().reverse().map((l) => `<div class="log ${esc(l.level)}"><time>${hhmm(l.t)}</time>${esc(l.msg)}</div>`).join('') || '<div class="muted">Nothing yet.</div>';
+  const tradesHtml = S.trades.length ? S.trades.map((t) => `<div class="log"><time>${hhmm(t.t)}</time><b class="${t.side === 'buy' ? '' : cls(t.pnl)}">${t.side === 'buy' ? 'BUY' : 'SELL'}</b> ${coin(t)} ${t.sol.toFixed(3)} SOL${t.side === 'sell' && t.pnl != null ? ` · <span class="${cls(t.pnl)}">${sol(t.pnl, 4)}</span>` : ''}${t.reason ? `<div class="muted">${esc(t.reason)}</div>` : ''}</div>`).join('') : '<div class="muted">No trades yet.</div>';
+  const wl = S.walletList || [];
+  const walletsHtml = wl.length ? wl.map((w) => `<div class="pos-item">
+      <div class="row between"><span><b>${esc(w.label)}</b>${w.chain === 'base' ? ' <span class="chip base">Base</span>' : ''} <span class="chip ${w.state}">${{ copying: 'Copying', trial: 'Trial', shadow: 'Shadow', paused: 'Paused', off: 'Off' }[w.state]}</span></span><b class="${cls(w.pnlSol)}">${w.closed ? sol(w.pnlSol) : '—'}</b></div>
+      <div class="row between muted" style="font-size:13px"><span>${esc(w.state === 'copying' ? `${w.closed} closed · ${w.wins} won` : w.note)}</span>${w.state === 'copying' || w.state === 'trial' ? `<button class="sm" data-pause="${esc(w.id)}" data-name="${esc(w.label)}">Pause</button>` : ''}</div></div>`).join('')
+    + '<div class="muted" style="font-size:12.5px;margin-top:10px">Turning wallets back on, and promoting shadow wallets, is done on the computer.</div>'
+    : '<div class="muted">No wallets yet.</div>';
+  const a = S.activity;
+  const actHtml = a ? `<div style="font-size:14px;margin-bottom:8px"><b>Last hour:</b> ${a.seen} buy signal${a.seen === 1 ? '' : 's'} seen, ${a.copied} copied.${a.skips && a.skips.length ? `<div class="muted" style="font-size:13px;margin-top:4px">Skipped because ${a.skips.slice(0, 3).map((x) => `${esc(x.group)} (${x.n})`).join(', ')}.</div>` : ''}</div>` : '';
+  const logHtml = actHtml + S.logs.slice().reverse().map((l) => `<div class="log ${esc(l.level)}"><time>${hhmm(l.t)}</time>${esc(l.msg)}</div>`).join('') || '<div class="muted">Nothing yet.</div>';
   $('#app').innerHTML = `
     <header><h1>Copybot</h1><span class="badge ${live ? 'live' : ''}">${live ? 'LIVE' : 'Paper'}</span><span class="badge ${S.running ? 'on' : ''}">${S.running ? `Running · ${ago(S.startedAt)}` : 'Stopped'}</span></header>
     ${offline ? '<div class="banner err">Can\'t reach Copybot. Is your computer on, Copybot open, and (away from home) Tailscale on, on both devices?</div>' : ''}
+    ${S.connection ? `<div class="banner ${S.connection.level === 'bad' ? 'err' : ''}">${esc(S.connection.text)}. Check Settings → Connections on the computer.</div>` : ''}
+    ${S.ramp ? `<div class="banner ${S.ramp.due ? '' : 'info'}">${esc(S.ramp.text)}${S.ramp.due ? ' Bring them back on the computer (Settings → Trading mode).' : ''}</div>` : ''}
     ${g.blocked ? `<div class="banner">New buys paused: ${esc(g.blocked)} <button class="sm" id="resume" style="margin-top:6px">Resume buying today</button></div>` : ''}
     <button class="wide ${S.running ? 'stop' : 'primary'}" id="runbtn" ${busy ? 'disabled' : ''}>${S.running ? 'Stop bot' : `Start bot${live ? ' (LIVE)' : ''}`}</button>
     ${S.positions.length || S.running ? `<button class="wide" id="panic" style="margin-top:8px;background:var(--red-bg);color:var(--red)" ${busy || S.panicking ? 'disabled' : ''}>${S.panicking ? 'Selling everything…' : 'Sell everything &amp; stop'}</button>` : ''}
@@ -164,8 +185,11 @@ function render() {
       <div class="stat"><div class="k">Realized profit</div><div class="v ${cls(S.realizedPnlSol)}">${sol(S.realizedPnlSol)}</div><div class="k">SOL, closed trades</div></div>
       <div class="stat"><div class="k">Open profit</div><div class="v ${cls(S.unrealizedPnlSol)}">${sol(S.unrealizedPnlSol)}</div><div class="k">SOL if sold now</div></div>
       <div class="stat"><div class="k">In positions</div><div class="v">${S.exposureSol.toFixed(2)}</div><div class="k">of ${S.maxExposureSol} SOL · ${S.positions.length} open</div></div>
-      <div class="stat"><div class="k">${S.paper ? 'Paper wallet' : 'Wallet'}</div><div class="v">${S.paper ? (S.paper.startSol + S.realizedPnlSol + S.unrealizedPnlSol).toFixed(2) : S.balance == null ? '—' : S.balance.toFixed(3)}</div><div class="k">SOL · copying ${S.wallets} wallet${S.wallets === 1 ? '' : 's'}</div></div>
+      <div class="stat"><div class="k">${S.paper ? 'Paper wallet' : 'Wallet'}</div><div class="v">${S.paper ? (S.paper.startSol + S.realizedPnlSol + S.unrealizedPnlSol).toFixed(2) : S.balance == null ? '—' : S.balance.toFixed(3)}</div><div class="k">SOL${S.baseBalance != null ? ` · ${S.baseBalance.toFixed(4)} ETH on Base` : ''} · copying ${S.wallets} wallet${S.wallets === 1 ? '' : 's'}</div></div>
     </div>
+    ${(() => { const d = S.today; if (!d) return ''; const both = d.base.closed || (S.walletList || []).some((w) => w.chain === 'base');
+      return `<div class="card"><div class="row between"><h2 style="margin:0">Today</h2><b class="${cls(d.pnlSol)}" style="font-size:18px">${d.closed ? sol(d.pnlSol) + ' SOL' : '—'}</b></div>
+        <div class="muted" style="font-size:13px;margin-top:4px">${d.closed ? `${d.closed} closed · ${d.wins} won` : 'No closed trades yet today'}${both && d.closed ? ` · Solana <span class="${cls(d.solana.pnlSol)}">${sol(d.solana.pnlSol)}</span> · Base <span class="${cls(d.base.pnlSol)}">${sol(d.base.pnlSol)}</span>` : ''}</div></div>`; })()}
     <div class="card"><h2>Market scanner</h2>
       <div class="row between" style="margin-bottom:10px"><span>Find traders</span><label class="switch"><input type="checkbox" id="sc-t" ${sc.findTraders ? 'checked' : ''} ${busy ? 'disabled' : ''}><i></i></label></div>
       <div class="row between"><span>Trade coins</span><label class="switch"><input type="checkbox" id="sc-c" ${sc.tradeCoins ? 'checked' : ''} ${busy ? 'disabled' : ''}><i></i></label></div>
@@ -173,8 +197,8 @@ function render() {
       ${sc.tradeCoins && sc.signals.length ? `<div class="muted" style="font-size:13px;margin-top:6px">Rising now: ${sc.signals.map((x) => `<b>${esc(x.symbol)}</b>`).join(', ')}</div>` : ''}
     </div>
     ${S.orders && S.orders.length ? `<div class="card"><h2>Open orders</h2>${S.orders.map((o) => `<div class="pos-item"><div style="font-size:14px">${esc(o.text)}</div>${o.note ? `<div class="muted" style="font-size:12.5px">${esc(o.note)}</div>` : ''}<button class="sm" data-cancel="${esc(o.id)}" style="margin-top:6px">Cancel</button></div>`).join('')}</div>` : ''}
-    <div class="tabs">${[['positions', `Positions (${S.positions.length})`], ['trades', 'Trades'], ['activity', 'Activity']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <div class="card">${tab === 'positions' ? posHtml : tab === 'trades' ? tradesHtml : logHtml}</div>
+    <div class="tabs">${[['positions', `Positions (${S.positions.length})`], ['wallets', 'Wallets'], ['trades', 'Trades'], ['activity', 'Activity']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="card">${tab === 'positions' ? posHtml : tab === 'wallets' ? walletsHtml : tab === 'trades' ? tradesHtml : logHtml}</div>
     <div class="row between muted" style="font-size:12.5px;margin-top:18px"><span>Copybot${S.version ? ' v' + esc(S.version) : ''} · updates every few seconds</span><button class="sm" id="unpair">Unpair</button></div>`;
   bind();
 }
@@ -193,6 +217,7 @@ function bind() {
   };
   document.querySelectorAll('[data-cancel]').forEach((b) => (b.onclick = () => confirm('Cancel this order?') && action(() => call('POST', '/r/orders/cancel', { id: b.dataset.cancel }), 'Order cancelled')));
   const res = $('#resume'); if (res) res.onclick = () => confirm('Let the bot buy again today despite the loss limit?') && action(() => call('POST', '/r/resume'), 'Buying resumed');
+  document.querySelectorAll('[data-pause]').forEach((b) => (b.onclick = () => confirm(`Pause ${b.dataset.name}? Its open positions still follow its sells. Turn it back on from the computer.`) && action(() => call('POST', '/r/wallet/pause', { id: b.dataset.pause }), 'Wallet paused')));
   document.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => {
     const f = Number(b.dataset.f);
     if (!confirm(`Sell ${f === 1 ? 'ALL' : 'half'} of ${b.dataset.sell.slice(0, 4)}…${b.dataset.sell.slice(-4)}${S.mode === 'live' ? ' (LIVE)' : ''}?`)) return;
