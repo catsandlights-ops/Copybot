@@ -703,6 +703,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (!/^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/.test(u)) throw new HttpError(400, 'The Ollama address must be on this computer, like http://127.0.0.1:11434');
     return send(res, 200, await ai.ollamaModels(u));
   }
+  if (route === 'POST /api/ai/unbench') {
+    ai.unbench();
+    engine.log(`You let ${ai.aiName(engine.cfg)} decide buys again.`, 'ai');
+    return send(res, 200, ai.aiStatus(engine.cfg));
+  }
   if (route === 'POST /api/ai/test') {
     return send(res, 200, await ai.testAi(engine.cfg));
   }

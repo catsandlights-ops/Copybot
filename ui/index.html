@@ -2417,6 +2417,28 @@ async function loadAi() {
   if (S.page === 'autopilot') renderAutopilot($('#content'), true);
 }
 const usd = (v) => (v < 0.01 && v > 0 ? '<$0.01' : '$' + v.toFixed(2));
+/** Is the AI beating the plain rules? Its buy calls, checked an hour later. */
+function aiScoreCard(a, local) {
+  const c = a.score, b = a.bench, who = local ? 'The local AI' : 'Claude';
+  if (!c || !S.config.ai.decideBuys) return '';
+  const sol = (x) => `${x >= 0 ? '+' : ''}${x.toFixed(3)} SOL`;
+  const pc = (x) => (x == null ? '–' : `${x > 0 ? '+' : ''}${x.toFixed(0)}%`);
+  const head = b.benched
+    ? `<span class="pill">Benched</span> The plain rules are deciding buys. ${esc(b.why)} ${who} still makes its calls on the side and takes over again once it would have beaten the rules.`
+    : c.verdict === 'too-early' ? `Not enough results yet (${c.n} of 20). Each buy call is checked an hour later.`
+    : c.verdict === 'helping' ? `<span class="pos">${who} is beating the plain rules.</span>`
+    : c.verdict === 'hurting' ? `<span class="neg">The plain rules are doing better than ${who}.</span>${a.autoBench ? ' It will be benched at the next check.' : ''}`
+    : `${who} and the plain rules are doing about the same.`;
+  return `<div class="card" id="ai-score"><div class="card-h"><div><h2>Is the AI helping?</h2><div class="muted" style="font-size:12.5px">Last ${c.days} days of buy calls, each checked an hour later, against simply buying every signal at normal size.</div></div><span class="spacer"></span>${b.benched ? '<button class="btn" id="ai-unbench">Let it decide again</button>' : ''}</div>
+    <div class="card-b stack"><div>${head}</div>
+    ${c.n ? `<div class="grid stats" style="margin:0">
+      <div class="card stat"><div class="k">Following ${local ? 'the AI' : 'Claude'}</div><div class="v num ${c.aiSol >= 0 ? 'pos' : 'neg'}">${sol(c.aiSol)}</div><div class="s">${c.n} results</div></div>
+      <div class="card stat"><div class="k">Rules alone</div><div class="v num ${c.rulesSol >= 0 ? 'pos' : 'neg'}">${sol(c.rulesSol)}</div><div class="s">buy every signal, normal size</div></div>
+      <div class="card stat"><div class="k">It bought</div><div class="v num">${c.bought}</div><div class="s">next hour avg ${pc(c.boughtAvgPct)}</div></div>
+      <div class="card stat"><div class="k">It skipped</div><div class="v num">${c.skipped}</div><div class="s">${c.dodged} fell · ${c.missed} rose · avg ${pc(c.skippedAvgPct)}</div></div>
+    </div>` : ''}
+    <div class="muted" style="font-size:12.5px">${who} sees this record (and its biggest recent mistakes) before every buy call, so it can learn from it.</div></div></div>`;
+}
 function aiItem(d) {
   const kind = { buy: d.verdict === 'skip' ? ['skip', 'Skipped buy'] : ['buy', 'Bought'], review: ['ai', 'Position review'], wallets: ['ai', 'Wallet review'], scout: ['ai', 'Wallet scout'], test: ['ai', 'Test'] }[d.kind] || ['ai', d.kind];
   const token = d.mint ? ` ${tokenLink(d.mint)}${d.symbol ? ` <span class="muted">${esc(d.symbol)}</span>` : ''}` : '';
@@ -2528,6 +2550,7 @@ function renderAutopilot(el, fresh) {
     </div>
     ${a.lastError && on ? `<div class="banner warn"><div><b>${local ? 'Local AI' : 'Claude'}:</b> ${esc(a.lastError)}</div></div>` : ''}
     ${keyBox}
+    ${aiScoreCard(a, local)}
     <div class="grid stats">
       <div class="card stat" style="--c:var(--accent)"><div class="k">${ICON.coin}AI cost today</div><div class="v num">${local ? 'Free' : `${usd(a.today.costUsd)} <small style="font-size:13px" class="muted">of $${a.today.budgetUsd}</small>`}</div><div class="s">${a.today.calls} call${a.today.calls === 1 ? '' : 's'} to ${local ? 'the local AI' : 'Claude'}${a.overBudget ? ' · budget used up' : ''}</div><div class="bar"><i style="width:${spentPct}%"></i></div></div>
       <div class="card stat"><div class="k">${ICON.star}Buy decisions today</div><div class="v num">${buys.length}</div><div class="s">${buys.filter((d) => d.verdict === 'buy').length} bought · ${buys.filter((d) => d.verdict === 'skip').length} skipped</div></div>
@@ -2559,6 +2582,8 @@ function renderAutopilot(el, fresh) {
     const r = await act(() => api('PUT', '/api/connection', { anthropicKey: $('#ai-key').value }), 'Anthropic key saved');
     if (r) { S.connection = r; loadAi(); }
   };
+  const ub = $('#ai-unbench');
+  if (ub) ub.onclick = async () => { if (await act(() => api('POST', '/api/ai/unbench'), 'The AI decides buys again')) loadAi(); };
   $('#ai-test').onclick = async () => {
     $('#ai-msg').innerHTML = `<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Asking ${local ? 'the local AI (the first answer can take a while as the model loads)' : 'Claude'}…`;
     const r = await act(() => api('POST', '/api/ai/test'));
@@ -2811,6 +2836,7 @@ const FIELDS = [
   { title: 'Autopilot (Claude)', tab: 'automation', id: 'ai-settings', desc: 'What Claude may decide. It always stays inside every limit above. Turn it on and add your key on the Autopilot page.', fields: [
     { k: 'ai.enabled', label: 'Autopilot on', type: 'toggle' },
     { k: 'ai.decideBuys', when: ['ai.enabled'], label: 'Claude decides buys', type: 'toggle', help: 'Buy or skip each copy signal that passed the safety checks, and how big (¼× to 2× your normal size).' },
+    { k: 'ai.autoBench', when: ['ai.enabled', 'ai.decideBuys'], label: 'Bench the AI when the rules do better', type: 'toggle', help: 'Every buy call is checked an hour later. If following the AI made less than the plain rules would have over the last 2 weeks, the rules take over buys; the AI keeps making calls on the side and gets its job back once it would have beaten the rules again.' },
     { k: 'ai.reviewPositions', when: ['ai.enabled'], label: 'Claude reviews open positions', type: 'toggle', help: 'Can sell early. Stop-loss and take-profits still run on their own.' },
     { k: 'ai.reviewEveryMin', when: ['ai.enabled'], label: 'Review positions every', unit: 'min', step: 1 },
     { k: 'ai.manageWallets', when: ['ai.enabled'], label: 'Claude manages wallets', type: 'toggle', help: 'Pause losing wallets, change sizes and budgets, and add wallets from your Find wallets results.' },

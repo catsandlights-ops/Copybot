@@ -1093,9 +1093,13 @@ export class BotEngine extends EventEmitter {
         holders: holders && { holderCount: holders.holderCount, largestWalletPct: +holders.largestPct.toFixed(2), top10WalletsPct: +holders.top10Pct.toFixed(1), largestIsTheCopiedWallet: holders.largestOwner === s.wallet },
         portfolio: { openPositions: Object.keys(state.positions).length, maxPositions: r.maxOpenPositions, exposureSol: exposure(state), maxExposureSol: r.maxTotalExposureSol, dayPnlSol: g.dayPnlSol },
         probe: { lamports: check.buyQuote.inAmount, tokensOut: check.buyQuote.outAmount, chain: chain.meta.id },
+        lessons: this.lessons.filter((l) => l.expiresAt > Date.now()).map((l) => `${l.label}: avg ${l.avgPct.toFixed(0)}% per trade lately`),
       });
       if (!this.running) return;
-      if (!d) {
+      if (d && ai.benched()) {
+        // Benched: its call is tracked for the scorecard, but the rules decide (buy at normal size).
+        this.log(`  ${ai.AiName(this.cfg)} would ${d.buy ? `buy${d.size !== 1 ? ` (size ×${d.size})` : ''}` : 'skip'} (benched, so the rules decide: buy)`, 'ai');
+      } else if (!d) {
         this.log(`  ${ai.AiName(this.cfg)} unavailable: ${ai.aiStatus(cfg).lastError ?? 'no answer'} Following the rules: buy.`, 'warn');
       } else {
         if (!d.buy) {
@@ -1242,7 +1246,7 @@ export class BotEngine extends EventEmitter {
     }
   }
 
-  /** For buys Claude skipped an hour ago: what would the same buy be worth now? */
+  /** For buy decisions an hour old (bought or skipped): what would the same buy be worth now? Feeds the AI scorecard. */
   private async checkSkippedOutcomes() {
     for (const d of ai.pendingOutcomes().slice(0, 10)) {
       if (!d.probe || !d.mint) continue;
@@ -1250,6 +1254,11 @@ export class BotEngine extends EventEmitter {
       if (q === undefined) continue; // network trouble: try again next round
       // Fewer tokens for the same SOL = the price went up. No route at all usually means the token died.
       ai.setOutcome(d.id, q ? (Number(d.probe.tokensOut) / Number(q.outAmount) - 1) * 100 : -100);
+    }
+    const benchNews = ai.checkBench(this.cfg);
+    if (benchNews) {
+      this.log(benchNews, 'ai');
+      this.emit('guard', benchNews);
     }
   }
 

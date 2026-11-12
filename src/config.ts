@@ -235,6 +235,8 @@ export type Config = {
     scoutEveryHours: number; // wallet scout: search for new wallets this often (0 = only when asked)
     scoutMaxPicks: number; // most new wallets added per scout run
     dailyBudgetUsd: number;
+    /** Bench the AI's buy calls (the rules decide) while it's losing to the plain rules. */
+    autoBench: boolean;
     guidance: string; // the user's own instructions for Claude
     /** Which AI: Claude (Anthropic's API, paid) or a free local model through Ollama. */
     provider: 'claude' | 'ollama';
@@ -288,7 +290,7 @@ export const DEFAULT_CONFIG: Config = {
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
   scanner: { findTraders: false, traderEveryHours: 1, coinsEverySec: 60, spotEveryMin: 5, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, baseCoins: false, buySol: 0.1, budgetSol: 0.5, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
-  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '', provider: 'claude', claudeModel: 'claude-opus-5-5', ollamaUrl: 'http://127.0.0.1:11434', ollamaFast: '', ollamaSmart: '' },
+  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, autoBench: true, guidance: '', provider: 'claude', claudeModel: 'claude-opus-5-5', ollamaUrl: 'http://127.0.0.1:11434', ollamaFast: '', ollamaSmart: '' },
 };
 
 /** Allowed range for every numeric setting: [min, max, human name]. */
@@ -371,7 +373,7 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
 const BOOLEANS = [
   'learn.enabled',
   'trial.shadowPaused',
-  'exits.adaptiveTrail','sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'execution.baseLive', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'scanner.baseCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets'];
+  'exits.adaptiveTrail','sell.copySells', 'risk.skipIfAlreadyHolding', 'safety.rejectFreezeAuthority', 'safety.rejectMintAuthority', 'safety.rejectToken2022', 'filters.skipIfNoMarketData', 'execution.fastStream', 'trial.enabled', 'alerts.trades', 'alerts.errors', 'alerts.guard', 'alerts.autopilot', 'buy.consensusAddOn', 'buy.sizeByRecord', 'risk.moodFilter', 'safety.rugMemory', 'execution.dynamicSlippage', 'execution.mevProtect', 'execution.baseLive', 'tune.weekly', 'scanner.findTraders', 'scanner.tradeCoins', 'scanner.trackSignals', 'scanner.newCoins', 'scanner.oldCoins', 'scanner.baseCoins', 'ai.enabled', 'ai.decideBuys', 'ai.reviewPositions', 'ai.manageWallets', 'ai.autoBench'];
 const ENUMS: Record<string, string[]> = {
   mode: ['paper', 'live'],
   'buy.sizing': ['fixed', 'percent'],
