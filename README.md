@@ -190,7 +190,16 @@ npm run dist:win     # → release/Copybot-Setup-x.y.z.exe  (Windows, or Linux w
 npm run dist:mac     # → release/*.dmg                     (on a Mac; unsigned: right-click → Open the first time)
 npm run dist:linux   # → release/*.AppImage
 npm test             # unit tests
+npm run test:fuzz    # junk sent to every app endpoint: nothing may error out or crash
+npm run test:stress  # 3 minutes of trading in a made-up market (Solana + Base), crashed at random,
+                     #   with the books checked every 30 s (longer: node scripts/stress/run.mjs 20)
+npm run test:ui      # opens every page in a headless browser, walks the go-live assistant
 ```
+
+The end-to-end checks (`scripts/stress/`) run the real app against a made-up market (`world.mjs`):
+moving prices, pumps, dumps and rugs, fake traders on both chains, and answers in the exact formats
+of a Solana node, a Base node, Jupiter, KyberSwap, GoPlus and Dexscreener, with "too many requests",
+slow and broken replies mixed in. Nothing touches the internet or real money.
 
 ### Browser version and headless mode
 
@@ -254,6 +263,13 @@ Set a number to 0 to turn that rule off.
 4. **Decide** (`src/ai.ts`, optional): Claude buy/skip and sizing, then a fresh quote and re-check.
 5. **Execute** (`src/trader.ts`, `src/txguard.ts`): Jupiter quote and swap, verified and simulated, then confirmed; in live mode the real filled amounts are read back from the chain.
 6. **Manage** (`src/engine.ts`): copied sells, staged exits, trailing stop, stop-loss and AI position reviews.
+
+The control panel's server is split by feature: `src/server.ts` (the routes and startup),
+`server-core.ts` (the engine, live updates, background jobs, HTTP helpers), `server-scout.ts`
+(finding wallets), `server-scanner.ts` (the market scanner), `server-learning.ts` (backtests,
+learning, shadow promotion, the weekly settings check), `server-golive.ts` (Ready for live? and the
+go-live assistant), `server-status.ts` (connection status, portfolio value) and `server-phone.ts`
+(phone access).
 
 ### Publishing an update
 

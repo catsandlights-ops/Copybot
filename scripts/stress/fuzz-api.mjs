@@ -31,7 +31,7 @@ for (let i = 0; i < 100 && !token; i++) {
   token = out.match(/[?&]t=([A-Za-z0-9_-]+)/)?.[1] ?? null;
 }
 
-const src = fs.readFileSync(path.join(root, 'src/server.ts'), 'utf8');
+const src = fs.readdirSync(path.join(root, 'src')).filter((f) => /^server.*\.ts$/.test(f)).map((f) => fs.readFileSync(path.join(root, 'src', f), 'utf8')).join('\n');
 const routes = [...new Set([...src.matchAll(/route === '(GET|POST|PUT|DELETE) ([^']+)'/g)].map((m) => `${m[1]} ${m[2]}`))]
   .filter((r) => !r.includes(' /r/') && !r.endsWith('/update/install'));
 const wallet = world.wallets[0].address, mint = world.coins[0].mint;

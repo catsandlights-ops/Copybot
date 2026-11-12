@@ -1,6 +1,7 @@
 name: Tests
 
-# Type-check and run the unit tests on every push and pull request.
+# Type-check, run the unit tests, then the end-to-end checks against a made-up market:
+# junk sent to every endpoint, and 3 minutes of trading with random crashes.
 on:
   push:
     branches-ignore: [main]
@@ -19,3 +20,5 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
+      - run: npm run test:fuzz
+      - run: npm run test:stress
