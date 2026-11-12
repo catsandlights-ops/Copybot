@@ -160,7 +160,7 @@ function render() {
   const posHtml = S.positions.length ? S.positions.map((p) => `<div class="pos-item">
       <div class="row between"><span>${coin(p)}</span><span class="row" style="gap:10px">${line(p.trail, 'spark', 1)}<b class="${cls(p.pnlPct)}">${pct(p.pnlPct)}</b></span></div>
       <div class="row between muted" style="font-size:13px"><span>${esc((p.from || []).join(', '))} · ${ago(p.openedAt)}</span><span>${p.costSol.toFixed(3)} → ${p.valueSol == null ? '—' : p.valueSol.toFixed(3)} SOL</span></div>
-      <div class="row" style="margin-top:8px"><button class="sm" data-sell="${esc(p.mint)}" data-f="0.5">Sell 50%</button><button class="sm stop" data-sell="${esc(p.mint)}" data-f="1">Sell all</button></div></div>`).join('')
+      <div class="row" style="margin-top:8px"><button class="sm" data-sell="${esc(p.mint)}" data-f="0.5">Sell 50%</button><button class="sm stop" data-sell="${esc(p.mint)}" data-f="1">Sell all</button>${p.valueSol == null || (p.pnlPct != null && p.pnlPct <= -80) ? `<button class="sm" data-writeoff="${esc(p.mint)}" data-cost="${p.costSol}">Write off</button>` : ''}</div></div>`).join('')
     : '<div class="muted">No open positions.</div>';
   const tradesHtml = S.trades.length ? S.trades.map((t) => `<div class="log"><time>${hhmm(t.t)}</time><b class="${t.side === 'buy' ? '' : cls(t.pnl)}">${t.side === 'buy' ? 'BUY' : 'SELL'}</b> ${coin(t)} ${t.sol.toFixed(3)} SOL${t.side === 'sell' && t.pnl != null ? ` · <span class="${cls(t.pnl)}">${sol(t.pnl, 4)}</span>` : ''}${t.reason ? `<div class="muted">${esc(t.reason)}</div>` : ''}</div>`).join('') : '<div class="muted">No trades yet.</div>';
   const wl = S.walletList || [];
@@ -217,6 +217,7 @@ function bind() {
   };
   document.querySelectorAll('[data-cancel]').forEach((b) => (b.onclick = () => confirm('Cancel this order?') && action(() => call('POST', '/r/orders/cancel', { id: b.dataset.cancel }), 'Order cancelled')));
   const res = $('#resume'); if (res) res.onclick = () => confirm('Let the bot buy again today despite the loss limit?') && action(() => call('POST', '/r/resume'), 'Buying resumed');
+  document.querySelectorAll('[data-writeoff]').forEach((b) => (b.onclick = () => confirm(`Write off ${b.dataset.writeoff.slice(0, 4)}…${b.dataset.writeoff.slice(-4)}? For a dead coin nobody will buy: it's removed from your positions as a loss of ${Number(b.dataset.cost).toFixed(4)} SOL, without selling, so its slot is free.${S.mode === 'live' ? ' The coins stay in your wallet.' : ''}`) && action(() => call('POST', '/r/writeoff', { mint: b.dataset.writeoff }), 'Written off')));
   document.querySelectorAll('[data-pause]').forEach((b) => (b.onclick = () => confirm(`Pause ${b.dataset.name}? Its open positions still follow its sells. Turn it back on from the computer.`) && action(() => call('POST', '/r/wallet/pause', { id: b.dataset.pause }), 'Wallet paused')));
   document.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => {
     const f = Number(b.dataset.f);

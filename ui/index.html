@@ -938,7 +938,7 @@ function paperAmount() {
 }
 async function resetPaper() {
   if (!(await confirmModal({ title: 'Reset paper results?', confirm: 'Reset', danger: true,
-    body: `<p>Your paper wallet goes back to <b>${S.config.paper.startSol} SOL</b>, and paper positions and paper trades are cleared so you can start a fresh experiment.</p><p class="muted">A copy of the old results is kept in the data folder. Live trading is not affected.</p>` }))) return;
+    body: `<p>Your paper wallet goes back to <b>${S.config.paper.startSol} SOL</b>, and paper positions, paper trades, the paper wallet chart and the signal counts are cleared so you can start a fresh experiment.</p><p class="muted">A copy of the old results is kept in the data folder. Live trading is not affected.</p>` }))) return;
   const r = await act(() => api('POST', '/api/paper/reset'), 'Paper results reset');
   if (r) load();
 }
@@ -1057,7 +1057,7 @@ function renderDashboard(el) {
         <td><a href="#" data-pchart="${esc(p.mint)}" title="Open the live chart">${spark(p.trail, 1, 'Value since you bought')}</a></td>
         <td class="plan">${exitPlan(p)}</td>
         <td class="r muted num">${ago(p.openedAt)}</td>
-        <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button></td>
+        <td class="r" style="white-space:nowrap"><button class="btn sm" data-sell="${esc(p.mint)}" data-f="0.5" title="Sell half">Sell 50%</button> <button class="btn sm danger" data-sell="${esc(p.mint)}" data-f="1" title="Sell everything">All</button> <button class="btn sm ghost" data-writeoff="${esc(p.mint)}" title="Write off: a dead or rugged coin nobody will buy. Removes it from your books as a total loss, without selling, so its slot is free." aria-label="Write off">✕</button></td>
       </tr>`).join('')}</tbody></table></div>`
     : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No open positions</h3>${enabled.length ? (st.running ? 'Waiting for a wallet you copy to buy something…' : 'Start the bot to begin copying.<div class="press">Press start</div>') : S.config.mode === 'paper' ? 'Press <b>Start bot</b> to run a paper experiment: Copybot picks a few active traders for you. Nothing is spent.<div class="press">Press start</div>' : 'Add a wallet to copy first.'}${enabled.length ? '' : `<br><button class="btn ${S.config.mode === 'paper' ? '' : 'primary'}" onclick="go('wallets')">Pick wallets myself</button>`}</div>`;
 
@@ -1084,6 +1084,7 @@ function renderDashboard(el) {
         <div class="feed" id="feed">${feedHtml()}</div></div>
     </div>`;
   el.querySelectorAll('[data-sell]').forEach((b) => (b.onclick = () => sellPosition(b.dataset.sell, Number(b.dataset.f))));
+  el.querySelectorAll('[data-writeoff]').forEach((b) => (b.onclick = () => writeOffPosition(b.dataset.writeoff)));
   el.querySelectorAll('[data-pchart]').forEach((a) => (a.onclick = (e) => { e.preventDefault(); openPositionChart(a.dataset.pchart); }));
   bindPortfolio();
   const pr = $('#paper-reset'); if (pr) pr.onclick = (e) => { e.preventDefault(); resetPaper(); };
@@ -1339,6 +1340,17 @@ async function sellPosition(mint, fraction) {
   const live = S.config.mode === 'live';
   const ok = await confirmModal({ title: `Sell ${fraction >= 1 ? 'all' : Math.round(fraction * 100) + '%'} of ${short(mint)}?`, body: `<p>${live ? 'This sends a real sell transaction now.' : 'Simulated sell at the current price.'}</p>`, confirm: 'Sell', danger: live });
   if (ok) act(() => api('POST', '/api/sell', { mint, fraction }), 'Sell submitted');
+}
+
+/** A dead (rugged) coin: remove it from the books as a total loss so its slot is free. */
+async function writeOffPosition(mint) {
+  const p = S.status.positions.find((x) => x.mint === mint);
+  if (!p) return;
+  const live = S.config.mode === 'live';
+  const ok = await confirmModal({ title: `Write off ${short(mint)}?`, danger: true, confirm: 'Write it off',
+    body: `<p>For a coin that <b>can't be sold</b> (rugged, no buyers). It's removed from your positions and counted as a loss of <b>${p.costSol.toFixed(4)} SOL</b>, without selling, so its slot is free for new trades.</p>
+      <p class="muted">${live ? 'The coins stay in your wallet: if a buyer ever appears you can still sell them in a wallet app.' : 'Paper mode: nothing is sold.'} If it can still be sold, use <b>All</b> instead to get something back. Copybot also writes off coins nobody buys after 2 hours by itself.</p>` });
+  if (ok) { const r = await act(() => api('POST', '/api/positions/writeoff', { mint }), 'Written off'); if (r) { S.status = r; render(); } }
 }
 
 // ----- wallets -----

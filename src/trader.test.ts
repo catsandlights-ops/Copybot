@@ -248,3 +248,29 @@ test("no buyers: retries quietly with growing pauses, then writes the coin off a
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('writeOff: a dead coin leaves the books as a total loss, recorded, its slot freed', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-writeoff-'));
+  const prev = process.cwd();
+  try {
+    process.chdir(dir);
+    fs.mkdirSync('data');
+    const MINT = '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr';
+    const cfg = sanitizeConfig({}, false);
+    const state = { positions: { [MINT]: { chain: 'solana', mint: MINT, decimals: 6, amountRaw: '1000', costSol: 0.25, openedAt: 1, sources: ['W1'] } }, realizedPnlSol: 0.1 } as any;
+    const trades: any[] = [];
+    const t = new Trader(null as any, cfg, state, null, { log: () => {}, trade: (x) => trades.push(x), name: (w) => w });
+    assert.equal(t.writeOff(MINT, 'written off by you'), -0.25);
+    assert.equal(state.positions[MINT], undefined);
+    assert.ok(Math.abs(state.realizedPnlSol - -0.15) < 1e-12);
+    assert.equal(trades.length, 1);
+    assert.equal(trades[0].sig, 'NONE');
+    assert.equal(trades[0].pnl, -0.25);
+    assert.deepEqual(trades[0].sources, ['W1'], 'the loss counts against the wallet it was copied from');
+    assert.ok(fs.readFileSync('data/trades.jsonl', 'utf8').includes('written off by you'));
+    assert.equal(t.writeOff(MINT, 'again'), null, 'nothing to write off twice');
+  } finally {
+    process.chdir(prev);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

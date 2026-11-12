@@ -567,6 +567,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     }
   }
 
+  if (route === 'POST /api/positions/writeoff') {
+    // A dead (rugged) coin: close it in the books as a total loss, without selling, to free its slot.
+    const b = await readBody(req);
+    if (typeof b.mint !== 'string' || !Object.hasOwn(engine.state.positions, b.mint)) throw new HttpError(400, 'No open position for that token');
+    await engine.writeOff(b.mint);
+    return send(res, 200, engine.snapshot());
+  }
   if (route === 'POST /api/sell') {
     const b = await readBody(req);
     if (typeof b.mint !== 'string' || !Object.hasOwn(engine.state.positions, b.mint)) throw new HttpError(400, 'No open position for that token');

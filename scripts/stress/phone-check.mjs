@@ -102,6 +102,23 @@ try {
   const pos = await page.textContent('#app');
   if (/Positions \((\d+)\)/.exec(pos)?.[1] !== '0' && !/\b[CB]\d+\b/.test(pos)) errors.push('positions show no coin names');
   await browser.close();
+
+  // Write off an open position (as for a rugged coin), then reset paper mode: everything starts again.
+  let st = await api('GET', '/api/state');
+  const victim = st.status.positions[0];
+  if (victim) {
+    const before = st.status.realizedPnlSol;
+    await api('POST', '/api/positions/writeoff', { mint: victim.mint });
+    st = await api('GET', '/api/state');
+    if (st.status.positions.some((p) => p.mint === victim.mint)) errors.push('the written-off position is still open');
+    if (Math.abs(st.status.realizedPnlSol - (before - victim.costSol)) > 1e-6) errors.push(`write-off booked ${st.status.realizedPnlSol - before}, expected ${-victim.costSol}`);
+  } else errors.push('no open position to write off');
+  await api('POST', '/api/stop');
+  await api('POST', '/api/paper/reset');
+  st = await api('GET', '/api/state');
+  if (st.status.positions.length || st.status.realizedPnlSol !== 0) errors.push('paper reset left positions or profit');
+  if (fs.existsSync(path.join(dir, 'data/series-paper.json'))) errors.push('paper reset left the wallet chart');
+  if (st.trades.some((t) => t.mode === 'paper')) errors.push('paper reset left paper trades');
 } catch (e) {
   errors.push(e.message);
 }

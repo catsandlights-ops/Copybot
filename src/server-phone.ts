@@ -175,6 +175,12 @@ export async function handleRemote(req: http.IncomingMessage, res: http.ServerRe
     from(`market scanner: find traders ${next.scanner.findTraders ? 'on' : 'off'}, trade coins ${next.scanner.tradeCoins ? 'on' : 'off'}`);
     return send(res, 200, phoneState());
   }
+  if (route === 'POST /r/writeoff') {
+    const b = await readBody(req);
+    if (typeof b.mint !== 'string' || !Object.hasOwn(engine.state.positions, b.mint)) throw new HttpError(400, 'No open position for that token');
+    await engine.writeOff(b.mint, device.name);
+    return send(res, 200, phoneState());
+  }
   if (route === 'POST /r/wallet/pause') {
     // Pausing only lowers risk, so the phone may do it; turning a wallet back on is done on the computer.
     const b = await readBody(req);

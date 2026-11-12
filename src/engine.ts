@@ -548,6 +548,33 @@ export class BotEngine extends EventEmitter {
     await this.enqueue(() => this.trader.sell(mint, fraction, 'manual'), true);
   }
 
+  /** You removed a dead (rugged) coin from your books: closed as a total loss, without selling. */
+  async writeOff(mint: string, by = 'you'): Promise<number | null> {
+    let loss: number | null = null;
+    await this.enqueue(async () => {
+      loss = this.trader.writeOff(mint, `written off by ${by}`);
+    }, true);
+    if (loss !== null) {
+      delete this.unpriced[mint];
+      this.log(`${short(mint)} written off by ${by}: a loss of ${(-loss).toFixed(4)} SOL in the books, and its slot is free.${this.cfg.mode === 'live' ? ' The coins are still in your wallet.' : ''}`, 'system');
+      this.emit('status');
+    }
+    return loss;
+  }
+
+  /** A fresh paper experiment: forget the paper signal counts and the last 24 hours' skip reasons. */
+  resetPaperStats() {
+    if (this.cfg.mode === 'paper') {
+      this.sigStats = {};
+      this.activity = [];
+    }
+    try {
+      fs.rmSync('data/signal-stats-paper.json', { force: true });
+    } catch {
+      /* nothing to remove */
+    }
+  }
+
   private async onSignature(sig: string, wallet: string) {
     if (this.seen.has(sig)) return;
     this.remember(sig);

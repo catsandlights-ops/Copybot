@@ -171,6 +171,21 @@ export class Trader {
 
   /** Coins nobody would buy last time we tried to sell: when we first noticed, how often, when to try again. */
   private noRoute = new Map<string, { since: number; tries: number; nextAt: number; loggedAt: number }>();
+  /**
+   * Close a position in the books as a total loss, without selling (a rugged or dead coin). Its slot
+   * and budget are freed. In live mode the coins stay in the wallet. Returns the loss, or null.
+   */
+  writeOff(mint: string, reason: string): number | null {
+    const p = this.state.positions[mint];
+    if (!p) return null;
+    this.noRoute.delete(mint);
+    const loss = -p.costSol;
+    this.state.realizedPnlSol += loss;
+    delete this.state.positions[mint];
+    this.record({ t: Date.now(), chain: getChain(p).meta.id, mode: this.cfg.mode, side: 'sell', mint, sol: 0, tokenRaw: '0', pnl: loss, reason, sources: [...p.sources], ...(p.entry ? { entry: p.entry } : {}), sig: 'NONE' });
+    return loss;
+  }
+
   /** A coin that found no buyers last time: 'wait' until its next try, 'due' when it's time to try again. */
   noBuyersState(mint: string): 'wait' | 'due' | null {
     const nr = this.noRoute.get(mint);
@@ -191,11 +206,7 @@ export class Trader {
     nr.nextAt = now + Math.min(30_000 * 2 ** (nr.tries - 1), 10 * 60_000);
     this.noRoute.set(p.mint, nr);
     if (now - nr.since >= Trader.WRITE_OFF_AFTER_MS && nr.tries >= 5) {
-      this.noRoute.delete(p.mint);
-      const loss = -p.costSol;
-      this.state.realizedPnlSol += loss;
-      delete this.state.positions[p.mint];
-      this.record({ t: now, chain: getChain(p).meta.id, mode: this.cfg.mode, side: 'sell', mint: p.mint, sol: 0, tokenRaw: '0', pnl: loss, reason: 'no buyers for 2 hours: written off', sources: [...p.sources], ...(p.entry ? { entry: p.entry } : {}), sig: 'NONE' });
+      const loss = this.writeOff(p.mint, 'no buyers for 2 hours: written off')!;
       this.hooks.log(`${short(p.mint)}: no one has been willing to buy it for 2 hours (its liquidity is gone), so it was written off as a loss of ${p.costSol.toFixed(4)} SOL to free its slot.${this.live ? ' The coins are still in your wallet if a buyer ever appears.' : ''}`, 'error');
       return loss;
     }

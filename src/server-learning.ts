@@ -1,4 +1,5 @@
 /** Wallet health checks, backtest data, learning, shadow promotion and the weekly auto-tune. */
+import { portfolio, SERIES_FILE } from './server-status';
 import { writeAtomic } from './util';
 import fs from 'node:fs';
 import { sanitizeConfig, saveConfig } from './config';
@@ -138,6 +139,10 @@ export async function resetPaper() {
       fs.renameSync('data/trades.jsonl.tmp', 'data/trades.jsonl');
     }
   });
+  // The charts and counts start again too: the 24-hour paper wallet chart and the "signals seen / skipped" counts.
+  portfolio.delete('paper');
+  fs.rmSync(SERIES_FILE('paper'), { force: true });
+  engine.resetPaperStats();
   engine.log(`Paper results reset: the paper wallet is back to ${engine.cfg.paper.startSol} SOL. The old results were kept in the data folder.`, 'system');
   broadcast('trades-reset', {});
 }
