@@ -612,33 +612,39 @@ async function setAppearance(mode) {
 }
 
 // ---------------- first-run setup ----------------
-const WZ_STEPS = ['Welcome', 'Connection', 'Wallets', 'Alerts', 'Ready'];
+const WZ_STEPS = ['Welcome', 'Connection', 'Wallets', 'Running all day', 'Ready'];
 function wizard(step = 0) {
   S.wz = step;
   const c = S.connection, mine = S.config.wallets.length;
   const dots = WZ_STEPS.map((l, i) => `<span class="wz-dot ${i === step ? 'on' : i < step ? 'done' : ''}" title="${l}"></span>`).join('');
   const body = [
     `<div class="wz-hero">${ICON.rainbow}</div><h2>Welcome to Copybot</h2>
-     <p>Copybot follows Solana wallets you choose and copies their trades within seconds, with safety checks and limits you control.</p>
+     <p>Copybot follows wallets you choose, on <b>Solana</b> and <b>Base</b>, and copies their trades within seconds, with safety checks and limits you control.</p>
      <p class="muted">It starts in <b>paper mode</b>: every trade is simulated with real prices and nothing is spent. Setup takes about 3 minutes.</p>`,
     `<h2>Connect a fast RPC</h2>
      <p>The RPC is Copybot's connection to Solana. The free public one is rate-limited and <b>misses trades</b>.</p>
      <ol class="steps"><li>Create a free account at <a href="https://www.helius.dev" target="_blank" rel="noopener">helius.dev</a>.</li><li>Copy your RPC link (<span class="mono">https://mainnet.helius-rpc.com/?api-key=…</span>) and paste it here.</li></ol>
      <input class="input mono" id="wz-rpc" placeholder="https://mainnet.helius-rpc.com/?api-key=…" value="${c.usingPublicRpc ? '' : esc(c.rpcUrl)}" spellcheck="false" style="width:100%">
-     <div class="row" style="margin-top:10px"><button class="btn" id="wz-test">Save &amp; test</button><span class="muted" id="wz-rpc-msg" style="font-size:13px">${c.usingPublicRpc ? '' : '<span class="pos">✓ A private RPC is set.</span>'}</span></div>`,
+     <div class="row" style="margin-top:10px"><button class="btn" id="wz-test">Save &amp; test</button><span class="muted" id="wz-rpc-msg" style="font-size:13px">${c.usingPublicRpc ? '' : '<span class="pos">✓ A private RPC is set.</span>'}</span></div>
+     <details style="margin-top:14px" ${c.baseRpcUrl ? 'open' : ''}><summary style="cursor:pointer"><b>Base too?</b> <span class="muted">(optional)</span></summary>
+       <p class="muted" style="margin:8px 0">Copying Base wallets works without this, but finding and checking Base wallets needs a free <b>Alchemy</b> link: sign up at <a href="https://www.alchemy.com" target="_blank" rel="noopener">alchemy.com</a>, create an app on <b>Base Mainnet</b>, and paste its HTTPS link.</p>
+       <input class="input mono" id="wz-base" placeholder="https://base-mainnet.g.alchemy.com/v2/…" value="${esc(c.baseRpcUrl || '')}" spellcheck="false" style="width:100%">
+       <div class="row" style="margin-top:8px"><button class="btn sm" id="wz-base-save">Save</button><span class="muted" id="wz-base-msg" style="font-size:13px">${c.baseRpcUrl ? '<span class="pos">✓ A Base link is set.</span>' : ''}</span></div></details>`,
     `<h2>Pick wallets to copy</h2>
-     <p>Copybot is only as good as the wallets it copies.${mine ? ` <b>You already copy ${mine}.</b>` : ''}</p>
+     <p>Copybot is only as good as the wallets it copies.${mine ? ` <b>You already copy ${mine}.</b>` : ''} New wallets start small (a trial size) and grow as they prove themselves.</p>
      <div class="wz-choices">
-       <button class="wz-choice" id="wz-scout"><b>Find wallets for me</b><span>Scans tokens that pumped recently, checks who bought early and picks the best (5–15 min, runs in the background).</span></button>
-       <div class="wz-choice"><b>I have a wallet address</b><span>Paste one or more, one per line.</span><textarea class="input mono" id="wz-addrs" rows="2" placeholder="Wallet address"></textarea><button class="btn sm" id="wz-add" style="margin-top:6px">Add</button></div>
+       <button class="wz-choice" id="wz-scout"><b>Find wallets for me</b><span>Scans tokens that pumped recently, checks who bought early and picks the best (5–15 min, runs in the background).${c.baseRpcUrl ? ' Searches Solana; Base is searched too, every other time.' : ''}</span></button>
+       <div class="wz-choice"><b>I have a wallet address</b><span>Paste one or more, one per line. Solana addresses, or Base addresses starting with 0x.</span><textarea class="input mono" id="wz-addrs" rows="2" placeholder="Wallet address"></textarea><button class="btn sm" id="wz-add" style="margin-top:6px">Add</button></div>
      </div><div class="muted" id="wz-w-msg" style="font-size:13px;margin-top:8px"></div>`,
-    `<h2>Get alerts on your phone <span class="muted" style="font-size:14px;font-weight:500">(optional)</span></h2>
-     <p>Copybot can message you on <b>Telegram</b> or <b>Discord</b> for every trade, problem or pause, so you don't have to keep it open.</p>
-     <p class="muted">Set it up any time in <b>Settings → Phone alerts</b>. It takes about 2 minutes.</p>
-     <button class="btn" id="wz-alerts">Set up alerts now</button>`,
+    `<h2>Running all day</h2>
+     <p>Copybot works best left on. It keeps the computer awake while the bot runs.</p>
+     <label class="row" style="gap:10px;align-items:flex-start;justify-content:flex-start;text-align:left;margin:10px 0"><label class="switch"><input type="checkbox" id="wz-resume" ${S.ui.resumeBot !== false ? 'checked' : ''}><i></i></label><span><b>Start the bot again after a crash, restart or power cut</b><br><span class="muted" style="font-size:13px">Not after you stop it yourself.</span></span></label>
+     ${S.app.desktop === false ? '' : `<label class="row" style="gap:10px;align-items:flex-start;justify-content:flex-start;text-align:left;margin:10px 0"><label class="switch"><input type="checkbox" id="wz-login" ${S.ui.startWithWindows ? 'checked' : ''}><i></i></label><span><b>Start Copybot with Windows</b><br><span class="muted" style="font-size:13px">Opens minimized when you log in.</span></span></label>`}
+     <p class="muted">Want to check on it from your phone? <b>Settings → Phone access</b> pairs your phone in a minute (works away from home with the free Tailscale app). A backup is saved every day automatically.</p>`,
     `<div class="wz-hero">${ICON.star}</div><h2>You're ready</h2>
      <ul class="wz-check"><li>${c.usingPublicRpc ? '⚠️ Still on the public RPC (you can add Helius later in Settings)' : '✅ Private RPC connected'}</li><li>${S.config.wallets.length ? `✅ Copying ${S.config.wallets.length} wallet${S.config.wallets.length > 1 ? 's' : ''}` : scoutJob() ? '⏳ The wallet scout is searching. Picks appear on Find wallets.' : '💡 No wallets yet: <b>Start a paper experiment</b> and Copybot picks a few active traders for you'}</li><li>✅ Paper mode: nothing is spent</li></ul>
-     <p class="muted">Tip: before copying a wallet with real money, run it on the <b>Backtest</b> page. Read <a href="#" data-guide="getting-started" id="wz-guide">Getting started</a> for the rest.</p>`,
+     <p class="muted">Everything starts in <b>paper mode</b> (no money). Give it a week or more. When the results are good, choose <b>Live</b> in Settings → Trading mode: a step-by-step assistant checks your results and wallet, makes a tiny test trade and starts you small.</p>
+     <p class="muted">Optional: on the <b>Autopilot</b> page an AI can make the judgment calls, either Claude (paid) or a free AI running on your own PC. Read <a href="#" data-guide="getting-started" id="wz-guide">Getting started</a> for the rest.</p>`,
   ][step];
   $('#modal-root').innerHTML = `<div class="modal-bg"><div class="modal wizard" role="dialog" aria-modal="true" aria-label="Setup">
     <div class="wz-top"><div class="wz-dots">${dots}</div><button class="btn sm ghost" id="wz-skip">Skip setup</button></div>
@@ -676,8 +682,15 @@ function wizard(step = 0) {
     const r = await saveWallets([...S.config.wallets, ...addrs.map((address, i) => ({ address, label: `trader-${S.config.wallets.length + i + 1}`, enabled: true }))], `Added ${addrs.length} wallet${addrs.length > 1 ? 's' : ''}`);
     if (r) wizard(2);
   };
-  const al = $('#wz-alerts');
-  if (al) al.onclick = async () => { await finish(); await openSettings('#alerts-settings'); };
+  const bs = $('#wz-base-save');
+  if (bs) bs.onclick = async () => {
+    const r = await act(() => api('PUT', '/api/connection', { baseRpcUrl: $('#wz-base').value.trim() }));
+    if (r) { S.connection = r; $('#wz-base-msg').innerHTML = r.baseRpcUrl ? '<span class="pos">✓ Saved.</span>' : 'Cleared.'; }
+  };
+  const wr = $('#wz-resume');
+  if (wr) wr.onchange = async () => { const r = await act(() => api('PUT', '/api/ui', { resumeBot: wr.checked })); if (r) S.ui = r; };
+  const wl = $('#wz-login');
+  if (wl) wl.onchange = async () => { const r = await act(() => api('PUT', '/api/ui', { startWithWindows: wl.checked })); if (r) S.ui = r; };
 }
 
 // ---------------- go-live assistant: a guided switch from paper to live ----------------

@@ -334,7 +334,7 @@ export function createWorld(o = {}) {
         stats.ai = (stats.ai ?? 0) + 1;
         const q = JSON.parse(raw || '{}');
         const props = q.format?.properties ?? {};
-        const roll = rnd();
+        const roll = opt.chaos > 0 ? rnd() : 1; // bad answers only when chaos is on
         if (roll < 0.05) await new Promise((r) => setTimeout(r, 25_000)); // too slow for a buy
         let content;
         if (roll < 0.1) content = 'Sure! Here is what I think: buy it.';

@@ -71,6 +71,20 @@ if (!tok?.trim()) errors.push('a Base coin on the Orders page was not looked up'
 await page.click('.nav[data-page="markets"]');
 await page.waitForTimeout(600);
 if (!(await page.$('[data-mtab="watch"]'))) errors.push('no watchlist tab on Markets');
+// The setup wizard (Settings → App → Run setup again): all 5 steps open, with the new ones in place.
+await page.evaluate(() => window.openSettings?.('#look-seg'));
+await page.waitForTimeout(600);
+await page.click('#wz-again');
+for (let i = 0; i < 5; i++) {
+  await page.waitForTimeout(400);
+  await shot(`wizard-${i + 1}`);
+  if (i === 1 && !(await page.$('#wz-base'))) errors.push('the wizard has no Base step');
+  if (i === 3 && !(await page.$('#wz-resume'))) errors.push('the wizard has no "running all day" step');
+  if (i < 4) await page.click('#wz-next');
+}
+await page.click('#wz-skip');
+await page.waitForTimeout(400);
+
 // The Autopilot page with the local AI: the installed models are listed, and the test answers.
 await page.click('.nav[data-page="autopilot"]');
 await page.waitForTimeout(1500);
