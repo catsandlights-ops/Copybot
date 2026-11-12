@@ -210,7 +210,8 @@ export class BotEngine extends EventEmitter {
     }
   }
 
-  async start() {
+  /** `since`: keep an earlier start time (a quick restart to apply new settings isn't a new run). */
+  async start(opts: { since?: number } = {}) {
     if (this.running) return;
     this.reload();
     const wallets = this.cfg.wallets.filter((w) => w.enabled || w.shadow);
@@ -221,7 +222,7 @@ export class BotEngine extends EventEmitter {
 
     const gen = ++this.gen;
     this.running = true;
-    this.startedAt = Date.now();
+    this.startedAt = opts.since || Date.now();
     this.emit('status');
     const scanning = [sc.tradeCoins && 'trading coins', sc.findTraders && 'finding traders'].filter(Boolean).join(' and ');
     this.log(`Bot started in ${this.cfg.mode.toUpperCase()} mode, watching ${wallets.length} wallet(s)${scanning ? `; market scanner ${scanning}` : ''}${hasOrders ? `; ${this.orders.filter((o) => o.status === 'active').length} open order(s)` : ''}`, 'system');

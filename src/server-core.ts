@@ -282,10 +282,12 @@ export function tokenOk(given: string | undefined | null) {
 /** Restart the bot in the background after a settings change, if it was running. */
 export async function applyChange(change: () => void) {
   const wasRunning = engine.running;
+  const since = engine.startedAt;
   if (wasRunning) await engine.stop();
   change();
   engine.reload();
-  if (wasRunning) engine.start().catch((e) => engine.log(`Could not restart: ${e.message}`, 'error'));
+  // Same run, new settings: the running time keeps counting from when you pressed Start.
+  if (wasRunning) engine.start({ since }).catch((e) => engine.log(`Could not restart: ${e.message}`, 'error'));
   broadcast('config', engine.cfg);
   broadcast('status', engine.snapshot());
   return wasRunning;

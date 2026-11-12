@@ -88,7 +88,7 @@ const sol = (n, d = 3) => (n == null || isNaN(n) ? '—' : `${n >= 0 ? '+' : '�
 const pct = (n) => (n == null || isNaN(n) ? '—' : `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`);
 const cls = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
 const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-function ago(t) { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? `${Math.floor(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m` : `${Math.floor(s / 86400)}d`; }
+function ago(t) { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? `${Math.floor(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m` : `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`; }
 const $ = (s) => document.querySelector(s);
 const isBase = (x) => x && (x.chain === 'base' || /^0x/.test(x.mint || ''));
 const coin = (x) => `<a class="coin" href="https://dexscreener.com/${isBase(x) ? 'base' : 'solana'}/${esc(x.mint)}" target="_blank" rel="noopener">${x.symbol ? esc(x.symbol) : `<span class="mono">${short(x.mint)}</span>`}</a>${isBase(x) ? ' <span class="chip base">Base</span>' : ''}`;
