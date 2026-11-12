@@ -141,7 +141,7 @@ const SKIP_GROUPS: [RegExp, string, string | null][] = [
   [/live trading on .* is off/, 'live trading on that chain is off', 'Connections → Trading wallet'],
   [/busy|429|rate|timed out|unavailable|fetch failed|no answer/i, 'a service was busy', 'Connections (a private RPC helps)'],
   [/honeypot|route|freeze|mint authority|token-2022|tax|round-trip|blacklist|rug|pausable|owner|safety/i, 'the coin failed a safety check', 'Safety → Safety checks'],
-  [/Claude/, 'Claude decided against it', 'Autopilot'],
+  [/Claude|the AI decided/, 'the AI decided against it', 'Autopilot'],
 ];
 export function skipGroup(why: string): { group: string; setting: string | null } {
   for (const [re, group, setting] of SKIP_GROUPS) if (re.test(why)) return { group, setting };

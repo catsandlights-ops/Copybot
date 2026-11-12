@@ -328,6 +328,24 @@ export function createWorld(o = {}) {
         const one = (q) => ({ jsonrpc: '2.0', id: q.id, result: rpc(q.method, q.params ?? []) });
         return json(res, 200, Array.isArray(body) ? body.map(one) : one(body));
       }
+      // A fake local AI (Ollama): sensible answers mostly, sometimes chatter, nonsense or slow.
+      if (url.pathname === '/api/tags') return json(res, 200, { models: [{ name: 'fake:7b', size: 4.7e9, details: { parameter_size: '7B' } }, { name: 'fake:14b', size: 9e9, details: { parameter_size: '14B' } }] });
+      if (url.pathname === '/api/chat') {
+        stats.ai = (stats.ai ?? 0) + 1;
+        const q = JSON.parse(raw || '{}');
+        const props = q.format?.properties ?? {};
+        const roll = rnd();
+        if (roll < 0.05) await new Promise((r) => setTimeout(r, 25_000)); // too slow for a buy
+        let content;
+        if (roll < 0.1) content = 'Sure! Here is what I think: buy it.';
+        else if (roll < 0.15) content = JSON.stringify({ decision: 'maybe', size: 99 });
+        else if (props.decision) content = JSON.stringify({ decision: rnd() < 0.6 ? 'buy' : 'skip', size: [0.5, 1, 1, 1.5, 2][Math.floor(rnd() * 5)], confidence: 'medium', reason: 'Looks fine.' });
+        else if (props.positions) {
+          const mints = [...String(q.messages?.[1]?.content ?? '').matchAll(/"mint":"([^"]+)"/g)].map((m) => m[1]);
+          content = JSON.stringify({ positions: mints.map((m) => ({ mint: m, action: rnd() < 0.2 ? 'sell' : 'hold', sellPct: 50, reason: 'Taking some profit.' })), summary: 'Reviewed.' });
+        } else content = JSON.stringify({ ok: true, message: 'Hello from the fake local AI.' });
+        return json(res, 200, { model: q.model, message: { role: 'assistant', content }, done: true });
+      }
       if (url.pathname === '/evm') {
         if (chaos(res)) return;
         const body = JSON.parse(raw || '{}');

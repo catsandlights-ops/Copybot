@@ -16,9 +16,19 @@ import type { Config } from './config';
 import { readSecret } from './env';
 import { appendJsonl, writeAtomic } from './util';
 
-export const AI_MODEL = 'claude-opus-5-5';
-// USD per million tokens for Claude Opus 5.5.
-const PRICE = { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 };
+export const AI_MODEL = 'claude-opus-5-5'; // the default Claude model
+// USD per million tokens (cache writes at 1.25× input; Haiku's cache read estimated at 0.1× input).
+const PRICES: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+};
+export const CLAUDE_MODELS = [
+  { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', note: 'the smartest, about $4 / $20 per million tokens' },
+  { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', note: 'balanced, about half the price of Opus' },
+  { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', note: 'fast and very cheap, about 1/40 of Opus' },
+] as const;
+const claudeModel = (cfg: Config) => (PRICES[cfg.ai.claudeModel] ? cfg.ai.claudeModel : AI_MODEL);
 const USAGE_FILE = 'data/ai-usage.json';
 const LOG_FILE = 'data/ai-decisions.jsonl';
 
@@ -42,7 +52,8 @@ function currentUsage(): Usage {
   return usage;
 }
 
-export function costOf(u: { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }) {
+export function costOf(u: { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }, model: string = AI_MODEL) {
+  const PRICE = PRICES[model] ?? PRICES[AI_MODEL];
   return ((u.input_tokens ?? 0) * PRICE.input + (u.output_tokens ?? 0) * PRICE.output + (u.cache_read_input_tokens ?? 0) * PRICE.cacheRead + (u.cache_creation_input_tokens ?? 0) * PRICE.cacheWrite) / 1e6;
 }
 function addCost(usd: number) {
@@ -118,13 +129,16 @@ export function aiStatus(cfg: Config) {
   } catch (e) {
     keyError = (e as Error).message;
   }
+  const local = cfg.ai.provider === 'ollama';
   return {
-    model: AI_MODEL,
+    provider: cfg.ai.provider,
+    model: local ? [cfg.ai.ollamaFast, cfg.ai.ollamaSmart].filter(Boolean).join(' / ') || 'no local model picked' : claudeModel(cfg),
+    claudeModels: CLAUDE_MODELS,
     enabled: cfg.ai.enabled,
-    hasKey,
-    keyError,
+    hasKey: local || hasKey,
+    keyError: local ? null : keyError,
     today: { costUsd: u.costUsd, calls: u.calls, budgetUsd: cfg.ai.dailyBudgetUsd },
-    overBudget: u.costUsd >= cfg.ai.dailyBudgetUsd,
+    overBudget: !local && u.costUsd >= cfg.ai.dailyBudgetUsd,
     lastError,
     decisions: recent.slice(-100).reverse(),
     skips: {
@@ -182,6 +196,7 @@ Keep every "reason" short: one or two plain sentences a non-expert can follow.`;
 type CallOpts<T extends z.ZodType> = { kind: Decision['kind']; schema: T; prompt: string; effort: 'low' | 'medium' | 'high'; maxTokens: number; timeoutMs: number; cfg: Config };
 
 async function ask<T extends z.ZodType>(o: CallOpts<T>): Promise<{ out: z.infer<T>; costUsd: number } | null> {
+  if (o.cfg.ai.provider === 'ollama') return askOllama(o);
   if (currentUsage().costUsd >= o.cfg.ai.dailyBudgetUsd) {
     lastError = `Today's AI budget ($${o.cfg.ai.dailyBudgetUsd}) is used up. Using the normal rules until tomorrow.`;
     return null;
@@ -203,7 +218,7 @@ async function ask<T extends z.ZodType>(o: CallOpts<T>): Promise<{ out: z.infer<
     const format = zodOutputFormat(o.schema);
     const res = await c.messages.create(
       {
-        model: AI_MODEL,
+        model: claudeModel(o.cfg),
         max_tokens: o.maxTokens,
         thinking: { type: 'adaptive' },
         system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
@@ -212,7 +227,7 @@ async function ask<T extends z.ZodType>(o: CallOpts<T>): Promise<{ out: z.infer<
       },
       { timeout: o.timeoutMs },
     );
-    const costUsd = costOf(res.usage);
+    const costUsd = costOf(res.usage, claudeModel(o.cfg));
     addCost(costUsd);
     if (res.stop_reason === 'refusal') {
       lastError = 'Claude declined to answer this one. Using the normal rules.';
@@ -237,9 +252,96 @@ async function ask<T extends z.ZodType>(o: CallOpts<T>): Promise<{ out: z.infer<
   }
 }
 
+// ---------- a local model through Ollama (free, on this computer) ----------
+/** Which local model answers: the fast one for buy decisions (seconds matter), the smarter one for the rest. */
+/** What to call the AI in messages: "Claude" or "the local AI". */
+export const aiName = (cfg: Config) => (cfg.ai.provider === 'ollama' ? 'the local AI' : 'Claude');
+/** The same, at the start of a sentence. */
+export const AiName = (cfg: Config) => (cfg.ai.provider === 'ollama' ? 'The local AI' : 'Claude');
+
+export function ollamaModelFor(kind: Decision['kind'], ai: Config['ai']): string {
+  const fast = ai.ollamaFast.trim(), smart = ai.ollamaSmart.trim();
+  return kind === 'buy' || kind === 'test' ? fast || smart : smart || fast;
+}
+
+/**
+ * Ask the local model, with the same instructions and answer format as Claude. A small model gets
+ * things wrong more often, so anything that isn't exactly the expected answer counts as no answer
+ * (the bot falls back to its rules: never a bigger trade). Buy decisions get at most 20 seconds.
+ */
+async function askOllama<T extends z.ZodType>(o: CallOpts<T>): Promise<{ out: z.infer<T>; costUsd: number } | null> {
+  const model = ollamaModelFor(o.kind, o.cfg.ai);
+  if (!model) {
+    lastError = 'Pick a local model in Settings → Autopilot.';
+    return null;
+  }
+  const guidance = o.cfg.ai.guidance.trim();
+  const timeoutMs = o.kind === 'buy' ? Math.min(o.timeoutMs, 20_000) : o.timeoutMs;
+  try {
+    const res = await fetch(`${o.cfg.ai.ollamaUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        format: z.toJSONSchema(o.schema),
+        options: { temperature: 0.2 },
+        messages: [
+          { role: 'system', content: SYSTEM + '\n\nAnswer with JSON only, exactly in the format asked.' },
+          { role: 'user', content: (guidance ? `<user_guidance>${guidance}</user_guidance>\n\n` : '') + o.prompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.status === 404) {
+      lastError = `The local model "${model}" isn't installed. In a terminal: ollama pull ${model}`;
+      return null;
+    }
+    if (!res.ok) {
+      lastError = `Ollama error ${res.status}. Using the normal rules.`;
+      return null;
+    }
+    const j = (await res.json()) as { message?: { content?: string } };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(j?.message?.content ?? '');
+    } catch {
+      lastError = `The local model (${model}) gave an unreadable answer. Using the normal rules.`;
+      return null;
+    }
+    const ok = o.schema.safeParse(parsed);
+    if (!ok.success) {
+      lastError = `The local model (${model}) answered in the wrong format. Using the normal rules.`;
+      return null;
+    }
+    addCost(0);
+    lastError = null;
+    return { out: ok.data as z.infer<T>, costUsd: 0 };
+  } catch (e) {
+    const err = e as Error;
+    lastError =
+      err?.name === 'TimeoutError'
+        ? `The local model (${model}) didn't answer within ${Math.round(timeoutMs / 1000)} seconds. Using the normal rules. A smaller model is faster.`
+        : `Couldn't reach Ollama at ${o.cfg.ai.ollamaUrl}. Is Ollama running?`;
+    return null;
+  }
+}
+
+/** The models installed in Ollama (name and size), or why not. */
+export async function ollamaModels(url: string): Promise<{ ok: true; models: { name: string; sizeGb: number; params: string | null }[] } | { ok: false; error: string }> {
+  try {
+    const r = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return { ok: false, error: `Ollama answered ${r.status}` };
+    const j = (await r.json()) as { models?: { name: string; size?: number; details?: { parameter_size?: string } }[] };
+    return { ok: true, models: (j.models ?? []).map((m) => ({ name: String(m.name), sizeGb: Math.round(((m.size ?? 0) / 1e9) * 10) / 10, params: m.details?.parameter_size ?? null })) };
+  } catch {
+    return { ok: false, error: `Ollama isn't running at ${url}. Install it from ollama.com and open it.` };
+  }
+}
+
 export function describeError(e: unknown): string {
   if (e instanceof Anthropic.AuthenticationError) return 'Anthropic rejected the API key. Check it in Settings → Autopilot.';
-  if (e instanceof Anthropic.PermissionDeniedError) return "This Anthropic API key isn't allowed to use Claude Opus 5.5.";
+  if (e instanceof Anthropic.PermissionDeniedError) return "This Anthropic API key isn't allowed to use the chosen Claude model.";
   if (e instanceof Anthropic.RateLimitError) return 'Anthropic is rate-limiting this key. Using the normal rules for now.';
   if (e instanceof Anthropic.APIConnectionTimeoutError) return "Claude didn't answer in time. Using the normal rules.";
   if (e instanceof Anthropic.APIConnectionError) return "Couldn't reach Anthropic. Check your internet connection.";
@@ -409,8 +511,23 @@ Our limits: max ${cfg.risk.maxTotalExposureSol} SOL in open positions in total; 
 
 // ---------- connection test ----------
 const TestSchema = z.object({ ok: z.boolean(), message: z.string() });
-export async function testAi(cfg: Config): Promise<{ ok: boolean; message: string; costUsd?: number }> {
-  const r = await ask({ kind: 'test', schema: TestSchema, prompt: 'Connection test from the Copybot settings page. Reply ok=true and a one-sentence friendly hello.', effort: 'low', maxTokens: 2000, timeoutMs: 40_000, cfg: { ...cfg, ai: { ...cfg.ai, guidance: '' } } });
-  if (!r) return { ok: false, message: lastError ?? 'No answer.' };
-  return { ok: true, message: plain(r.out.message, 200), costUsd: r.costUsd };
+export async function testAi(cfg: Config): Promise<{ ok: boolean; message: string; costUsd?: number; seconds?: number }> {
+  const once = async (kind: 'test' | 'review') => {
+    const t0 = Date.now();
+    const r = await ask({ kind: kind as Decision['kind'], schema: TestSchema, prompt: 'Connection test from the Copybot settings page. Reply ok=true and a one-sentence friendly hello.', effort: 'low', maxTokens: 2000, timeoutMs: kind === 'test' ? 40_000 : 120_000, cfg: { ...cfg, ai: { ...cfg.ai, guidance: '' } } });
+    return { r, seconds: Math.round((Date.now() - t0) / 100) / 10 };
+  };
+  const a = await once('test');
+  if (!a.r) return { ok: false, message: lastError ?? 'No answer.' };
+  // A local AI: time both models, since buy decisions have to come back within 20 seconds.
+  if (cfg.ai.provider === 'ollama') {
+    const fast = ollamaModelFor('buy', cfg.ai), smart = ollamaModelFor('review', cfg.ai);
+    const parts = [`${fast} answered in ${a.seconds}s${a.seconds > 15 ? ' (too slow for buy decisions: pick a smaller model)' : ''}`];
+    if (smart !== fast) {
+      const b = await once('review');
+      parts.push(b.r ? `${smart} answered in ${b.seconds}s` : `${smart}: ${lastError ?? 'no answer'}`);
+    }
+    return { ok: true, message: `${plain(a.r.out.message, 160)} — ${parts.join('; ')}.`, costUsd: 0, seconds: a.seconds };
+  }
+  return { ok: true, message: plain(a.r.out.message, 200), costUsd: a.r.costUsd, seconds: a.seconds };
 }

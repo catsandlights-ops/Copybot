@@ -696,6 +696,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return send(res, 200, { ...ai.aiStatus(engine.cfg), lastWalletReview, walletReviewBusy, reviewBusy: engine.aiBusy, candidates: aiCandidates().length });
   }
 
+  if (route === 'GET /api/ai/ollama-models') {
+    // Only Ollama on this computer: the address in the form, or the saved one.
+    const u = url.searchParams.get('url')?.trim().replace(/\/$/, '') || engine.cfg.ai.ollamaUrl;
+    if (!/^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/.test(u)) throw new HttpError(400, 'The Ollama address must be on this computer, like http://127.0.0.1:11434');
+    return send(res, 200, await ai.ollamaModels(u));
+  }
   if (route === 'POST /api/ai/test') {
     return send(res, 200, await ai.testAi(engine.cfg));
   }

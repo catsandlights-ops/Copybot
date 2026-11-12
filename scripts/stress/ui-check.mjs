@@ -21,7 +21,7 @@ const port = 5100 + Math.floor(Math.random() * 90);
 const baseWallet = '0x' + 'ab'.repeat(20);
 fs.writeFileSync(
   path.join(dir, 'config.json'),
-  JSON.stringify({ mode: 'paper', wallets: [...world.wallets.map((w, i) => ({ address: w.address, label: `w${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })), { chain: 'base', address: baseWallet, label: 'base-1', enabled: false, sizeMultiplier: 1, maxExposureSol: 0 }] }),
+  JSON.stringify({ mode: 'paper', wallets: [...world.wallets.map((w, i) => ({ address: w.address, label: `w${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })), { chain: 'base', address: baseWallet, label: 'base-1', enabled: false, sizeMultiplier: 1, maxExposureSol: 0 }], ai: { provider: 'ollama', ollamaUrl: `http://127.0.0.1:${worldPort}`, ollamaFast: 'fake:7b' } }),
 );
 const bs58 = (await import('bs58')).default;
 const { Keypair } = createRequire(import.meta.url)('@solana/web3.js');
@@ -71,6 +71,17 @@ if (!tok?.trim()) errors.push('a Base coin on the Orders page was not looked up'
 await page.click('.nav[data-page="markets"]');
 await page.waitForTimeout(600);
 if (!(await page.$('[data-mtab="watch"]'))) errors.push('no watchlist tab on Markets');
+// The Autopilot page with the local AI: the installed models are listed, and the test answers.
+await page.click('.nav[data-page="autopilot"]');
+await page.waitForTimeout(1500);
+const fastOpts = await page.$$eval('#ai-fast option', (o) => o.map((x) => x.value)).catch(() => []);
+if (!fastOpts.includes('fake:7b')) errors.push(`the local models aren't listed on the Autopilot page (${fastOpts.join(', ') || 'none'})`);
+await shot('ai');
+await page.click('#ai-test');
+await page.waitForFunction(() => /answered in|✕/.test(document.querySelector('#ai-msg')?.textContent || ''), null, { timeout: 30_000 }).catch(() => errors.push('the local AI test never answered'));
+const testMsg = await page.textContent('#ai-msg').catch(() => '');
+if (!/fake:7b answered in/.test(testMsg)) errors.push(`the local AI test said: ${testMsg.trim().slice(0, 120)}`);
+
 // The go-live assistant: opens from Settings → Live, walks its 5 steps, runs a test trade
 // (the fake market can't execute swaps, so it must fail cleanly), switches to live, and undoes the starter limits.
 await page.evaluate(() => window.openSettings?.('#mode-card'));

@@ -2432,6 +2432,51 @@ function wireLearning(el) {
   el.querySelectorAll('[data-undo]').forEach((a) => (a.onclick = async (e) => { e.preventDefault(); const r = await act(() => api('POST', '/api/learning/undo', { at: Number(a.dataset.undo) }), 'Previous exit settings restored'); if (r) { S.config = r.config; S.learning = r.learning; render(); } }));
 }
 
+/** Which AI makes the calls: Claude (paid, by model) or a free local model through Ollama. */
+const AI_PICK = { models: null, err: null, url: null };
+function aiChoiceCard(cfg, a) {
+  const local = cfg.ai.provider === 'ollama';
+  const opts = (sel) => (AI_PICK.models || []).map((m) => `<option value="${esc(m.name)}" ${sel === m.name ? 'selected' : ''}>${esc(m.name)}${m.params ? ` · ${esc(m.params)}` : ''}${m.sizeGb ? ` · ${m.sizeGb} GB` : ''}</option>`).join('');
+  const pickers = !AI_PICK.models
+    ? `<div class="muted" style="font-size:13px">${AI_PICK.err ? `<span class="neg">${esc(AI_PICK.err)}</span>` : '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Looking for Ollama…'}</div>`
+    : !AI_PICK.models.length ? '<div class="muted" style="font-size:13px">Ollama is running but has no models yet. See the steps below.</div>'
+    : `<div class="row" style="flex-wrap:wrap;gap:14px">
+        <label class="row muted" style="gap:6px">Fast model (buy decisions) <select class="input" id="ai-fast" style="width:auto;height:34px"><option value="">—</option>${opts(cfg.ai.ollamaFast)}</select></label>
+        <label class="row muted" style="gap:6px">Smart model (reviews, wallet search) <select class="input" id="ai-smart" style="width:auto;height:34px"><option value="">same as fast</option>${opts(cfg.ai.ollamaSmart)}</select></label></div>`;
+  return `<div class="card"><div class="card-h"><div><h2>Which AI</h2><div class="muted" style="font-size:12.5px">Either way, every answer still has to pass all your limits and safety checks.</div></div></div>
+    <div class="card-b stack">
+      <div class="seg" id="ai-prov"><button data-prov="claude" class="${!local ? 'on' : ''}">Claude (paid)</button><button data-prov="ollama" class="${local ? 'on' : ''}">Local AI (free, Ollama)</button></div>
+      ${!local ? `<label class="row muted" style="gap:8px">Model <select class="input" id="ai-cmodel" style="width:auto;height:34px">${(a.claudeModels || []).map((m) => `<option value="${m.id}" ${cfg.ai.claudeModel === m.id ? 'selected' : ''}>${esc(m.name)}: ${esc(m.note)}</option>`).join('')}</select></label>`
+      : `${pickers}
+        <details><summary class="muted" style="cursor:pointer">Setting up Ollama (one time)</summary><ol class="steps" style="margin:8px 0 0">
+          <li>Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a> and open it.</li>
+          <li>In a terminal (Windows: PowerShell), download a fast model and a smarter one. For a 12 GB graphics card such as an RTX 3060: <span class="mono">ollama pull qwen2.5:7b</span> and <span class="mono">ollama pull qwen2.5:14b</span> (or newer models of a similar size).</li>
+          <li>Press <b>Refresh</b>, pick the two models, then <b>Test connection</b> below: it shows how fast each answers on your PC. The fast one should answer in a few seconds.</li></ol></details>
+        <div class="row" style="gap:8px"><input class="input mono" id="ai-ourl" value="${esc(cfg.ai.ollamaUrl)}" style="width:240px" spellcheck="false"><button class="btn sm" id="ai-orefresh">Refresh</button></div>`}
+    </div></div>`;
+}
+function loadOllamaModels(url) {
+  AI_PICK.models = null; AI_PICK.err = null; AI_PICK.url = url;
+  api('GET', `/api/ai/ollama-models?url=${encodeURIComponent(url)}`).then((r) => { if (r.ok) AI_PICK.models = r.models; else AI_PICK.err = r.error; }).catch((e) => (AI_PICK.err = e.message)).finally(() => S.page === 'autopilot' && renderAutopilot($('#content'), true));
+}
+function wireAiChoice(el, cfg) {
+  const save = async (patch, msg) => {
+    if (S.dirty) return toast('Save or discard your settings changes first', true);
+    const r = await act(() => api('PUT', '/api/config', { ...S.config, ai: { ...S.config.ai, ...patch } }), msg);
+    if (r) { S.config = r.config; S.ai = null; loadAi(); }
+  };
+  el.querySelectorAll('[data-prov]').forEach((b) => (b.onclick = () => b.dataset.prov !== cfg.ai.provider && save({ provider: b.dataset.prov }, b.dataset.prov === 'ollama' ? 'Using the local AI' : 'Using Claude')));
+  const cm = $('#ai-cmodel'); if (cm) cm.onchange = () => save({ claudeModel: cm.value }, 'Claude model saved');
+  const fa = $('#ai-fast'); if (fa) fa.onchange = () => save({ ollamaFast: fa.value }, 'Fast model saved');
+  const sm = $('#ai-smart'); if (sm) sm.onchange = () => save({ ollamaSmart: sm.value }, 'Smart model saved');
+  const rf = $('#ai-orefresh'); if (rf) rf.onclick = async () => {
+    const u = $('#ai-ourl').value.trim();
+    if (u !== cfg.ai.ollamaUrl) await save({ ollamaUrl: u }, 'Ollama address saved');
+    loadOllamaModels(u);
+  };
+  if (cfg.ai.provider === 'ollama' && AI_PICK.url !== cfg.ai.ollamaUrl) loadOllamaModels(cfg.ai.ollamaUrl);
+}
+
 function renderAutopilot(el, fresh) {
   if (!fresh) { loadAi(); if (!S.ai) { el.innerHTML = '<div class="card"><div class="empty"><span class="spinner"></span></div></div>'; return; } }
   const a = S.ai, cfg = S.config, on = cfg.ai.enabled;
@@ -2440,42 +2485,44 @@ function renderAutopilot(el, fresh) {
   const todayStart = new Date().setHours(0, 0, 0, 0);
   const todays = a.decisions.filter((d) => d.t >= todayStart && d.kind !== 'test');
   const buys = todays.filter((d) => d.kind === 'buy');
-  const keyBox = a.hasKey && !a.keyError ? '' : `
+  const local = cfg.ai.provider === 'ollama';
+  const keyBox = local || (a.hasKey && !a.keyError) ? '' : `
     <div class="card"><div class="card-h"><div><h2>Connect Claude</h2><div class="muted" style="font-size:12.5px">The autopilot uses your own Anthropic API key. Create one at <a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> → API Keys, and add a little credit (Billing).</div></div></div>
       <div class="card-b stack">${a.keyError ? `<div class="banner danger" style="margin:0"><div>${esc(a.keyError)}</div></div>` : ''}
         <div class="row"><input class="input mono" id="ai-key" type="password" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:220px"><button class="btn primary" id="ai-key-save">Save key</button></div>
         <div class="muted" style="font-size:12.5px">${S.connection.canEncrypt ? 'Stored encrypted by your operating system.' : 'Stored in the .env file on this computer.'}</div></div></div>`;
-  el.innerHTML = learningCard() + `
+  el.innerHTML = learningCard() + aiChoiceCard(cfg, a) + `
     <div class="card ai-hero"><div class="orb">${ICON_SPARK}</div>
-      <div style="flex:1;min-width:240px"><h2>Claude ${on ? 'is trading for you' : 'autopilot is off'}</h2>
-        <div class="muted">${on ? `Using Claude Opus 5.5. It ${[cfg.ai.decideBuys && 'decides buys', cfg.ai.reviewPositions && `reviews positions every ${cfg.ai.reviewEveryMin} min`, cfg.ai.manageWallets && `manages wallets every ${cfg.ai.walletReviewHours} h`].filter(Boolean).join(', ') || 'has nothing switched on in its settings'}. Your limits always apply.` : 'Turn it on to let Claude decide buys, review positions and manage wallets, always inside your limits.'}
+      <div style="flex:1;min-width:240px"><h2>${local ? 'The local AI' : 'Claude'} ${on ? 'is trading for you' : 'autopilot is off'}</h2>
+        <div class="muted">${on ? `Using ${local ? `the local AI (${esc(a.model)})` : esc((a.claudeModels || []).find((m) => m.id === a.model)?.name || a.model)}. It ${[cfg.ai.decideBuys && 'decides buys', cfg.ai.reviewPositions && `reviews positions every ${cfg.ai.reviewEveryMin} min`, cfg.ai.manageWallets && `manages wallets every ${cfg.ai.walletReviewHours} h`].filter(Boolean).join(', ') || 'has nothing switched on in its settings'}. Your limits always apply.` : `Turn it on to let ${local ? 'the local AI' : 'Claude'} decide buys, review positions and manage wallets, always inside your limits.`}
         <a href="#" data-guide="autopilot">How it works →</a></div></div>
       <div class="row"><label class="switch" title="Autopilot on/off"><input type="checkbox" id="ai-on" ${on ? 'checked' : ''} ${a.hasKey ? '' : 'disabled'}><i></i></label><button class="btn ghost" id="ai-settings">Settings</button></div>
     </div>
-    ${a.lastError && on ? `<div class="banner warn"><div><b>Claude:</b> ${esc(a.lastError)}</div></div>` : ''}
+    ${a.lastError && on ? `<div class="banner warn"><div><b>${local ? 'Local AI' : 'Claude'}:</b> ${esc(a.lastError)}</div></div>` : ''}
     ${keyBox}
     <div class="grid stats">
-      <div class="card stat" style="--c:var(--accent)"><div class="k">${ICON.coin}AI cost today</div><div class="v num">${usd(a.today.costUsd)} <small style="font-size:13px" class="muted">of $${a.today.budgetUsd}</small></div><div class="s">${a.today.calls} call${a.today.calls === 1 ? '' : 's'} to Claude${a.overBudget ? ' · budget used up' : ''}</div><div class="bar"><i style="width:${spentPct}%"></i></div></div>
+      <div class="card stat" style="--c:var(--accent)"><div class="k">${ICON.coin}AI cost today</div><div class="v num">${local ? 'Free' : `${usd(a.today.costUsd)} <small style="font-size:13px" class="muted">of $${a.today.budgetUsd}</small>`}</div><div class="s">${a.today.calls} call${a.today.calls === 1 ? '' : 's'} to ${local ? 'the local AI' : 'Claude'}${a.overBudget ? ' · budget used up' : ''}</div><div class="bar"><i style="width:${spentPct}%"></i></div></div>
       <div class="card stat"><div class="k">${ICON.star}Buy decisions today</div><div class="v num">${buys.length}</div><div class="s">${buys.filter((d) => d.verdict === 'buy').length} bought · ${buys.filter((d) => d.verdict === 'skip').length} skipped</div></div>
       <div class="card stat"><div class="k">${pixelSvg(HEART)}Were the skips right?</div><div class="v num">${a.skips.checked ? `${a.skips.fell} <small style="font-size:13px" class="muted">of ${a.skips.checked}</small>` : '–'}</div><div class="s">${a.skips.checked ? `skipped tokens fell within 1h · avg ${a.skips.avgPct > 0 ? '+' : ''}${a.skips.avgPct.toFixed(0)}%` : 'checked 1 hour after each skip'}</div></div>
     </div>
-    <div class="card"><div class="card-h"><h2>Ask Claude now</h2></div><div class="card-b ai-actions">
+    <div class="card"><div class="card-h"><h2>Ask ${local ? 'the local AI' : 'Claude'} now</h2></div><div class="card-b ai-actions">
       <button class="btn" id="ai-test" ${a.hasKey ? '' : 'disabled'}>Test connection</button>
       <button class="btn" id="ai-rev-pos" ${a.hasKey && S.status.positions.length && !a.reviewBusy ? '' : 'disabled'}>${a.reviewBusy ? 'Reviewing…' : `Review open positions (${S.status.positions.length})`}</button>
       <button class="btn primary" id="ai-scout" ${scoutJob() ? 'disabled' : ''}>${scoutJob() ? 'Searching for wallets…' : 'Find new wallets'}</button>
       <button class="btn" id="ai-rev-w" ${a.hasKey && !a.walletReviewBusy ? '' : 'disabled'}>${a.walletReviewBusy ? 'Reviewing wallets…' : `Review wallets${a.candidates ? ` + ${a.candidates} candidate${a.candidates === 1 ? '' : 's'}` : ''}`}</button>
-      <span class="muted" id="ai-msg" style="font-size:13px;align-self:center">${a.lastWalletReview ? `Last wallet review ${ago(a.lastWalletReview)} ago.` : ''}${a.candidates ? '' : ' Analyze wallets on <a href="#" onclick="go(\'research\');return false">Find wallets</a> to give Claude candidates.'}</span>
+      <span class="muted" id="ai-msg" style="font-size:13px;align-self:center">${a.lastWalletReview ? `Last wallet review ${ago(a.lastWalletReview)} ago.` : ''}${a.candidates ? '' : ' Analyze wallets on <a href="#" onclick="go(\'research\');return false">Find wallets</a> to give the AI candidates.'}</span>
     </div></div>
-    <div class="card"><div class="card-h"><h2>Claude's decisions</h2><span class="spacer"></span><span class="muted" style="font-size:12px">newest first</span></div>
-      ${a.decisions.length ? `<ul class="ai-list">${a.decisions.map(aiItem).join('')}</ul>` : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No decisions yet</h3>${on ? 'Claude will decide on the next copy signal.' : 'Turn the autopilot on, then start the bot.'}</div>`}
+    <div class="card"><div class="card-h"><h2>${local ? 'The local AI' : 'Claude'}'s decisions</h2><span class="spacer"></span><span class="muted" style="font-size:12px">newest first</span></div>
+      ${a.decisions.length ? `<ul class="ai-list">${a.decisions.map(aiItem).join('')}</ul>` : `<div class="empty"><div class="deco">${ICON.rainbow}</div><h3>No decisions yet</h3>${on ? `${local ? 'The local AI' : 'Claude'} will decide on the next copy signal.` : 'Turn the autopilot on, then start the bot.'}</div>`}
     </div>`;
   $('#ai-settings').onclick = () => { openSettings('#ai-settings'); };
+  wireAiChoice(el, cfg);
   wireLearning(el);
   $('#ai-on').onchange = async (e) => {
     if (S.dirty) { e.target.checked = !e.target.checked; return toast('Save or discard your settings changes first', true); }
     const enabled = e.target.checked;
     if (enabled && !(await confirmModal({ title: 'Turn on the AI autopilot?', confirm: 'Turn on',
-      body: `<p>Claude will decide which copy signals to buy, can sell positions early${cfg.ai.manageWallets ? ', and can change which wallets you copy' : ''}. It can never go past your limits or skip a safety check.</p><p>Each decision costs a few cents from your Anthropic account, up to <b>$${cfg.ai.dailyBudgetUsd} a day</b>.${cfg.mode === 'live' ? ' <b>You are in live mode: these are real trades.</b>' : ''}</p>` }))) { e.target.checked = false; return; }
+      body: `<p>${local ? 'The local AI' : 'Claude'} will decide which copy signals to buy, can sell positions early${cfg.ai.manageWallets ? ', and can change which wallets you copy' : ''}. It can never go past your limits or skip a safety check.</p><p>${local ? 'It runs on your PC and costs nothing. A bad or slow answer just means the normal rules decide.' : `Each decision costs a few cents from your Anthropic account, up to <b>$${cfg.ai.dailyBudgetUsd} a day</b>.`}${cfg.mode === 'live' ? ' <b>You are in live mode: these are real trades.</b>' : ''}</p>` }))) { e.target.checked = false; return; }
     const r = await act(() => api('PUT', '/api/config', { ...cfg, ai: { ...cfg.ai, enabled } }), enabled ? 'Autopilot on' : 'Autopilot off');
     if (r) { S.config = r.config; renderChrome(); renderAutopilot(el, true); } else e.target.checked = !enabled;
   };
@@ -2485,16 +2532,16 @@ function renderAutopilot(el, fresh) {
     if (r) { S.connection = r; loadAi(); }
   };
   $('#ai-test').onclick = async () => {
-    $('#ai-msg').innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Asking Claude…';
+    $('#ai-msg').innerHTML = `<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Asking ${local ? 'the local AI (the first answer can take a while as the model loads)' : 'Claude'}…`;
     const r = await act(() => api('POST', '/api/ai/test'));
-    $('#ai-msg').innerHTML = r ? (r.ok ? `<span class="pos">✓ ${esc(r.message)}</span> <span class="muted">(${usd(r.costUsd || 0)})</span>` : `<span class="neg">✕ ${esc(r.message)}</span>`) : '';
+    $('#ai-msg').innerHTML = r ? (r.ok ? `<span class="pos">✓ ${esc(r.message)}</span> <span class="muted">(${local ? 'free' : usd(r.costUsd || 0)}${r.seconds != null && !local ? `, ${r.seconds}s` : ''})</span>` : `<span class="neg">✕ ${esc(r.message)}</span>`) : '';
   };
   $('#ai-scout').onclick = async () => { const j = await act(() => api('POST', '/api/jobs/scout')); if (j) { upsertJob(j); go('research'); } };
   $('#ai-rev-pos').onclick = async () => { const b = $('#ai-rev-pos'); b.disabled = true; b.textContent = 'Reviewing…'; await act(() => api('POST', '/api/ai/review-positions')); loadAi(); };
   $('#ai-rev-w').onclick = async () => {
     const b = $('#ai-rev-w'); b.disabled = true; b.textContent = 'Reviewing wallets…';
     const r = await act(() => api('POST', '/api/ai/review-wallets'));
-    if (r) toast(r.changes.length ? `Claude made ${r.changes.length} wallet change${r.changes.length === 1 ? '' : 's'}` : 'Claude: no wallet changes');
+    if (r) toast(r.changes.length ? `${local ? 'The local AI' : 'Claude'} made ${r.changes.length} wallet change${r.changes.length === 1 ? '' : 's'}` : `${local ? 'The local AI' : 'Claude'}: no wallet changes`);
     loadAi();
   };
 }

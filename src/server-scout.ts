@@ -60,7 +60,7 @@ export function aiCandidates(): ai.CandidateView[] {
 }
 
 export async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; summary: string }> {
-  if (walletReviewBusy) throw new HttpError(409, 'Claude is already reviewing your wallets.');
+  if (walletReviewBusy) throw new HttpError(409, `${ai.AiName(engine.cfg)} is already reviewing your wallets.`);
   const cfg = engine.cfg;
   if (!cfg.wallets.length && !aiCandidates().length) throw new HttpError(400, 'Add some wallets, or analyze a few candidates on the Find wallets page first.');
   walletReviewBusy = true;
@@ -70,11 +70,11 @@ export async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; s
   try {
     const recs = walletRecords(engine.readTrades(), cfg.mode);
     const view: ai.WalletView[] = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
-    engine.log('Claude is reviewing your wallets…', 'ai');
+    engine.log(`${ai.AiName(engine.cfg)} is reviewing your wallets…`, 'ai');
     const r = await ai.reviewWallets(cfg, view, aiCandidates());
-    if (!r) throw new HttpError(502, ai.aiStatus(cfg).lastError ?? 'Claude did not answer.');
+    if (!r) throw new HttpError(502, ai.aiStatus(cfg).lastError ?? `${ai.AiName(engine.cfg)} did not answer.`);
     if (!r.changes.length) {
-      engine.log(`Claude: no wallet changes. ${r.summary}`, 'ai');
+      engine.log(`${ai.AiName(engine.cfg)}: no wallet changes. ${r.summary}`, 'ai');
       return r;
     }
     // Apply to the latest config, never going over the active-wallet limit.
@@ -101,7 +101,7 @@ export async function runWalletReview(): Promise<{ changes: ai.WalletChange[]; s
       const clean = sanitizeConfig(next, false);
       trialAndResume(clean);
       await applyChange(() => saveConfig(clean));
-      for (const ch of applied) engine.log(`Claude: ${ch.action} ${ch.address.slice(0, 4)}…${ch.address.slice(-4)}${ch.action === 'pause' ? '' : ` (size ×${ch.sizeMultiplier}${ch.budgetSol ? `, budget ${ch.budgetSol} SOL` : ''})`}: ${ch.reason}`, 'ai');
+      for (const ch of applied) engine.log(`${ai.AiName(engine.cfg)}: ${ch.action} ${ch.address.slice(0, 4)}…${ch.address.slice(-4)}${ch.action === 'pause' ? '' : ` (size ×${ch.sizeMultiplier}${ch.budgetSol ? `, budget ${ch.budgetSol} SOL` : ''})`}: ${ch.reason}`, 'ai');
     }
     return { changes: applied, summary: r.summary };
   } finally {
@@ -340,7 +340,7 @@ export async function runScout(progress: (p: string) => void, auto = false, chai
     : basics.length
       ? `${basics.length} wallet${basics.length > 1 ? 's' : ''} looked good on ${basics.length > 1 ? 'their' : 'its'} own record, but a backtest with your settings and a ${delayPct.toFixed(1)}% copy delay showed copying ${basics.length > 1 ? 'them' : 'it'} would have lost money, so nothing was picked.`
       : `None of the ${reports.length} wallets checked passed the basics: 10+ finished trades, profitable overall, not a bot, and not selling within 2 minutes. Most wallets that catch one pump don't keep winning.`;
-  if (max > 0 && eligible.length && hasSecret('ANTHROPIC_API_KEY')) {
+  if (max > 0 && eligible.length && (cfg.ai.provider === 'ollama' || hasSecret('ANTHROPIC_API_KEY'))) {
     progress('Claude is choosing…');
     const recs = walletRecords(engine.readTrades(), cfg.mode);
     const current = cfg.wallets.map((w) => ({ address: w.address, label: w.label, enabled: w.enabled, sizeMultiplier: w.sizeMultiplier, budgetSol: w.maxExposureSol, ourRecord: recs[w.address] ?? { trades: 0, closed: 0, wins: 0, pnlSol: 0 } }));
@@ -349,7 +349,7 @@ export async function runScout(progress: (p: string) => void, auto = false, chai
       picks = r.picks;
       pickedBy = 'claude';
       summary = r.summary;
-    } else notes.push(`Claude wasn't available (${ai.aiStatus(cfg).lastError ?? 'no answer'}), so the picks are rule-based.`);
+    } else notes.push(`${ai.AiName(engine.cfg)} wasn't available (${ai.aiStatus(cfg).lastError ?? 'no answer'}), so the picks are rule-based.`);
   }
 
   // Suggest a strategy that suits each pick's trading style.

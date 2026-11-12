@@ -1079,7 +1079,7 @@ export class BotEngine extends EventEmitter {
       const label = w?.label ?? short(s.wallet);
       const record = walletRecords(this.readTrades(), cfg.mode)[s.wallet] ?? null;
       const g = this.guard;
-      this.log(`  asking Claude…`, 'ai');
+      this.log(`  asking ${ai.aiName(this.cfg)}…`, 'ai');
       const d = await ai.decideBuy(cfg, {
         mint: s.mint,
         symbol: info?.symbol ?? null,
@@ -1095,13 +1095,13 @@ export class BotEngine extends EventEmitter {
       });
       if (!this.running) return;
       if (!d) {
-        this.log(`  Claude unavailable: ${ai.aiStatus(cfg).lastError ?? 'no answer'} Following the rules: buy.`, 'warn');
+        this.log(`  ${ai.AiName(this.cfg)} unavailable: ${ai.aiStatus(cfg).lastError ?? 'no answer'} Following the rules: buy.`, 'warn');
       } else {
         if (!d.buy) {
-          this.noteActivity('skip', 'Claude decided against it');
-          return this.log(`  skipped by Claude: ${d.reason}`, 'skip');
+          this.noteActivity('skip', 'the AI decided against it');
+          return this.log(`  skipped by ${ai.aiName(this.cfg)}: ${d.reason}`, 'skip');
         }
-        this.log(`  Claude says buy${d.size !== 1 ? ` (size ×${d.size})` : ''}: ${d.reason}`, 'ai');
+        this.log(`  ${ai.AiName(this.cfg)} says buy${d.size !== 1 ? ` (size ×${d.size})` : ''}: ${d.reason}`, 'ai');
         // Resize within the limits, then re-check: the price may have moved while Claude thought.
         const resized = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol * d.size));
         const cap = Math.min(r.maxTotalExposureSol - exposure(state), chainRoomSol(Object.values(state.positions), chain.meta.id, r.perChain?.[chain.meta.id]), w && w.maxExposureSol > 0 ? w.maxExposureSol - walletExposureSol(Object.values(state.positions), w.address) : Infinity);
@@ -1221,16 +1221,16 @@ export class BotEngine extends EventEmitter {
           market: info && { liquidityUsd: info.liquidityUsd, marketCapUsd: info.marketCapUsd, ageMin: info.createdAt ? Math.round((Date.now() - info.createdAt) / 60_000) : null, volume24hUsd: info.volume24hUsd, change1hPct: info.change1hPct, buys1h: info.buys1h, sells1h: info.sells1h },
         });
       }
-      this.log(`Claude is reviewing ${view.length} open position(s)…`, 'ai');
+      this.log(`${ai.AiName(this.cfg)} is reviewing ${view.length} open position(s)…`, 'ai');
       const actions = await ai.reviewPositions(this.cfg, view);
-      if (!actions) return this.log(`Claude review unavailable: ${ai.aiStatus(this.cfg).lastError ?? 'no answer'}`, 'warn');
-      if (!actions.length) return this.log('Claude: hold everything for now.', 'ai');
+      if (!actions) return this.log(`${ai.AiName(this.cfg)} review unavailable: ${ai.aiStatus(this.cfg).lastError ?? 'no answer'}`, 'warn');
+      if (!actions.length) return this.log(`${ai.AiName(this.cfg)}: hold everything for now.`, 'ai');
       for (const act of actions) {
         if (this.exiting.has(act.mint) || !this.state.positions[act.mint]) continue;
         this.exiting.add(act.mint);
         this.enqueue(async () => {
           try {
-            await this.trader.sell(act.mint, act.fraction, `Claude: ${act.reason}`);
+            await this.trader.sell(act.mint, act.fraction, `${ai.AiName(this.cfg)}: ${act.reason}`);
           } finally {
             this.exiting.delete(act.mint);
           }

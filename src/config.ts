@@ -236,6 +236,13 @@ export type Config = {
     scoutMaxPicks: number; // most new wallets added per scout run
     dailyBudgetUsd: number;
     guidance: string; // the user's own instructions for Claude
+    /** Which AI: Claude (Anthropic's API, paid) or a free local model through Ollama. */
+    provider: 'claude' | 'ollama';
+    claudeModel: 'claude-opus-5-5' | 'claude-sonnet-5-5' | 'claude-haiku-5-5';
+    /** Ollama on this computer; a fast model for buy decisions (seconds matter) and a smarter one for reviews. */
+    ollamaUrl: string;
+    ollamaFast: string;
+    ollamaSmart: string;
   };
 };
 
@@ -281,7 +288,7 @@ export const DEFAULT_CONFIG: Config = {
   paper: { startSol: 10 },
   alerts: { trades: true, errors: true, guard: true, autopilot: true },
   scanner: { findTraders: false, traderEveryHours: 1, coinsEverySec: 60, spotEveryMin: 5, maxWallets: 8, picksPerRun: 2, tradeCoins: false, rules: 'normal', trackSignals: true, newCoins: true, oldCoins: true, baseCoins: false, buySol: 0.1, budgetSol: 0.5, maxPositions: 3, stopLossPct: 20, takeProfitPct: 50, trailingAfterPct: 15, trailingStopPct: 12, maxHoldHours: 12 },
-  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '' },
+  ai: { enabled: false, decideBuys: true, reviewPositions: true, reviewEveryMin: 15, manageWallets: true, walletReviewHours: 24, maxWallets: 8, scoutEveryHours: 24, scoutMaxPicks: 2, dailyBudgetUsd: 3, guidance: '', provider: 'claude', claudeModel: 'claude-opus-5-5', ollamaUrl: 'http://127.0.0.1:11434', ollamaFast: '', ollamaSmart: '' },
 };
 
 /** Allowed range for every numeric setting: [min, max, human name]. */
@@ -372,6 +379,8 @@ const ENUMS: Record<string, string[]> = {
   'scanner.rules': ['normal', 'strict', 'loose'],
   'learn.autoTuneExits': ['paper', 'always', 'off'],
   'trial.shadowFirst': ['live', 'always', 'off'],
+  'ai.provider': ['claude', 'ollama'],
+  'ai.claudeModel': ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
 };
 
 const get = (o: any, path: string) => path.split('.').reduce((a, k) => a?.[k], o);
@@ -494,6 +503,18 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
     if (g.length > 1000) fail('Your instructions for Claude can be at most 1000 characters');
     out.ai.guidance = g.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').slice(0, 1000);
   } else if (g !== undefined) fail('Invalid value for ai.guidance');
+  // Ollama: only on this computer (it gets your trading data), and model names as Ollama writes them.
+  const ou = input?.ai?.ollamaUrl;
+  if (typeof ou === 'string' && ou.trim()) {
+    if (/^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}\/?$/.test(ou.trim())) out.ai.ollamaUrl = ou.trim().replace(/\/$/, '');
+    else fail('The Ollama address must be on this computer, like http://127.0.0.1:11434');
+  }
+  for (const k of ['ollamaFast', 'ollamaSmart'] as const) {
+    const m = input?.ai?.[k];
+    if (typeof m !== 'string') continue;
+    if (m === '' || /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,79}$/.test(m)) out.ai[k] = m;
+    else fail('Invalid Ollama model name');
+  }
 
   const bl = Array.isArray(input?.safety?.blacklist) ? input.safety.blacklist : [];
   for (const m of bl.slice(0, 1000)) {

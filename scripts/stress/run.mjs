@@ -36,6 +36,8 @@ const cfg = {
 };
 // --per-chain=3,2 → Solana up to 3 coins, Base up to 2 (their own shares of the limits).
 const perChain = args['per-chain'] ? args['per-chain'].split(',').map(Number) : null;
+// --ai: the autopilot on, with the market's fake local AI (Ollama) deciding buys and reviewing positions.
+if ('ai' in args) cfg.ai = { enabled: true, provider: 'ollama', ollamaUrl: `http://127.0.0.1:${worldPort}`, ollamaFast: 'fake:7b', ollamaSmart: 'fake:14b', decideBuys: true, reviewPositions: true, reviewEveryMin: 5, manageWallets: false, scoutEveryHours: 0 };
 if (perChain) cfg.risk.perChain = { solana: { maxPositions: perChain[0], maxSol: 0 }, base: { maxPositions: perChain[1], maxSol: 0 } };
 fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(cfg, null, 2));
 
@@ -138,7 +140,7 @@ async function check(label) {
   if (mem > 700) problem(`memory use is ${mem.toFixed(0)} MB`);
   const log = read('app.log') ?? '';
   const errs = log.split('\n').filter((l) => /\bError\b|TypeError|ReferenceError|Unhandled|uncaught/i.test(l) && !/ws error|DeprecationWarning/.test(l));
-  console.log(`${label}: ${trades.filter((t) => t.side === 'buy').length} buys, ${sells.length} sells, ${Object.keys(state.positions).length} open (${Object.values(state.positions).filter((p) => p.chain === 'base').length} Base), profit ${state.realizedPnlSol.toFixed(4)} SOL, free ${Number(free).toFixed(3)} SOL, ${mem.toFixed(0)} MB, ${errs.length} error lines | market: ${world.stats.txs} trades (${world.stats.baseTxs} Base), ${world.stats.rugs} rugs, ${world.stats.chaos429} 429s`);
+  console.log(`${label}: ${trades.filter((t) => t.side === 'buy').length} buys, ${sells.length} sells, ${Object.keys(state.positions).length} open (${Object.values(state.positions).filter((p) => p.chain === 'base').length} Base), profit ${state.realizedPnlSol.toFixed(4)} SOL, free ${Number(free).toFixed(3)} SOL, ${mem.toFixed(0)} MB, ${errs.length} error lines | market: ${world.stats.txs} trades (${world.stats.baseTxs} Base), ${world.stats.rugs} rugs, ${world.stats.chaos429} 429s${world.stats.ai ? `, ${world.stats.ai} AI answers` : ''}`);
   return errs;
 }
 
