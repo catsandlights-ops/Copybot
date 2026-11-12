@@ -18,7 +18,7 @@ import { getHolderStats, HolderStats } from './solscan';
 import { hasSecret, onRpcSwitch, rpcUrl } from './env';
 import { FastStream, heliusWsUrl } from './stream';
 import type { RawTx } from './util';
-import { paperFreeSol, trialFactor, walletLifecycle } from './rules';
+import { chainRoomReason, chainRoomSol, paperFreeSol, trialFactor, walletLifecycle } from './rules';
 import { saveConfig } from './config';
 import { panicReason } from './rules';
 import { perTokenValue, needsFullQuote, trailWidthPct, typicalSwingPct } from './rules';
@@ -412,7 +412,7 @@ export class BotEngine extends EventEmitter {
   private async orderBuyNow(mint: string, sol: number, chain: ChainAdapter = this.chain): Promise<string | null> {
     if (!this.running) return 'the bot stopped';
     if (this.cfg.mode === 'live' && !chain.liveTrading) return `live trading on ${chain.meta.name} is off (Settings → Trading wallet)`;
-    const room = this.roomFor(mint, sol);
+    const room = this.roomFor(mint, sol, chain.meta.id);
     if (room) return room;
     if (this.cfg.mode === 'live') {
       const bal = await this.liveBalanceSol(chain);
@@ -673,13 +673,15 @@ export class BotEngine extends EventEmitter {
   scannerSince = Date.now();
 
   /** Limits every buy must fit: daily loss guard, open positions, total exposure, paper wallet. */
-  private roomFor(mint: string, sol: number): string | null {
+  private roomFor(mint: string, sol: number, chain: ChainId = 'solana'): string | null {
     const { cfg, state } = this;
     const r = cfg.risk;
     const blocked = buyBlockReason(this.guard, r, Date.now());
     if (blocked) return blocked;
     if (!state.positions[mint] && this.slotsUsed(state) >= r.maxOpenPositions) return 'max open positions reached';
     if (exposure(state) + sol > r.maxTotalExposureSol) return 'max total exposure reached';
+    const share = this.chainRoom(mint, sol, chain);
+    if (share) return share;
     if (cfg.mode === 'paper') {
       const free = paperFreeSol(cfg.paper.startSol, state.realizedPnlSol, exposure(state));
       if (free < sol) return `paper wallet has only ${Math.max(0, free).toFixed(3)} SOL left (reset it on the Dashboard)`;
@@ -761,6 +763,10 @@ export class BotEngine extends EventEmitter {
   }
   /** A coin rugged us: never buy it again, nor coins from whoever created it. */
   /** Open positions that count toward the limit: a dead coin waiting to be written off doesn't block new trades. */
+  /** This chain's own share of the limits (Settings → The basics → per-chain limits). */
+  private chainRoom(mint: string, sol: number, chain: ChainId): string | null {
+    return chainRoomReason(Object.values(this.state.positions), chain, mint, sol, this.cfg.risk.perChain?.[chain], (m) => !!this.trader.noBuyersState(m));
+  }
   private slotsUsed(state: { positions: Record<string, unknown> }) {
     return Object.keys(state.positions).filter((m) => !this.trader.noBuyersState(m)).length;
   }
@@ -976,6 +982,8 @@ export class BotEngine extends EventEmitter {
     const addOn = !!holding && b.consensusAddOn && b.consensusBoost > 1 && agree.length >= 2 && !holding.addedOn && !holding.sources.includes(s.wallet);
     if (holding && r.skipIfAlreadyHolding && !addOn) return skip('already holding');
     if (!holding && this.slotsUsed(state) >= r.maxOpenPositions) return skip('max open positions reached');
+    const shareSlots = this.chainRoom(s.mint, 0, chain.meta.id);
+    if (shareSlots) return skip(shareSlots);
     const rules = walletRules(cfg, s.wallet);
     if (s.quote === 'SOL' && s.quoteAmount < rules.minTargetBuySol) return skip(`their buy is below ${rules.minTargetBuySol} SOL`);
     // A wallet's small test buys aren't its convictions: compare with what it usually buys.
@@ -1013,6 +1021,8 @@ export class BotEngine extends EventEmitter {
     sol = Math.min(b.maxSol, Math.max(b.minSol, sol));
     if (why.length) this.log(`  size ${sol.toFixed(3)} SOL (${why.join('; ')})`, 'info');
     if (exposure(state) + sol > r.maxTotalExposureSol) return skip('max total exposure reached');
+    const shareSol = this.chainRoom(s.mint, sol, chain.meta.id);
+    if (shareSol) return skip(shareSol);
     if (cfg.mode === 'paper') {
       const free = paperFreeSol(cfg.paper.startSol, state.realizedPnlSol, exposure(state));
       if (free < sol) return skip(`paper wallet has only ${Math.max(0, free).toFixed(3)} SOL left (reset it on the Dashboard)`);
@@ -1077,7 +1087,7 @@ export class BotEngine extends EventEmitter {
         this.log(`  Claude says buy${d.size !== 1 ? ` (size ×${d.size})` : ''}: ${d.reason}`, 'ai');
         // Resize within the limits, then re-check: the price may have moved while Claude thought.
         const resized = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol * d.size));
-        const cap = Math.min(r.maxTotalExposureSol - exposure(state), w && w.maxExposureSol > 0 ? w.maxExposureSol - walletExposureSol(Object.values(state.positions), w.address) : Infinity);
+        const cap = Math.min(r.maxTotalExposureSol - exposure(state), chainRoomSol(Object.values(state.positions), chain.meta.id, r.perChain?.[chain.meta.id]), w && w.maxExposureSol > 0 ? w.maxExposureSol - walletExposureSol(Object.values(state.positions), w.address) : Infinity);
         sol = Math.min(resized, cap);
         if (sol < cfg.buy.minSol) return skip('no room left under your limits');
         lamports = BigInt(Math.round(sol * 1e9));
@@ -1128,11 +1138,12 @@ export class BotEngine extends EventEmitter {
     const left = sc.budgetSol - walletExposureSol(positions, SCANNER_SOURCE);
     const sol = Math.min(sc.buySol, this.cfg.buy.maxSol, left);
     if (sol < Math.max(0.001, sc.buySol / 2)) return `the scanner's budget is used up (${(sc.budgetSol - left).toFixed(3)} of ${sc.budgetSol} SOL)`;
-    const room = this.roomFor(sig.mint, sol);
+    const room = this.roomFor(sig.mint, sol, chain.meta.id);
     if (room) return room;
-    if (this.kp && this.cfg.mode === 'live') {
-      const bal = await this.chain.balance(this.ctx(), this.kp.publicKey.toBase58());
-      if (bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
+    if (this.cfg.mode === 'live') {
+      // The trading wallet on this coin's chain (a Base coin is paid in ETH, from the Base wallet).
+      const bal = await this.liveBalanceSol(chain);
+      if (bal != null && bal - sol < this.cfg.risk.solReserve) return `wallet balance ${bal.toFixed(3)} SOL too low`;
     }
     const checked = await this.tokenChecks(sig.mint, sol, false, false, chain);
     if (typeof checked === 'string') return checked;

@@ -434,3 +434,31 @@ export function needsFullQuote(p: ExitPosition, estValueSol: number | null, cfg:
   if (estValueSol == null || !lastFullAt || now - lastFullAt >= FULL_QUOTE_EVERY_MS) return true;
   return [0.95, 1, 1.05].some((f) => planExit(p, estValueSol * f, cfg).action !== null);
 }
+
+/**
+ * Per-chain limits: each chain's own share of the open coins and the money in trades, inside the
+ * shared totals, so one busy chain can't crowd out the other. 0 = no cap of its own. Coins waiting
+ * to be written off (`dead`) don't take a slot, as with the shared limit. Returns why not, or null.
+ */
+export function chainRoomReason(
+  positions: { mint: string; costSol: number; chain?: string }[],
+  chain: 'solana' | 'base',
+  mint: string,
+  sol: number,
+  limits: { maxPositions: number; maxSol: number } | undefined,
+  dead: (mint: string) => boolean = () => false,
+): string | null {
+  if (!limits) return null;
+  const name = chain === 'base' ? 'Base' : 'Solana';
+  const mine = positions.filter((p) => (p.chain === 'base' ? 'base' : 'solana') === chain);
+  const holding = mine.some((p) => p.mint === mint);
+  if (limits.maxPositions > 0 && !holding && mine.filter((p) => !dead(p.mint)).length >= limits.maxPositions) return `${name}'s share of coins is full (${limits.maxPositions})`;
+  if (limits.maxSol > 0 && mine.reduce((a, p) => a + p.costSol, 0) + sol > limits.maxSol + 1e-9) return `${name}'s share of money is full (${limits.maxSol} SOL)`;
+  return null;
+}
+
+/** How much more SOL a chain's own money cap allows (Infinity when it has none). */
+export function chainRoomSol(positions: { costSol: number; chain?: string }[], chain: 'solana' | 'base', limits: { maxSol: number } | undefined): number {
+  if (!limits || !(limits.maxSol > 0)) return Infinity;
+  return limits.maxSol - positions.filter((p) => (p.chain === 'base' ? 'base' : 'solana') === chain).reduce((a, p) => a + p.costSol, 0);
+}

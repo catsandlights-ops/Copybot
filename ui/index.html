@@ -1037,6 +1037,17 @@ async function runTuneNow() { const j = await act(() => api('POST', '/api/autotu
 async function applyTune() { const r = await act(() => api('POST', '/api/autotune/apply'), 'Exit settings updated'); if (r) { S.config = r.config; S.tune = r.tune; render(); } }
 async function dismissTune() { const r = await act(() => api('POST', '/api/autotune/dismiss')); if (r) { S.tune = r.tune; render(); } }
 
+/** "Solana 3/4 · Base 1/2": each chain's coins against its own cap, when per-chain limits are set. */
+function chainShares() {
+  const pc = S.config.risk.perChain || {};
+  const on = ['solana', 'base'].filter((c) => pc[c] && (pc[c].maxPositions > 0 || pc[c].maxSol > 0));
+  if (!on.length) return '';
+  return `<div class="s" style="margin-top:4px" title="Per-chain limits (Settings → The basics)">${on.map((c) => {
+    const mine = S.status.positions.filter((p) => (isEvm(p.mint) ? 'base' : 'solana') === c);
+    const solIn = mine.reduce((a, p) => a + p.costSol, 0);
+    return `${c === 'base' ? 'Base' : 'Solana'} ${mine.length}${pc[c].maxPositions > 0 ? `/${pc[c].maxPositions}` : ''}${pc[c].maxSol > 0 ? ` · ${solIn.toFixed(2)}/${pc[c].maxSol} SOL` : ''}`;
+  }).join(' &nbsp;·&nbsp; ')}</div>`;
+}
 function renderDashboard(el) {
   const st = S.status, cfg = S.config;
   const n = st.positions.length;
@@ -1065,7 +1076,7 @@ function renderDashboard(el) {
     <div class="grid stats">
       <div class="card stat"><div class="k">${ICON.coin}Realized profit</div><div class="v num ${cls(st.realizedPnlSol)}">${signed(st.realizedPnlSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${todays.filter((t) => t.side === 'sell').length ? `${signed(pnlToday, 3)} SOL today` : 'from closed trades'}</div></div>
       <div class="card stat"><div class="k">${ICON.star}Open profit</div><div class="v num ${cls(st.unrealizedPnlSol)}">${signed(st.unrealizedPnlSol, 3)} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">if sold right now</div></div>
-      <div class="card stat"><div class="k">Open positions</div><div class="v num">${n} <small style="font-size:13px" class="muted">/ ${cfg.risk.maxOpenPositions}</small></div>${hearts(n, cfg.risk.maxOpenPositions)}<div class="s">${sol(st.exposureSol, 3)} of ${cfg.risk.maxTotalExposureSol} SOL in use</div><div class="bar"><i style="width:${expPct}%"></i></div></div>
+      <div class="card stat"><div class="k">Open positions</div><div class="v num">${n} <small style="font-size:13px" class="muted">/ ${cfg.risk.maxOpenPositions}</small></div>${hearts(n, cfg.risk.maxOpenPositions)}<div class="s">${sol(st.exposureSol, 3)} of ${cfg.risk.maxTotalExposureSol} SOL in use</div><div class="bar"><i style="width:${expPct}%"></i></div>${chainShares()}</div>
       ${st.wallet && cfg.mode === 'live'
         ? `<div class="card stat"><div class="k">${ICON.coin}Trading wallet</div><div class="v num">${st.wallet.balance != null ? sol(st.wallet.balance, 3) : '…'} <small style="font-size:13px" class="muted">SOL</small></div><div class="s">${walletLink(st.wallet.address)}</div></div>`
         : st.paper ? (() => {
@@ -2621,6 +2632,10 @@ const FIELDS = [
     { k: 'sell.copySells', label: 'Copy their sells', type: 'toggle', help: 'If they sell half their tokens, you sell half of yours.' },
     { k: 'risk.maxOpenPositions', label: 'Max tokens held at once', unit: 'tokens', step: 1 },
     { k: 'risk.maxTotalExposureSol', label: 'Max SOL in open positions', unit: 'SOL' },
+    { k: 'risk.perChain.solana.maxPositions', label: 'Per-chain limits · Solana: max tokens', unit: 'tokens', step: 1, help: "Solana's own share of the tokens held at once, inside the total above, so a busy chain can't crowd out the other. 0 = no cap of its own." },
+    { k: 'risk.perChain.solana.maxSol', label: 'Solana: max SOL in positions', unit: 'SOL', help: "Solana's own share of the money in trades. 0 = no cap of its own." },
+    { k: 'risk.perChain.base.maxPositions', label: 'Base: max tokens', unit: 'tokens', step: 1, help: "Base's own share of the tokens held at once. For example 2 of 5 keeps 3 slots for Solana. 0 = no cap of its own." },
+    { k: 'risk.perChain.base.maxSol', label: 'Base: max SOL in positions', unit: 'SOL', help: "Base's own share of the money in trades (Base amounts are counted in SOL). 0 = no cap of its own. The daily loss limit stays shared." },
     { k: 'risk.dailyLossLimitSol', label: 'Daily loss limit', unit: 'SOL', help: 'Stop new buys for the rest of the day after losing this much. Sells and exits keep running. 0 = off.' },
   ]},
   { title: 'Buying', tab: 'buying', desc: 'How much to spend when a wallet you copy buys a token.', fields: [

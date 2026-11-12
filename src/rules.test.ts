@@ -393,3 +393,38 @@ test('trailing stop fits each coin: wild coins get more room, calm ones a tighte
   // Switched off: always your setting.
   assert.equal(plan(p, 2.4, { ...cfg, exits: { ...cfg.exits, adaptiveTrail: false } }, 2).action, null);
 });
+
+test('chainRoomReason: each chain keeps to its own share, inside the totals', async () => {
+  const { chainRoomReason, chainRoomSol } = await import('./rules');
+  const pos = [
+    { mint: 'S1', costSol: 0.3 },
+    { mint: 'S2', costSol: 0.3, chain: 'solana' },
+    { mint: '0xb1', costSol: 0.25, chain: 'base' },
+    { mint: '0xb2', costSol: 0.25, chain: 'base' },
+  ];
+  const lim = { maxPositions: 2, maxSol: 0.6 };
+  // Base is at 2 of 2 coins: a new Base coin is refused, Solana isn't affected.
+  assert.match(chainRoomReason(pos, 'base', '0xb3', 0.1, lim)!, /Base's share of coins is full \(2\)/);
+  assert.equal(chainRoomReason(pos, 'solana', 'S3', 0, { maxPositions: 3, maxSol: 0 }), null);
+  // Adding to a coin already held doesn't need a new slot, but still counts money.
+  assert.equal(chainRoomReason(pos, 'base', '0xb1', 0.1, lim), null);
+  assert.match(chainRoomReason(pos, 'base', '0xb1', 0.2, lim)!, /Base's share of money is full \(0.6 SOL\)/);
+  // A dead coin waiting to be written off doesn't take a slot.
+  assert.equal(chainRoomReason(pos, 'base', '0xb3', 0.05, lim, (m) => m === '0xb2'), null);
+  // 0 = no cap of its own; no limits at all = nothing to check.
+  assert.equal(chainRoomReason(pos, 'base', '0xb3', 5, { maxPositions: 0, maxSol: 0 }), null);
+  assert.equal(chainRoomReason(pos, 'base', '0xb3', 5, undefined), null);
+  // Positions saved before chains existed count as Solana.
+  assert.match(chainRoomReason(pos, 'solana', 'S3', 0, { maxPositions: 2, maxSol: 0 })!, /Solana's share of coins/);
+  assert.ok(Math.abs(chainRoomSol(pos, 'base', lim) - 0.1) < 1e-12);
+  assert.equal(chainRoomSol(pos, 'base', { maxSol: 0 }), Infinity);
+});
+
+test('per-chain limits in settings: kept, checked, and off for older configs', async () => {
+  const { skipGroup } = await import('./readiness');
+  const c = sanitizeConfig({ risk: { perChain: { base: { maxPositions: 2, maxSol: 1 } } } }, true);
+  assert.deepEqual(c.risk.perChain, { solana: { maxPositions: 0, maxSol: 0 }, base: { maxPositions: 2, maxSol: 1 } });
+  assert.deepEqual(sanitizeConfig({}, true).risk.perChain.base, { maxPositions: 0, maxSol: 0 });
+  assert.throws(() => sanitizeConfig({ risk: { perChain: { solana: { maxPositions: -1 } } } }, true), /Solana: max tokens/);
+  assert.equal(skipGroup("Base's share of coins is full (2)").setting, 'Basics → Per-chain limits');
+});

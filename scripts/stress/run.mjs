@@ -34,6 +34,9 @@ const cfg = {
   monitor: { pollIntervalSec: 2, exitCheckIntervalSec: 5 },
   paper: { startSol: 10 },
 };
+// --per-chain=3,2 → Solana up to 3 coins, Base up to 2 (their own shares of the limits).
+const perChain = args['per-chain'] ? args['per-chain'].split(',').map(Number) : null;
+if (perChain) cfg.risk.perChain = { solana: { maxPositions: perChain[0], maxSol: 0 }, base: { maxPositions: perChain[1], maxSol: 0 } };
 fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(cfg, null, 2));
 
 const problems = [];
@@ -119,6 +122,13 @@ async function check(label) {
     if (BigInt(p.amountRaw) !== expect) problem(`position ${mint.slice(0, 6)} holds ${p.amountRaw} but its trades add up to ${expect}`);
   }
   for (const [mint, left] of run) if (left > 0n && !state.positions[mint]) problem(`trades leave ${left} of ${mint.slice(0, 6)} but there's no position`);
+  // 2b. Per-chain limits: no chain holds more live coins than its share (dead coins waiting to be written off aside).
+  if (perChain) {
+    const by = { solana: 0, base: 0 };
+    for (const p of Object.values(state.positions)) by[p.chain === 'base' ? 'base' : 'solana']++;
+    if (by.solana > perChain[0] + 1 || by.base > perChain[1] + 1) problem(`a chain went over its share: Solana ${by.solana}/${perChain[0]}, Base ${by.base}/${perChain[1]}`);
+    if (by.solana > perChain[0] || by.base > perChain[1]) console.log(`  (note: Solana ${by.solana}/${perChain[0]}, Base ${by.base}/${perChain[1]}: over by a dead coin waiting to be written off?)`);
+  }
   // 3. The paper wallet never goes below zero; nothing is NaN.
   const free = st.status?.paper?.freeSol;
   if (!(Number.isFinite(free) && free > -1e-6)) problem(`paper wallet free SOL is ${free}`);

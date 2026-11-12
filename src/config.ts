@@ -127,6 +127,8 @@ export type Config = {
     dailyLossLimitSol: number; // stop new buys for the day after losing this much (0 = off)
     pauseAfterLosses: number; // pause new buys after this many losing sells in a row (0 = off)
     pauseMinutes: number;
+    /** Each chain's own share of the limits above (0 = no cap of its own: only the shared totals apply). */
+    perChain: Record<'solana' | 'base', { maxPositions: number; maxSol: number }>;
   };
   /** Staged exits. Percentages are gains over our entry price (100 = 2x). 0 turns a step off. */
   exits: {
@@ -256,6 +258,7 @@ export const DEFAULT_CONFIG: Config = {
     moodFilter: true,
     pauseAfterLosses: 4,
     pauseMinutes: 60,
+    perChain: { solana: { maxPositions: 0, maxSol: 0 }, base: { maxPositions: 0, maxSol: 0 } },
   },
   exits: { recoverCostAtPct: 100, tp1AtPct: 300, tp1SellPct: 50, tp2AtPct: 900, tp2SellPct: 50, trailingAfterPct: 50, trailingStopPct: 30, lockAtPct: 20, lockFloorPct: 5, adaptiveTrail: true },
   protect: { liquidityDropPct: 50, crashPct: 35, crashWindowMin: 5, maxSellBuyRatio: 3 },
@@ -304,6 +307,10 @@ const NUMBERS: Record<string, [number, number, string, ((v: number) => string)?]
   'risk.dailyLossLimitSol': [0, 10_000, 'Daily loss limit'],
   'risk.pauseAfterLosses': [0, 50, 'Pause after losses in a row'],
   'risk.pauseMinutes': [1, 10_080, 'Pause length'],
+  'risk.perChain.solana.maxPositions': [0, 100, 'Solana: max tokens at once'],
+  'risk.perChain.solana.maxSol': [0, 10_000, 'Solana: max SOL in positions'],
+  'risk.perChain.base.maxPositions': [0, 100, 'Base: max tokens at once'],
+  'risk.perChain.base.maxSol': [0, 10_000, 'Base: max SOL in positions'],
   'exits.recoverCostAtPct': [0, 100_000, 'Take back my cost at'],
   'exits.lockAtPct': [0, 1_000, 'Lock in profit once up'],
   'exits.lockFloorPct': [0, 100, 'Profit lock: sell if it falls back to'],
