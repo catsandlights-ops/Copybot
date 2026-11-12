@@ -225,6 +225,11 @@ test("no buyers: retries quietly with growing pauses, then writes the coin off a
     // The engine sees it's waiting (so it doesn't hold a slot or repeat "selling everything").
     assert.equal(t.noBuyersState(MINT), 'wait');
     assert.equal(t.noBuyersState('other'), null);
+    // Saved with the position, so a restart remembers it (and it stops counting toward your money limit).
+    assert.ok(JSON.parse(fs.readFileSync('data/state-paper.json', 'utf8')).positions[MINT].noBuyers);
+    const { liveExposure, exposure } = await import('./state');
+    assert.equal(exposure(state), 0.1);
+    assert.equal(liveExposure(state), 0);
     // The exit check runs every 20 s: those tries are skipped without asking or logging again.
     for (let i = 0; i < 10; i++) {
       now += 20_000;

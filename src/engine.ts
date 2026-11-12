@@ -13,7 +13,7 @@ import { setBaseLive } from './chains/base';
 import { lessonFor, type Entry, type Lesson } from './learn';
 import { skipCategory, skipGroup, type SignalStats, plainSkip } from './readiness';
 import { consensusWallets, fallingShare, moodFrom, recordFactor, type Mood, type RecentBuy } from './smart';
-import { exposure, loadState, saveState, State } from './state';
+import { exposure, loadState, saveState, State, liveExposure } from './state';
 import { getHolderStats, HolderStats } from './solscan';
 import { hasSecret, onRpcSwitch, rpcUrl } from './env';
 import { FastStream, heliusWsUrl } from './stream';
@@ -694,7 +694,7 @@ export class BotEngine extends EventEmitter {
     const blocked = buyBlockReason(this.guard, r, Date.now());
     if (blocked) return blocked;
     if (!state.positions[mint] && this.slotsUsed(state) >= r.maxOpenPositions) return 'max open positions reached';
-    if (exposure(state) + sol > r.maxTotalExposureSol) return 'max total exposure reached';
+    if (liveExposure(state) + sol > r.maxTotalExposureSol) return 'max total exposure reached';
     const share = this.chainRoom(mint, sol, chain);
     if (share) return share;
     if (cfg.mode === 'paper') {
@@ -1037,7 +1037,7 @@ export class BotEngine extends EventEmitter {
     }
     sol = Math.min(b.maxSol, Math.max(b.minSol, sol));
     if (why.length) this.log(`  size ${sol.toFixed(3)} SOL (${why.join('; ')})`, 'info');
-    if (exposure(state) + sol > r.maxTotalExposureSol) return skip('max total exposure reached');
+    if (liveExposure(state) + sol > r.maxTotalExposureSol) return skip('max total exposure reached');
     const shareSol = this.chainRoom(s.mint, sol, chain.meta.id);
     if (shareSol) return skip(shareSol);
     if (cfg.mode === 'paper') {
@@ -1104,7 +1104,7 @@ export class BotEngine extends EventEmitter {
         this.log(`  ${ai.AiName(this.cfg)} says buy${d.size !== 1 ? ` (size ×${d.size})` : ''}: ${d.reason}`, 'ai');
         // Resize within the limits, then re-check: the price may have moved while Claude thought.
         const resized = Math.min(cfg.buy.maxSol, Math.max(cfg.buy.minSol, sol * d.size));
-        const cap = Math.min(r.maxTotalExposureSol - exposure(state), chainRoomSol(Object.values(state.positions), chain.meta.id, r.perChain?.[chain.meta.id]), w && w.maxExposureSol > 0 ? w.maxExposureSol - walletExposureSol(Object.values(state.positions), w.address) : Infinity);
+        const cap = Math.min(r.maxTotalExposureSol - liveExposure(state), chainRoomSol(Object.values(state.positions), chain.meta.id, r.perChain?.[chain.meta.id]), w && w.maxExposureSol > 0 ? w.maxExposureSol - walletExposureSol(Object.values(state.positions), w.address) : Infinity);
         sol = Math.min(resized, cap);
         if (sol < cfg.buy.minSol) return skip('no room left under your limits');
         lamports = BigInt(Math.round(sol * 1e9));

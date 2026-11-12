@@ -170,8 +170,6 @@ export class Trader {
     this.hooks.log(`Recovered a ${e.side} of ${short(e.mint)} that went through while Copybot was stopping; it's in your books now.`, 'warn');
   }
 
-  /** Coins nobody would buy last time we tried to sell: when we first noticed, how often, when to try again. */
-  private noRoute = new Map<string, { since: number; tries: number; nextAt: number; loggedAt: number }>();
   /**
    * Close a position in the books as a total loss, without selling (a rugged or dead coin). Its slot
    * and budget are freed. In live mode the coins stay in the wallet. Returns the loss, or null.
@@ -179,7 +177,6 @@ export class Trader {
   writeOff(mint: string, reason: string): number | null {
     const p = this.state.positions[mint];
     if (!p) return null;
-    this.noRoute.delete(mint);
     const loss = -p.costSol;
     this.state.realizedPnlSol += loss;
     delete this.state.positions[mint];
@@ -189,7 +186,7 @@ export class Trader {
 
   /** A coin that found no buyers last time: 'wait' until its next try, 'due' when it's time to try again. */
   noBuyersState(mint: string): 'wait' | 'due' | null {
-    const nr = this.noRoute.get(mint);
+    const nr = this.state.positions[mint]?.noBuyers;
     return nr ? (Date.now() < nr.nextAt ? 'wait' : 'due') : null;
   }
   /** How long a coin may have no buyers at all before it's written off in the books. */
@@ -202,10 +199,10 @@ export class Trader {
    */
   private noBuyers(p: Position, reason: string): number | null {
     const now = Date.now();
-    const nr = this.noRoute.get(p.mint) ?? { since: now, tries: 0, nextAt: now, loggedAt: 0 };
+    const nr = (p.noBuyers ??= { since: now, tries: 0, nextAt: now, loggedAt: 0 });
     nr.tries++;
     nr.nextAt = now + Math.min(30_000 * 2 ** (nr.tries - 1), 10 * 60_000);
-    this.noRoute.set(p.mint, nr);
+    saveState(this.state, this.cfg.mode); // remembered across restarts
     if (now - nr.since >= Trader.WRITE_OFF_AFTER_MS && nr.tries >= 5) {
       const loss = this.writeOff(p.mint, 'no buyers for 2 hours: written off')!;
       this.hooks.log(`${short(p.mint)}: no one has been willing to buy it for 2 hours (its liquidity is gone), so it was written off as a loss of ${p.costSol.toFixed(4)} SOL to free its slot.${this.live ? ' The coins are still in your wallet if a buyer ever appears.' : ''}`, 'error');
@@ -326,7 +323,7 @@ export class Trader {
     }
     const chain = getChain(p);
     // No buyers last time: wait before asking again (and don't fill the log).
-    const nr = this.noRoute.get(mint);
+    const nr = p.noBuyers;
     if (nr && Date.now() < nr.nextAt) return null;
     // Live: sell what the wallet really holds (some coins take a fee on every transfer, so it can be less).
     const real = await this.realHolding(p, chain, reason);
@@ -338,7 +335,7 @@ export class Trader {
     if (amount <= 0n) return null;
     const q = await chain.quoteSell(mint, amount, this.cfg.safety.slippageBps);
     if (!q) return this.noBuyers(p, reason);
-    this.noRoute.delete(mint);
+    if (p.noBuyers) delete p.noBuyers; // buyers are back
     const book = (r: Fill, late = false): number => {
       const pos = this.state.positions[mint];
       const heldNow = pos ? BigInt(pos.amountRaw) : 0n;
