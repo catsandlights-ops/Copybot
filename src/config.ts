@@ -502,7 +502,7 @@ export function sanitizeConfig(input: any, strict: boolean): Config {
 
   const g = input?.ai?.guidance;
   if (typeof g === 'string') {
-    if (g.length > 1000) fail('Your instructions for Claude can be at most 1000 characters');
+    if (g.length > 1000) fail('Your instructions for the AI can be at most 1000 characters');
     out.ai.guidance = g.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').slice(0, 1000);
   } else if (g !== undefined) fail('Invalid value for ai.guidance');
   // Ollama: only on this computer (it gets your trading data), and model names as Ollama writes them.

@@ -59,6 +59,18 @@ await page.click('.nav[data-page="wallets"]');
 await page.waitForTimeout(600);
 const shadowOk = await page.$(`[data-shadow="start"][data-addr="${baseWallet}"]`);
 if (!shadowOk) errors.push('no Shadow button for the paused Base wallet');
+// Settings → Automation: with the local AI picked, its own settings show and Claude's are hidden.
+await page.click('.nav[data-page="settings"]');
+await page.waitForTimeout(600);
+await page.click('#set-tabs [data-tab="automation"]');
+await page.waitForTimeout(300);
+const aiFields = await page.evaluate(() => ({
+  fast: document.querySelector('[data-k="ai.ollamaFast"]')?.value,
+  fastShown: !document.querySelector('[data-k="ai.ollamaFast"]')?.closest('.field')?.hidden,
+  claudeShown: !document.querySelector('[data-k="ai.claudeModel"]')?.closest('.field')?.hidden,
+}));
+if (aiFields.fast !== 'fake:7b' || !aiFields.fastShown || aiFields.claudeShown) errors.push(`Autopilot settings don't follow the chosen AI: ${JSON.stringify(aiFields)}`);
+if (shots) await (await page.$('#ai-settings'))?.screenshot({ path: path.join(shots, 'ai-settings.png') });
 // A Base coin on the Orders page is accepted (looked up, not ignored).
 await page.click('.nav[data-page="orders"]');
 await page.waitForTimeout(600);

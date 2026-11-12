@@ -2809,7 +2809,7 @@ const FIELDS = [
     { k: 'alerts.trades', label: 'Trades', type: 'toggle', help: 'Every buy and sell, with profit.' },
     { k: 'alerts.errors', label: 'Problems', type: 'toggle', help: 'Errors and RPC trouble. The same problem is sent at most once every 10 minutes.' },
     { k: 'alerts.guard', label: 'Circuit breaker', type: 'toggle', help: 'When the daily loss limit or losing-streak pause stops new buys.' },
-    { k: 'alerts.autopilot', label: 'Autopilot decisions', type: 'toggle', help: 'What Claude decided, and why.' },
+    { k: 'alerts.autopilot', label: 'Autopilot decisions', type: 'toggle', help: 'What the AI decided, and why.' },
   ]},
   { title: 'Market scanner', tab: 'automation', id: 'scanner-settings', desc: 'Runs while the bot runs. Turn each part on from the Scanner page. Your limits, loss guards and safety checks always apply.', fields: [
     { k: 'scanner.findTraders', label: 'Find traders', type: 'toggle', help: 'Keep looking at new and older coins for traders who are winning, backtest them with your settings, and add the best ones on a trial.' },
@@ -2833,19 +2833,24 @@ const FIELDS = [
     { k: 'scanner.trailingStopPct', when: ['scanner.tradeCoins'], label: 'Trailing stop', unit: '% drop', help: '0 = off.' },
     { k: 'scanner.maxHoldHours', adv: true, when: ['scanner.tradeCoins'], label: 'Sell after', unit: 'hours', step: 1, help: 'Momentum fades: sell whatever is left after this long. 0 = never.' },
   ]},
-  { title: 'Autopilot (Claude)', tab: 'automation', id: 'ai-settings', desc: 'What Claude may decide. It always stays inside every limit above. Turn it on and add your key on the Autopilot page.', fields: [
+  { title: 'Autopilot (AI)', tab: 'automation', id: 'ai-settings', desc: 'Which AI makes the judgment calls, and what it may decide. It always stays inside every limit above. Turn it on, and test it, on the Autopilot page.', fields: [
     { k: 'ai.enabled', label: 'Autopilot on', type: 'toggle' },
-    { k: 'ai.decideBuys', when: ['ai.enabled'], label: 'Claude decides buys', type: 'toggle', help: 'Buy or skip each copy signal that passed the safety checks, and how big (¼× to 2× your normal size).' },
-    { k: 'ai.autoBench', when: ['ai.enabled', 'ai.decideBuys'], label: 'Bench the AI when the rules do better', type: 'toggle', help: 'Every buy call is checked an hour later. If following the AI made less than the plain rules would have over the last 2 weeks, the rules take over buys; the AI keeps making calls on the side and gets its job back once it would have beaten the rules again.' },
-    { k: 'ai.reviewPositions', when: ['ai.enabled'], label: 'Claude reviews open positions', type: 'toggle', help: 'Can sell early. Stop-loss and take-profits still run on their own.' },
+    { k: 'ai.provider', label: 'Which AI', type: 'select', options: [['claude', 'Claude (paid)'], ['ollama', 'Local AI (free)']], help: 'Claude (by Anthropic) is the smartest and costs a few cents per decision. The local AI runs on this PC with Ollama: free and private, but less sharp.' },
+    { k: 'ai.claudeModel', when: ['ai.provider', 'claude'], label: 'Claude model', type: 'select', options: [['claude-opus-5-5', 'Opus 5.5 (smartest)'], ['claude-sonnet-5-5', 'Sonnet 5.5 (cheaper)'], ['claude-haiku-5-5', 'Haiku 5.5 (cheapest, fastest)']] },
+    { k: 'ai.dailyBudgetUsd', when: ['ai.provider', 'claude'], label: 'Daily AI budget', unit: 'USD', help: 'What Claude may cost per day. When it runs out, Remora uses its normal rules until tomorrow.' },
+    { k: 'ai.ollamaFast', when: ['ai.provider', 'ollama'], label: 'Model for buy decisions', type: 'line', placeholder: 'e.g. qwen3:8b', help: 'A fast model: buy decisions get at most 20 seconds. The Autopilot page lists the models you have installed.' },
+    { k: 'ai.ollamaSmart', when: ['ai.provider', 'ollama'], label: 'Model for reviews', type: 'line', placeholder: 'e.g. qwen3:14b', help: 'Reviews of positions and wallets have more time, so a bigger, smarter model fits. Empty = use the buy model.' },
+    { k: 'ai.ollamaUrl', adv: true, when: ['ai.provider', 'ollama'], label: 'Ollama address', type: 'line', placeholder: 'http://127.0.0.1:11434', help: 'Only addresses on this PC are allowed.' },
+    { k: 'ai.decideBuys', when: ['ai.enabled'], label: 'The AI decides buys', type: 'toggle', help: 'Buy or skip each copy signal that passed the safety checks, and how big (¼× to 2× your normal size).' },
+    { k: 'ai.autoBench', when: ['ai.enabled'], label: 'Bench the AI when the rules do better', type: 'toggle', help: 'Every buy call is checked an hour later. If following the AI made less than the plain rules would have over the last 2 weeks, the rules take over buys; the AI keeps making calls on the side and gets its job back once it would have beaten the rules again.' },
+    { k: 'ai.reviewPositions', when: ['ai.enabled'], label: 'The AI reviews open positions', type: 'toggle', help: 'Can sell early. Stop-loss and take-profits still run on their own.' },
     { k: 'ai.reviewEveryMin', when: ['ai.enabled'], label: 'Review positions every', unit: 'min', step: 1 },
-    { k: 'ai.manageWallets', when: ['ai.enabled'], label: 'Claude manages wallets', type: 'toggle', help: 'Pause losing wallets, change sizes and budgets, and add wallets from your Find wallets results.' },
+    { k: 'ai.manageWallets', when: ['ai.enabled'], label: 'The AI manages wallets', type: 'toggle', help: 'Pause losing wallets, change sizes and budgets, and add wallets from your Find wallets results.' },
     { k: 'ai.walletReviewHours', adv: true, when: ['ai.enabled'], label: 'Review wallets every', unit: 'hours', step: 1 },
     { k: 'ai.maxWallets', when: ['ai.enabled'], label: 'Max wallets copied at once', unit: 'wallets', step: 1 },
     { k: 'ai.scoutEveryHours', when: ['ai.enabled'], label: 'Search for new wallets every', unit: 'hours', step: 1, help: 'The wallet scout looks for new wallets while the bot runs and adds the best ones. 0 = only when you press "Find wallets for me".' },
     { k: 'ai.scoutMaxPicks', adv: true, when: ['ai.enabled'], label: 'New wallets per search', unit: 'wallets', step: 1 },
-    { k: 'ai.dailyBudgetUsd', when: ['ai.enabled'], label: 'Daily AI budget', unit: 'USD', help: 'What Claude may cost per day. When it runs out, Remora uses its normal rules until tomorrow.' },
-    { k: 'ai.guidance', when: ['ai.enabled'], label: 'Your instructions for Claude', type: 'text', help: 'Optional. For example: "Be picky. Avoid tokens younger than 10 minutes."' },
+    { k: 'ai.guidance', when: ['ai.enabled'], label: 'Your instructions for the AI', type: 'text', help: 'Optional. For example: "Be picky. Avoid tokens younger than 10 minutes."' },
   ]},
   { title: 'Learning', tab: 'automation', desc: 'Remora learns from your own results: it avoids the kinds of trades that have been losing lately and re-checks your exits. Details and undo on the Autopilot page.', fields: [
     { k: 'learn.enabled', label: 'Learn from my results', type: 'toggle', help: 'Avoid the kinds of trades (coin age, liquidity, size, market mood, time of day) that lost money over the last 2 weeks. Each lesson lasts a week, then gets a fresh test.' },
@@ -2886,6 +2891,7 @@ function fieldHtml(f) {
   let ctl;
   if (f.type === 'toggle') ctl = `<label class="switch"><input type="checkbox" id="${id}" data-k="${f.k}" ${v ? 'checked' : ''}><i></i></label>`;
   else if (f.type === 'select') ctl = `<select class="input" id="${id}" data-k="${f.k}">${f.options.map(([val, l]) => `<option value="${val}" ${String(val) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  else if (f.type === 'line') ctl = `<input class="input mono" type="text" id="${id}" data-k="${f.k}" value="${esc(v || '')}" placeholder="${esc(f.placeholder || '')}" maxlength="200" spellcheck="false">`;
   else if (f.type === 'text') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" maxlength="1000" placeholder="none">${esc(v || '')}</textarea>`;
   else if (f.type === 'list') ctl = `<textarea class="input" id="${id}" data-k="${f.k}" rows="3" placeholder="none">${esc((v || []).join('\n'))}</textarea>`;
   else ctl = `<div class="with-unit"><input type="number" inputmode="decimal" id="${id}" data-k="${f.k}" value="${esc(+Number(v).toFixed(9))}" step="${f.step || 'any'}" min="0"><span>${f.unit}</span></div>`;
@@ -3310,7 +3316,7 @@ async function saveSettings() {
     let v;
     if (f.type === 'toggle') v = el.checked;
     else if (f.type === 'select') v = f.numeric ? Number(el.value) : el.value;
-    else if (f.type === 'text') v = el.value;
+    else if (f.type === 'text' || f.type === 'line') v = el.value.trim();
     else if (f.type === 'list') v = el.value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean);
     else {
       v = Number(el.value);
