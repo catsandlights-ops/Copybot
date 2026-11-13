@@ -162,7 +162,7 @@ async function swapNow(key: string, quote: Quote, slippageBps: number, maxFeeEth
   }
   const res = await fetch(KYBER_BUILD, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-client-id': 'copybot' },
+    headers: { 'content-type': 'application/json', 'x-client-id': 'remora' },
     body: JSON.stringify({ routeSummary: (quote as any).routeSummary, sender: owner, recipient: owner, slippageTolerance: slippageBps, deadline: Math.floor(Date.now() / 1000) + 120 }),
     signal: AbortSignal.timeout(15_000),
   });

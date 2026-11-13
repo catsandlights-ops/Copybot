@@ -50,7 +50,7 @@ const KYBER = 'https://aggregator-api.kyberswap.com/base/api/v1/routes';
 async function kyberQuote(tokenIn: string, tokenOut: string, amountIn: bigint, slippageBps: number): Promise<Quote | null> {
   if (amountIn <= 0n) return null;
   const url = `${KYBER}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amountIn=${amountIn}`;
-  const res = await fetch(url, { headers: { 'x-client-id': 'copybot', accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
+  const res = await fetch(url, { headers: { 'x-client-id': 'remora', accept: 'application/json' }, signal: AbortSignal.timeout(10_000) });
   if (res.status === 429 || res.status >= 500) throw new Error(`KyberSwap is busy (HTTP ${res.status}); try again in a moment`);
   if (!res.ok) return null; // no route
   const j = (await res.json()) as { code?: number; data?: { routeSummary?: { amountIn: string; amountOut: string } } };

@@ -14,7 +14,7 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'copybot-ui-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'remora-ui-'));
 const world = createWorld({ chaos: 0, wallets: 3, coins: 10 });
 const worldPort = await world.listen();
 const port = 5100 + Math.floor(Math.random() * 90);

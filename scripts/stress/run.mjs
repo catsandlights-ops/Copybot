@@ -13,7 +13,7 @@ const root = path.resolve(here, '../..');
 const args = Object.fromEntries(process.argv.slice(2).filter((a) => a.startsWith('--')).map((a) => a.slice(2).split('=')));
 const minutes = Number(process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 20);
 const killEveryMin = Number(args['kill-every'] ?? 6);
-const dir = args.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'copybot-stress-'));
+const dir = args.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'remora-stress-'));
 const port = 4900 + Math.floor(Math.random() * 90);
 
 const world = createWorld({ chaos: Number(args.chaos ?? 0.05), wallets: Number(args.wallets ?? 8), coins: Number(args.coins ?? 40), baseWallets: Number(args['base-wallets'] ?? 4) });

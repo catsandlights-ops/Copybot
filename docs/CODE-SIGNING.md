@@ -1,15 +1,15 @@
 # Code-signing the Windows installer (optional)
 
-Without a code signature, Windows SmartScreen warns people who download Copybot
+Without a code signature, Windows SmartScreen warns people who download Remora
 ("Windows protected your PC" → **More info → Run anyway**). Signing the installer with a
 certificate Microsoft trusts removes that warning.
 
-This is separate from Copybot's **update signature** (`UPDATE_SIGNING_KEY`), which stays in place
+This is separate from Remora's **update signature** (`UPDATE_SIGNING_KEY`), which stays in place
 and keeps protecting automatic updates either way.
 
 ## What it costs
 
-Copybot uses **Azure Artifact Signing** (formerly *Trusted Signing*), Microsoft's own signing
+Remora uses **Azure Artifact Signing** (formerly *Trusted Signing*), Microsoft's own signing
 service. The Basic plan is about **$9.99/month** for up to 5,000 signatures. Check the current price
 at <https://azure.microsoft.com/pricing/details/artifact-signing/> and who can sign up (identity
 validation is required, and availability for individuals depends on your country) before subscribing.
@@ -26,7 +26,7 @@ validation is required, and availability for individuals depends on your country
    **client secret** for it. Note the **tenant ID**, **client (application) ID** and the secret value.
 4. In the signing account → *Access control (IAM)*, give that app the role
    **Artifact Signing Certificate Profile Signer** (or *Trusted Signing Certificate Profile Signer*).
-5. In GitHub → the Copybot repo → *Settings → Secrets and variables → Actions*, add:
+5. In GitHub → the Remora repo → *Settings → Secrets and variables → Actions*, add:
 
    | Secret | Value |
    |---|---|

@@ -4,7 +4,7 @@
 sells a token, Remora can copy the trade within seconds, with safety checks, staged exits, limits
 you control, and an optional AI autopilot powered by Claude.
 
-[![Latest release](https://img.shields.io/github/v/release/catsandlights-ops/Copybot?label=download&color=7c3aed)](https://github.com/catsandlights-ops/Copybot/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/catsandlights-ops/Remora?label=download&color=7c3aed)](https://github.com/catsandlights-ops/Remora/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows-0078d4)
 ![Chain](https://img.shields.io/badge/chain-Solana-14f195)
 
@@ -16,7 +16,7 @@ you control, and an optional AI autopilot powered by Claude.
 ## Download
 
 **Windows:** download `Remora-Setup-x.y.z.exe` from the
-[latest release](https://github.com/catsandlights-ops/Copybot/releases/latest) and run it.
+[latest release](https://github.com/catsandlights-ops/Remora/releases/latest) and run it.
 The installer isn't code-signed, so Windows SmartScreen warns you: click **More info → Run anyway**.
 
 After that, Remora **updates itself**: new versions download in the background, are checked
@@ -213,9 +213,9 @@ slow and broken replies mixed in. Nothing touches the internet or real money.
 On a VPS (about $5/month at DigitalOcean, Vultr or Hetzner; pick US East or Frankfurt/Amsterdam):
 
 ```bash
-git clone https://github.com/catsandlights-ops/Copybot.git && cd Remora && npm install
+git clone https://github.com/catsandlights-ops/Remora.git && cd Remora && npm install
 npm install -g pm2
-pm2 start "npm start" --name copybot   # or "npm run app" for the UI
+pm2 start "npm start" --name remora   # or "npm run app" for the UI
 pm2 save && pm2 startup                # restart after reboots
 ```
 

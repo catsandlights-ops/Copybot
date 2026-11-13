@@ -1,5 +1,5 @@
 {
-  "name": "copybot",
+  "name": "remora",
   "version": "0.9.3",
   "private": true,
   "type": "module",
@@ -89,7 +89,7 @@
     "publish": {
       "provider": "github",
       "owner": "catsandlights-ops",
-      "repo": "copybot",
+      "repo": "Remora",
       "releaseType": "draft"
     }
   },

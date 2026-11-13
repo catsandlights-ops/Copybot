@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 test('second read of the same wallet comes from the cache, not the network', async () => {
-  process.chdir(fs.mkdtempSync(path.join(os.tmpdir(), 'copybot-hist-')));
+  process.chdir(fs.mkdtempSync(path.join(os.tmpdir(), 'remora-hist-')));
   let hits = 0;
   let requests = 0;
   const srv = http.createServer(async (req, res) => {

@@ -28,7 +28,7 @@ const msg = (text: string, stop = 'end_turn') => ({
 
 before(async () => {
   // ai.ts keeps its files under ./data, so run in a throwaway folder.
-  process.chdir(fs.mkdtempSync(path.join(os.tmpdir(), 'copybot-ai-')));
+  process.chdir(fs.mkdtempSync(path.join(os.tmpdir(), 'remora-ai-')));
   server = http.createServer(async (req, res) => {
     let raw = '';
     for await (const c of req) raw += c;

@@ -13,7 +13,7 @@ const { chromium, devices } = createRequire(import.meta.url)('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
 const shots = process.argv.find((a) => a.startsWith('--shots='))?.slice(8);
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'copybot-phone-'));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'remora-phone-'));
 const world = createWorld({ chaos: 0, wallets: 6, baseWallets: 3, coins: 30 });
 const worldPort = await world.listen();
 const port = 5300 + Math.floor(Math.random() * 90);
