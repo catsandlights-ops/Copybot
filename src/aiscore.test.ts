@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scorecard, benchCheck, trackRecord, NO_BENCH, SCORE } from './aiscore';
+import { scorecard, benchCheck, trackRecord, bySetup, setupAdvice, NO_BENCH, SCORE } from './aiscore';
 
 const H = 3_600_000, D = 24 * H, now = 100 * D;
 const clean = (s: unknown, max = 40) => String(s ?? '').slice(0, max);
@@ -55,4 +55,17 @@ test('track record: a summary plus its clearest recent mistakes', () => {
   assert.equal(t.results, 3);
   assert.equal(t.recentMistakes.length, 2);
   assert.deepEqual(t.recentMistakes[0], { you: 'skipped', coin: 'MOON', nextHourPct: 90, yourReason: 'too new' });
+});
+
+test('setups: compared per SOL traded; switch suggested only on enough results and a clear gap', () => {
+  const mk = (model: string, n: number, pct: number, verdict: 'buy' | 'skip') => Array.from({ length: n }, () => ({ ...dec(verdict, pct), model, costUsd: 0.01 }));
+  const ds = [...mk('claude-haiku-5-5', 20, 40, 'skip'), ...mk('claude-opus-5-5', 20, -40, 'skip')];
+  const rows = bySetup(ds, now);
+  assert.equal(rows[0].model, 'claude-opus-5-5'); // its skips dodged falls: best edge
+  assert.ok(rows[0].edgePct > 0 && rows[1].edgePct < 0);
+  assert.ok(Math.abs(rows[0].costUsd - 0.2) < 1e-9);
+  assert.equal(setupAdvice(rows, 'claude-haiku-5-5')?.to, 'claude-opus-5-5');
+  assert.equal(setupAdvice(rows, 'claude-opus-5-5'), null);
+  // Too few results on the other setup: no suggestion.
+  assert.equal(setupAdvice(bySetup([...mk('claude-haiku-5-5', 20, 40, 'skip'), ...mk('claude-opus-5-5', 5, -40, 'skip')], now), 'claude-haiku-5-5'), null);
 });

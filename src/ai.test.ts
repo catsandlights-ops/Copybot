@@ -188,3 +188,39 @@ test('wallet scout picks: only candidates, deduped, capped and clamped', async (
   assert.deepEqual(await ai.pickWallets(cfg(), [], [], 2), { picks: [], summary: 'No free slots or no candidates.' });
   assert.equal(seen.length, before);
 });
+
+test('reflection: the AI studies its checked calls and writes notes; removed notes stay gone', async () => {
+  const c = cfg();
+  // Five buy calls with results an hour later.
+  for (let i = 0; i < 5; i++) {
+    next.push({ text: JSON.stringify({ decision: i % 2 ? 'buy' : 'skip', size: 1, confidence: 'low', reason: `call ${i}` }) });
+    await ai.decideBuy(c, signal());
+    const d = ai.aiStatus(c).decisions[0];
+    assert.equal(d.model, 'claude-opus-5-5');
+    assert.equal(d.ctx?.ageMin, 30);
+    ai.setOutcome(d.id, i % 2 ? -40 : 50);
+  }
+  const long = 'x'.repeat(400);
+  next.push({ text: JSON.stringify({ notes: [{ text: 'Skip coins under 10 min old.', basedOn: '3 of 3 fell' }, { text: long, basedOn: 'b' }, ...Array.from({ length: 6 }, (_, i) => ({ text: `n${i}`, basedOn: 'c' }))], summary: 'Learned two things.' }) });
+  const r = await ai.reflect(c);
+  assert.equal(r.ok, true, r.message);
+  const prompt = seen.at(-1).body.messages[0].content as string;
+  assert.match(prompt, /"conditions":\{"ageMin":30/);
+  assert.match(prompt, /<removed_by_owner>\[\]/);
+  const notes = ai.aiStatus(c).notes;
+  assert.equal(notes.length, ai.NOTES.max);
+  assert.ok(notes[1].text.length <= ai.NOTES.maxChars);
+  assert.equal(ai.aiStatus(c).decisions[0].kind, 'reflect');
+  // The notes reach the next buy call.
+  next.push({ text: JSON.stringify({ decision: 'buy', size: 1, confidence: 'low', reason: 'ok' }) });
+  await ai.decideBuy(c, signal());
+  assert.match(seen.at(-1).body.messages[0].content, /<your_notes>\["Skip coins under 10 min old\./);
+  // You remove one: it isn't written again.
+  assert.equal(ai.removeNote(notes[0].id), true);
+  next.push({ text: JSON.stringify({ notes: [{ text: 'Skip coins under 10 min old.', basedOn: 'again' }, { text: 'Size down on Base.', basedOn: 'd' }], summary: '' }) });
+  await ai.reflect(c);
+  assert.deepEqual(ai.aiStatus(c).notes.map((n) => n.text), ['Size down on Base.']);
+  assert.match(seen.at(-1).body.messages[0].content, /<removed_by_owner>\["Skip coins under 10 min old\."\]/);
+  // Not due again right away.
+  assert.equal(ai.reflectDue(c), false);
+});

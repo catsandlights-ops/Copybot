@@ -21,8 +21,22 @@ const port = 5100 + Math.floor(Math.random() * 90);
 const baseWallet = '0x' + 'ab'.repeat(20);
 fs.writeFileSync(
   path.join(dir, 'config.json'),
-  JSON.stringify({ mode: 'paper', wallets: [...world.wallets.map((w, i) => ({ address: w.address, label: `w${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })), { chain: 'base', address: baseWallet, label: 'base-1', enabled: false, sizeMultiplier: 1, maxExposureSol: 0 }], ai: { provider: 'ollama', ollamaUrl: `http://127.0.0.1:${worldPort}`, ollamaFast: 'fake:7b' } }),
+  JSON.stringify({ mode: 'paper', wallets: [...world.wallets.map((w, i) => ({ address: w.address, label: `w${i}`, enabled: true, sizeMultiplier: 1, maxExposureSol: 0 })), { chain: 'base', address: baseWallet, label: 'base-1', enabled: false, sizeMultiplier: 1, maxExposureSol: 0 }], ai: { enabled: true, provider: 'ollama', ollamaUrl: `http://127.0.0.1:${worldPort}`, ollamaFast: 'fake:7b' } }),
 );
+// A little AI history, so the Autopilot page's scorecard, setups and notes cards have something to show.
+{
+  const t0 = Date.now() - 3 * 86_400_000;
+  const lines = [];
+  for (let i = 0; i < 48; i++) {
+    const model = i < 24 ? 'ollama:qwen2.5:7b' : 'ollama:fake:7b';
+    const buy = i % 3 !== 0;
+    const pct = buy ? (i % 2 ? 25 : -15) : i < 24 ? 30 : -45;
+    lines.push(JSON.stringify({ id: `seed${i}`, t: t0 + i * 3_600_000, kind: 'buy', verdict: buy ? 'buy' : 'skip', reason: 'seed', symbol: `S${i}`, costUsd: 0, probe: { lamports: '100000000', tokensOut: '1000' }, baseSol: 0.1, size: buy ? 1 : 0, model, outcomePct: pct }));
+  }
+  fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'data/ai-decisions.jsonl'), lines.join('\n') + '\n');
+  fs.writeFileSync(path.join(dir, 'data/ai-notes.json'), JSON.stringify({ lastAt: Date.now() - 2 * 3_600_000, removed: [], notes: [{ id: 'n1', at: Date.now() - 2 * 3_600_000, text: 'Skip coins under 10 minutes old unless liquidity is over $50k.', basedOn: '5 of 6 such buys fell within the hour' }] }));
+}
 const bs58 = (await import('bs58')).default;
 const { Keypair } = createRequire(import.meta.url)('@solana/web3.js');
 fs.writeFileSync(path.join(dir, '.env'), `PRIVATE_KEY=${bs58.encode(Keypair.generate().secretKey)}\n`);
@@ -71,6 +85,12 @@ const aiFields = await page.evaluate(() => ({
 }));
 if (aiFields.fast !== 'fake:7b' || !aiFields.fastShown || aiFields.claudeShown) errors.push(`Autopilot settings don't follow the chosen AI: ${JSON.stringify(aiFields)}`);
 if (shots) await (await page.$('#ai-settings'))?.screenshot({ path: path.join(shots, 'ai-settings.png') });
+// Autopilot page: the AI's scorecard, setups and its own notes.
+await page.click('.nav[data-page="autopilot"]');
+await page.waitForTimeout(1200);
+const aiCards = await page.evaluate(() => ({ score: !!document.querySelector('#ai-score'), notes: document.body.innerText.includes('Skip coins under 10 minutes old'), setups: document.body.innerText.includes('Compare AI setups') }));
+if (!aiCards.score || !aiCards.notes || !aiCards.setups) errors.push(`Autopilot cards missing: ${JSON.stringify(aiCards)}`);
+if (shots) await page.screenshot({ path: path.join(shots, 'autopilot.png'), fullPage: true });
 // A Base coin on the Orders page is accepted (looked up, not ignored).
 await page.click('.nav[data-page="orders"]');
 await page.waitForTimeout(600);

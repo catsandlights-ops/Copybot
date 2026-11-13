@@ -100,3 +100,29 @@ export function trackRecord(ds: ScoredDecision[], now: number, clean: (s: unknow
     recentMistakes: mistakes,
   };
 }
+
+// ---------- part 4: which AI setup does best ----------
+
+/** The AI that made a decision: "claude-opus-5-5", or "ollama:qwen2.5:7b" for a local model. */
+export type SetupRow = { model: string; n: number; edgeSol: number; involvedSol: number; edgePct: number; costUsd: number };
+
+/** Each AI setup's buy calls over the last `days`: how much better (or worse) than the plain rules, per SOL traded. */
+export function bySetup(ds: (ScoredDecision & { model?: string; costUsd?: number })[], now: number, days = 30): SetupRow[] {
+  const groups = new Map<string, typeof ds>();
+  for (const d of ds) if (d.model && d.t >= now - days * 86_400_000) groups.set(d.model, [...(groups.get(d.model) ?? []), d]);
+  return [...groups].map(([model, list]) => {
+    const c = scorecard(list, now, days);
+    const involved = scored(list, now - days * 86_400_000).reduce((a, d) => a + (d.baseSol as number), 0);
+    return { model, n: c.n, edgeSol: c.edgeSol, involvedSol: involved, edgePct: involved ? (c.edgeSol / involved) * 100 : 0, costUsd: list.reduce((a, d) => a + (d.costUsd ?? 0), 0) };
+  }).sort((a, b) => b.edgePct - a.edgePct);
+}
+
+export const SETUP = { minScored: 20, betterByPct: 2 };
+
+/** Suggest switching when another setup you've tried did clearly better per SOL traded, on enough results. */
+export function setupAdvice(rows: SetupRow[], current: string): { to: string; why: string } | null {
+  const cur = rows.find((r) => r.model === current);
+  const best = rows.find((r) => r.model !== current && r.n >= SETUP.minScored);
+  if (!cur || cur.n < SETUP.minScored || !best || best.edgePct - cur.edgePct < SETUP.betterByPct) return null;
+  return { to: best.model, why: `${best.model} added ${best.edgePct.toFixed(1)}% per SOL traded over the rules (${best.n} results), against ${cur.edgePct.toFixed(1)}% for ${cur.model} (${cur.n} results).` };
+}

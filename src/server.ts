@@ -703,6 +703,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     if (!/^http:\/\/(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}$/.test(u)) throw new HttpError(400, 'The Ollama address must be on this computer, like http://127.0.0.1:11434');
     return send(res, 200, await ai.ollamaModels(u));
   }
+  if (route === 'POST /api/ai/reflect') {
+    const r = await ai.reflect(engine.cfg);
+    engine.log(r.message, r.ok ? 'ai' : 'warn');
+    if (!r.ok) throw new HttpError(409, r.message);
+    return send(res, 200, { ...ai.aiStatus(engine.cfg), message: r.message });
+  }
+  if (route === 'DELETE /api/ai/notes') {
+    if (!ai.removeNote(url.searchParams.get('id') ?? '')) throw new HttpError(404, 'That note is already gone.');
+    return send(res, 200, ai.aiStatus(engine.cfg));
+  }
   if (route === 'POST /api/ai/unbench') {
     ai.unbench();
     engine.log(`You let ${ai.aiName(engine.cfg)} decide buys again.`, 'ai');

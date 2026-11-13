@@ -1260,6 +1260,12 @@ export class BotEngine extends EventEmitter {
       this.log(benchNews, 'ai');
       this.emit('guard', benchNews);
     }
+    // Once a day (with enough new results): the AI studies its record and rewrites its own notes.
+    if (ai.reflectDue(this.cfg)) {
+      this.log(`${ai.AiName(this.cfg)} is studying how its recent buy calls turned out…`, 'ai');
+      const r = await ai.reflect(this.cfg);
+      this.log(r.message, r.ok ? 'ai' : 'warn');
+    }
   }
 
   private async onTargetSell(s: Swap) {

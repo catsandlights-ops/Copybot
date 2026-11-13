@@ -2437,12 +2437,32 @@ function aiScoreCard(a, local) {
       <div class="card stat"><div class="k">It bought</div><div class="v num">${c.bought}</div><div class="s">next hour avg ${pc(c.boughtAvgPct)}</div></div>
       <div class="card stat"><div class="k">It skipped</div><div class="v num">${c.skipped}</div><div class="s">${c.dodged} fell · ${c.missed} rose · avg ${pc(c.skippedAvgPct)}</div></div>
     </div>` : ''}
+    ${c.n && !local && a.buyCostUsd > 0 ? `<div class="muted" style="font-size:13px">Its buy calls cost ${usd(a.buyCostUsd)} over these ${c.days} days${S.chain?.usd ? `, and added ${c.edgeSol >= 0 ? '+' : '-'}$${Math.abs(c.edgeSol * S.chain.usd).toFixed(2)} over the rules` : ''}.${S.chain?.usd && c.edgeSol * S.chain.usd < a.buyCostUsd && c.n >= 20 ? ' <b>It costs more than it adds:</b> try a cheaper model, or the free local AI.' : ''}</div>` : ''}
+    ${aiSetupsHtml(a)}
     <div class="muted" style="font-size:12.5px">${who} sees this record (and its biggest recent mistakes) before every buy call, so it can learn from it.</div></div></div>`;
 }
+const setupName = (m) => ({ 'claude-opus-5-5': 'Claude Opus 5.5', 'claude-sonnet-5-5': 'Claude Sonnet 5.5', 'claude-haiku-5-5': 'Claude Haiku 5.5' })[m] || (m.startsWith('ollama:') ? `Local: ${m.slice(7)}` : m);
+/** Every AI setup you've used for buy calls, side by side (last 30 days), and a switch suggestion. */
+function aiSetupsHtml(a) {
+  const rows = a.setups || [];
+  const adv = a.setupAdvice;
+  const tip = adv ? `<div class="banner"><div><b>${esc(setupName(adv.to))} has done better.</b> ${esc(adv.why.replace(adv.to, setupName(adv.to)).replace(a.current, setupName(a.current)))}</div><button class="btn primary" id="ai-switch" data-to="${esc(adv.to)}">Switch to it</button></div>` : '';
+  if (rows.length < 2) return tip;
+  return `${tip}<details><summary class="muted" style="cursor:pointer">Compare AI setups (${rows.length})</summary><table class="tbl" style="margin-top:8px"><thead><tr><th>AI</th><th class="num">Results</th><th class="num">Beat the rules by</th><th class="num">Cost</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${esc(setupName(r.model))}${r.model === a.current ? ' <span class="chip">in use</span>' : ''}</td><td class="num">${r.n}</td><td class="num ${r.n >= 20 ? (r.edgePct >= 0 ? 'pos' : 'neg') : 'muted'}">${r.n ? `${r.edgePct >= 0 ? '+' : ''}${r.edgePct.toFixed(1)}% per SOL` : '–'}</td><td class="num">${r.model.startsWith('ollama:') ? 'free' : usd(r.costUsd)}</td></tr>`).join('')}</tbody></table><div class="muted" style="font-size:12px;margin-top:4px">Last 30 days. A setup needs 20 results before it's compared.</div></details>`;
+}
+/** Short rules the AI wrote for itself after studying its record. */
+function aiNotesCard(a, local) {
+  if (!S.config.ai.decideBuys) return '';
+  const who = local ? 'the local AI' : 'Claude';
+  const list = a.notes || [];
+  return `<div class="card"><div class="card-h"><div><h2>Notes the AI wrote for itself</h2><div class="muted" style="font-size:12.5px">Once a day (after 15+ new results), ${who} studies how its buy calls turned out and rewrites up to 5 short rules it follows on later calls. Remove any you don't agree with; it won't write them again.</div></div><span class="spacer"></span><button class="btn" id="ai-reflect" ${a.reflectBusy || !a.hasKey ? 'disabled' : ''}>${a.reflectBusy ? 'Studying…' : 'Study now'}</button></div>
+    <div class="card-b">${list.length ? `<ul class="ai-list">${list.map((n) => `<li class="ai-item"><span class="t">${ago(n.at)} ago</span><div><b>${esc(n.text)}</b></div><div class="meta">${esc(n.basedOn)} <button class="btn sm ghost" data-note-del="${esc(n.id)}" title="Remove this note">Remove</button></div></li>`).join('')}</ul>` : `<div class="muted" style="font-size:13px">${a.lastReflectAt ? `No notes right now (last studied ${ago(a.lastReflectAt)} ago): nothing in its record was clear enough to make a rule.` : 'No notes yet. They come once it has some checked results to learn from.'}</div>`}</div></div>`;
+}
 function aiItem(d) {
-  const kind = { buy: d.verdict === 'skip' ? ['skip', 'Skipped buy'] : ['buy', 'Bought'], review: ['ai', 'Position review'], wallets: ['ai', 'Wallet review'], scout: ['ai', 'Wallet scout'], test: ['ai', 'Test'] }[d.kind] || ['ai', d.kind];
+  const kind = { buy: d.verdict === 'skip' ? ['skip', 'Skipped buy'] : ['buy', 'Bought'], review: ['ai', 'Position review'], wallets: ['ai', 'Wallet review'], scout: ['ai', 'Wallet scout'], test: ['ai', 'Test'], reflect: ['ai', 'Studied its record'] }[d.kind] || ['ai', d.kind];
   const token = d.mint ? ` ${tokenLink(d.mint)}${d.symbol ? ` <span class="muted">${esc(d.symbol)}</span>` : ''}` : '';
   let outcome = '';
+  if (d.kind === 'buy' && d.verdict === 'buy' && typeof d.outcomePct === 'number') outcome = `<div>1h later: <b class="${d.outcomePct >= 0 ? 'pos' : 'neg'}">${d.outcomePct > 0 ? '+' : ''}${d.outcomePct.toFixed(0)}%</b></div>`;
   if (d.kind === 'buy' && d.verdict === 'skip') {
     outcome = d.outcomePct === undefined ? '<div>1h result: waiting…</div>'
       : d.outcomePct === null ? '<div>1h result: no price</div>'
@@ -2551,6 +2571,7 @@ function renderAutopilot(el, fresh) {
     ${a.lastError && on ? `<div class="banner warn"><div><b>${local ? 'Local AI' : 'Claude'}:</b> ${esc(a.lastError)}</div></div>` : ''}
     ${keyBox}
     ${aiScoreCard(a, local)}
+    ${aiNotesCard(a, local)}
     <div class="grid stats">
       <div class="card stat" style="--c:var(--accent)"><div class="k">${ICON.coin}AI cost today</div><div class="v num">${local ? 'Free' : `${usd(a.today.costUsd)} <small style="font-size:13px" class="muted">of $${a.today.budgetUsd}</small>`}</div><div class="s">${a.today.calls} call${a.today.calls === 1 ? '' : 's'} to ${local ? 'the local AI' : 'Claude'}${a.overBudget ? ' · budget used up' : ''}</div><div class="bar"><i style="width:${spentPct}%"></i></div></div>
       <div class="card stat"><div class="k">${ICON.star}Buy decisions today</div><div class="v num">${buys.length}</div><div class="s">${buys.filter((d) => d.verdict === 'buy').length} bought · ${buys.filter((d) => d.verdict === 'skip').length} skipped</div></div>
@@ -2581,6 +2602,16 @@ function renderAutopilot(el, fresh) {
   if (ks) ks.onclick = async () => {
     const r = await act(() => api('PUT', '/api/connection', { anthropicKey: $('#ai-key').value }), 'Anthropic key saved');
     if (r) { S.connection = r; loadAi(); }
+  };
+  const rf = $('#ai-reflect');
+  if (rf) rf.onclick = async () => { rf.disabled = true; rf.textContent = 'Studying…'; const r = await act(() => api('POST', '/api/ai/reflect')); if (r) toast(r.message); loadAi(); };
+  el.querySelectorAll('[data-note-del]').forEach((b) => (b.onclick = async () => { if (await act(() => api('DELETE', '/api/ai/notes?id=' + encodeURIComponent(b.dataset.noteDel)), 'Note removed. The AI won’t write it again.')) loadAi(); }));
+  const sw = $('#ai-switch');
+  if (sw) sw.onclick = async () => {
+    if (S.dirty) return toast('Save or discard your settings changes first', true);
+    const to = sw.dataset.to, patch = to.startsWith('ollama:') ? { provider: 'ollama', ollamaFast: to.slice(7) } : { provider: 'claude', claudeModel: to };
+    const r = await act(() => api('PUT', '/api/config', { ...S.config, ai: { ...S.config.ai, ...patch } }), 'Switched AI');
+    if (r) { S.config = r.config; S.ai = null; loadAi(); }
   };
   const ub = $('#ai-unbench');
   if (ub) ub.onclick = async () => { if (await act(() => api('POST', '/api/ai/unbench'), 'The AI decides buys again')) loadAi(); };
